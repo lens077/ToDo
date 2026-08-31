@@ -69,6 +69,12 @@ pub struct TodayView {
     pub overdue: Vec<DesktopTask>,
     pub today: Vec<DesktopTask>,
     pub upcoming: Vec<DesktopTask>,
+    /// Actionable work carrying no due date, ordered by priority.
+    ///
+    /// Without this band a P1 task with no date appears nowhere on the landing
+    /// view, so a page that claims to answer "what should I do now" hides the
+    /// highest-priority thing in the project.
+    pub next: Vec<DesktopTask>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -208,10 +214,20 @@ impl DesktopBackend {
                 })
                 .cloned()
                 .collect(),
+            next: active
+                .iter()
+                .filter(|task| task_due_date(task).is_none())
+                .cloned()
+                .collect(),
         };
         // The landing view answers "what should I do now", so each band is ordered
         // by urgency rather than by position in the file.
-        for band in [&mut view.overdue, &mut view.today, &mut view.upcoming] {
+        for band in [
+            &mut view.overdue,
+            &mut view.today,
+            &mut view.upcoming,
+            &mut view.next,
+        ] {
             self.ranker.rank(band);
         }
         let hash = document

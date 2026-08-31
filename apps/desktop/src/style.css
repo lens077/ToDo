@@ -615,3 +615,9 @@
   .task-failed { display: inline-flex; align-items: center; gap: 5px; padding: 1px 5px; color: #8f3e2e; background: var(--vermilion-wash); font-family: var(--mono); font-size: 0.55rem; }
   .task-note { margin-top: 6px; padding-left: 8px; color: var(--ink-soft); border-left: 2px solid var(--line); font-size: 0.68rem; line-height: 1.45; }
 }
+
+@layer components {
+  /* Undated actionable work: present, but visually quieter than dated bands. */
+  .today-group--next .today-group__header { border-left-color: var(--line-strong); }
+  .today-group--next .today-group__index { color: var(--ink-faint); }
+}

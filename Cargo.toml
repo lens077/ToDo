@@ -21,3 +21,6 @@ getrandom = "0.3"
 chrono = { version = "0.4", default-features = false, features = ["clock"] }
 dirs = "6.0"
 ignore = "0.4"
+axum = "0.8"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "signal"] }
+tower-http = { version = "0.6", features = ["cors", "fs"] }

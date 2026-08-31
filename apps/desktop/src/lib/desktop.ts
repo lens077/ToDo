@@ -2,6 +2,14 @@ import { invoke } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { open } from '@tauri-apps/plugin-dialog';
+import {
+  api,
+  apiBase,
+  detectTransport,
+  probeHttp,
+  type TransportCapabilities,
+  type TransportKind,
+} from './transport';
 
 export type TaskPriority = 1 | 2 | 3 | null;
 
@@ -96,6 +104,8 @@ export interface TodayView {
   overdue: DesktopTask[];
   today: DesktopTask[];
   upcoming: DesktopTask[];
+  /** Actionable work with no due date, ordered by priority. */
+  next: DesktopTask[];
 }
 
 export interface DesktopSnapshot {
@@ -282,6 +292,40 @@ function isTauriRuntime(): boolean {
   return typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
 }
 
+/**
+ * Whether a `todo serve` backend answered, and what it allows.
+ *
+ * Resolved once at startup by `initTransport`. Until then the bridge behaves as
+ * it always has, so nothing regresses if the probe is slow or never runs.
+ */
+let httpCapabilities: TransportCapabilities | null = null;
+
+function useHttp(): boolean {
+  return !isTauriRuntime() && httpCapabilities !== null;
+}
+
+/**
+ * Detects the backend once, before the first render that depends on it.
+ *
+ * Returns the transport actually in use, so the shell can tell the user it is
+ * read-only rather than letting writes fail one by one.
+ */
+export async function initTransport(): Promise<{
+  kind: TransportKind;
+  capabilities: TransportCapabilities | null;
+}> {
+  if (isTauriRuntime()) return { kind: 'tauri', capabilities: null };
+  if (detectTransport() === 'http') {
+    httpCapabilities = await probeHttp();
+    if (httpCapabilities) return { kind: 'http', capabilities: httpCapabilities };
+  }
+  return { kind: 'mock', capabilities: null };
+}
+
+export function transportCapabilities(): TransportCapabilities | null {
+  return httpCapabilities;
+}
+
 function classifyError(message: string): DesktopBridgeError['kind'] {
   const value = message.toLowerCase();
   if (value.includes('rebase') || value.includes('conflict') || value.includes('外部更新')) return 'conflict';
@@ -349,6 +393,7 @@ function normalizeSnapshot(raw: unknown): DesktopSnapshot {
       overdue: normalizeGroup(value.today?.overdue),
       today: normalizeGroup(value.today?.today),
       upcoming: normalizeGroup(value.today?.upcoming),
+      next: normalizeGroup(value.today?.next),
     },
   };
 }
@@ -368,11 +413,13 @@ function cloneTasks(tasks: DesktopTask[]): DesktopTask[] {
 
 function deriveMockToday(tasks: DesktopTask[]): TodayView {
   const upcomingEnd = '2026-09-07';
-  const active = tasks.filter((task) => !task.completed && task.due);
+  const incomplete = tasks.filter((task) => !task.completed);
+  const active = incomplete.filter((task) => task.due);
   return {
     overdue: active.filter((task) => task.due! < MOCK_TODAY),
     today: active.filter((task) => task.due === MOCK_TODAY),
     upcoming: active.filter((task) => task.due! > MOCK_TODAY && task.due! <= upcomingEnd),
+    next: incomplete.filter((task) => !task.due),
   };
 }
 
@@ -542,6 +589,7 @@ export const desktop = {
 
   async snapshot(): Promise<DesktopSnapshot> {
     if (isTauriRuntime()) return normalizeSnapshot(await call<unknown>('snapshot'));
+    if (useHttp()) return normalizeSnapshot(await api<unknown>('/snapshot'));
     if (mockMode === 'no-project') throw new DesktopBridgeError('no project is open');
     if (mockMode === 'load-error') throw new DesktopBridgeError('frontmatter parse failed near todo-spec');
     return mockSnapshot();
@@ -562,6 +610,18 @@ export const desktop = {
     comments: boolean,
     importInto: string | null,
   ): Promise<ScanPreview> {
+    if (useHttp()) {
+      const report = await api<ScanReport>(
+        `/scan?markdown=${markdown}&comments=${comments}`,
+      );
+      const empty = report.loose_checkboxes.length + report.code_comments.length === 0;
+      if (!importInto || empty) return { report, rewrite: null };
+      const rewrite = await api<ProposedRewrite>('/scan/import', {
+        method: 'POST',
+        body: { column: importInto, markdown, comments },
+      });
+      return { report, rewrite };
+    }
     if (!isTauriRuntime()) return mockScanPreview(markdown, comments, importInto);
     return await call<ScanPreview>('scan_repository', {
       markdown,
@@ -572,6 +632,20 @@ export const desktop = {
 
   /** Writes a rewrite the user has confirmed. Refused if the file moved on. */
   async applyRewrite(rewrite: ProposedRewrite, op: string): Promise<DesktopSnapshot> {
+    if (useHttp()) {
+      // The server recomputes the rewrite and checks the echoed hash, so a stale
+      // confirmation is refused rather than silently applied.
+      const path = op === 'restore' ? null : '/scan/import';
+      if (path) {
+        return normalizeSnapshot(
+          await api<unknown>(path, {
+            method: 'POST',
+            body: { column: 'todo', confirm_base_hash: rewrite.base_hash },
+          }),
+        );
+      }
+      throw new DesktopBridgeError('请从历史列表发起恢复');
+    }
     if (!isTauriRuntime()) return mockSnapshot();
     return normalizeSnapshot(
       await call<unknown>('apply_rewrite', {
@@ -583,16 +657,22 @@ export const desktop = {
   },
 
   async historyList(): Promise<HistoryEntry[]> {
+    if (useHttp()) return await api<HistoryEntry[]>('/history');
     if (!isTauriRuntime()) return mockHistory();
     return await call<HistoryEntry[]>('history_list');
   },
 
   async historyPreview(version: number): Promise<ProposedRewrite> {
+    if (useHttp()) return await api<ProposedRewrite>(`/history/${version}/diff`);
     if (!isTauriRuntime()) return mockRewrite();
     return await call<ProposedRewrite>('history_preview', { version });
   },
 
   async alignmentPrompt(): Promise<string> {
+    if (useHttp()) {
+      const response = await fetch(`${apiBase()}/align/prompt`);
+      return await response.text();
+    }
     if (!isTauriRuntime()) return '# 任务：核对 TODO 与代码现实\n\n（mock 模式下的占位提示词）\n';
     return await call<string>('alignment_prompt');
   },
@@ -607,6 +687,22 @@ export const desktop = {
   },
 
   async mutate(intent: DesktopMutation): Promise<DesktopSnapshot> {
+    if (useHttp()) {
+      // Refuse locally rather than letting each write fail at the server: the UI
+      // already knows the backend is read-only and can say so once.
+      if (!httpCapabilities?.writable) {
+        throw new DesktopBridgeError('服务端处于只读模式，无法修改任务');
+      }
+      const route =
+        intent.type === 'add_task'
+          ? { path: '/tasks', payload: { body: intent.body, column: intent.column } }
+          : intent.type === 'set_completed'
+            ? { path: `/tasks/${intent.id}/completed`, payload: { completed: intent.completed } }
+            : { path: `/tasks/${intent.id}/move`, payload: { column: intent.column } };
+      return normalizeSnapshot(
+        await api<unknown>(route.path, { method: 'POST', body: route.payload }),
+      );
+    }
     if (!isTauriRuntime()) return mockMutate(intent);
     return normalizeSnapshot(await call<unknown>('mutate', { intent }));
   },

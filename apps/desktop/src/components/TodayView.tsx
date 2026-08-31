@@ -13,7 +13,7 @@ interface TodayGroupProps extends TodayViewProps {
   title: string;
   description: string;
   tasks: DesktopTask[];
-  tone: 'overdue' | 'today' | 'upcoming';
+  tone: 'overdue' | 'today' | 'upcoming' | 'next';
 }
 
 function TodayGroup({
@@ -63,7 +63,8 @@ function TodayGroup({
 
 export function TodayView(props: TodayViewProps) {
   const { snapshot } = props;
-  const total = snapshot.today.overdue.length + snapshot.today.today.length + snapshot.today.upcoming.length;
+  const { overdue, today, upcoming, next } = snapshot.today;
+  const total = overdue.length + today.length + upcoming.length + next.length;
   return (
     <section className="today-view" aria-labelledby="today-title">
       <header className="view-heading view-heading--today">
@@ -79,7 +80,7 @@ export function TodayView(props: TodayViewProps) {
           index="01"
           title="逾期"
           description="截止日期早于今天"
-          tasks={snapshot.today.overdue}
+          tasks={overdue}
           tone="overdue"
         />
         <TodayGroup
@@ -87,7 +88,7 @@ export function TodayView(props: TodayViewProps) {
           index="02"
           title="今天"
           description="需要在今日收口"
-          tasks={snapshot.today.today}
+          tasks={today}
           tone="today"
         />
         <TodayGroup
@@ -95,8 +96,16 @@ export function TodayView(props: TodayViewProps) {
           index="03"
           title="未来 7 天"
           description="近期即将到期"
-          tasks={snapshot.today.upcoming}
+          tasks={upcoming}
           tone="upcoming"
+        />
+        <TodayGroup
+          {...props}
+          index="04"
+          title="后续可做"
+          description="没有截止日期，按优先级排列"
+          tasks={next}
+          tone="next"
         />
       </div>
     </section>

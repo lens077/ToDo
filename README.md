@@ -69,12 +69,38 @@ CLI 在当前工作目录查找 `TODO.md`，不会向上级目录搜索。把 `t
 | `todo reconcile [--apply] [--no-semantic]` | 对账；默认只报告 |
 | `todo hooks preview\|install\|uninstall\|instructions [--agent claude\|codex\|deepseek-harness\|all]` | 管理 agent 接入 |
 | `todo align [--review <文件\|->]` | 打印全仓对齐提示词，或校验 agent 的回复 |
+| `todo serve [--port <n>] [--host <ip>] [--read-only] [--web-root <目录>]` | 启动 HTTP API 与 Web 端 |
 | `todo scan [--markdown-only\|--comments-only] [--import [--yes]] [--column <id>]` | 扫描全仓未跟踪的工作 |
 | `todo history [--limit <n>] [--prune-to <n>]` | 列出还原点 |
 | `todo diff <版本>` | 还原点与当前文件的左右对比 |
 | `todo restore <版本> [--yes]` | 恢复到某个版本；不带 `--yes` 只预览 |
 
 部分完成与部分失败的语法见 `docs/format-spec-v1.md` §3.1。
+
+## Web 端与 HTTP API
+
+```bash
+pnpm build
+todo serve --web-root apps/desktop/dist
+# → http://127.0.0.1:3017/  界面
+# → http://127.0.0.1:3017/api/v1/  接口
+```
+
+同一份 React 构建同时跑在三处：Tauri 桌面壳、浏览器（对接 `todo serve`）、以及无后端的 mock（e2e 用）。选择在 `src/lib/transport.ts` 里一次性完成，不在每个调用点分叉——否则很快会出现第二份逐渐走样的界面。
+
+**默认只绑定回环地址。** 任务文件是仓库的工作状态，不该因为疏忽就暴露在所有网卡上；要对外提供必须显式 `--host`。
+
+**移动端用 `--read-only`。** 该模式下所有写入端点返回 403，「在手机上看」不会变成「在手机上误改仓库」。前端探测到只读后会直接拒绝写操作并给出提示，而不是让每次点击各自失败一次。
+
+curl 示例：
+
+```bash
+curl -s localhost:3017/api/v1/snapshot
+curl -X POST localhost:3017/api/v1/tasks/<id>/progress \
+  -H 'Content-Type: application/json' -d '{"percent":60,"note":"压测未过"}'
+```
+
+整文件改写走两步：先 POST 拿到 `base_hash` 与 diff（不写盘），再带上 `confirm_base_hash` 确认。哈希对不上返回 409——确认闸门跨请求依然成立，避免「确认的是一份 diff、写进去的是另一份」。
 
 ## 全仓扫描
 
@@ -146,7 +172,7 @@ pnpm --filter @todo/desktop tauri build --debug --bundles app
 
 产物为 `target/debug/bundle/macos/Todo.app`。`tauri.conf.json` 中 `bundle.active` 为 `false`，因此需要显式传入 `--bundles app`。该包只有本地 ad-hoc 签名，适合本机验收；对外分发仍需 Developer ID 签名与公证。
 
-桌面端首页是**今日视图**，按优先级、截止日期、是否已开工排序——同等紧急时，把做到一半的排在没动过的前面。看板、随记、扫描与历史各占一个一级视图，行为与边界见 `docs/desktop-mvp-spec.md`。
+桌面端首页是**今日视图**，分逾期、今天、未来 7 天、后续可做四段。最后一段是没有截止日期的活，按优先级排——否则一个 P1 但没写日期的任务会在首页上完全消失。每段内部按优先级、截止日期、是否已开工排序——同等紧急时，把做到一半的排在没动过的前面。看板、随记、扫描与历史各占一个一级视图，行为与边界见 `docs/desktop-mvp-spec.md`。
 
 任何整文件改写（扫描导入、版本恢复）都必须先看左右两栏 diff 再确认：预览会锁定它所基于的文件指纹，文件在此期间被改动则拒绝写入，避免「确认的是一份 diff、写进去的是另一份」。
 
@@ -163,7 +189,7 @@ pnpm typecheck && pnpm build
 pnpm e2e
 ```
 
-`pnpm e2e` 跑 Playwright 交互层回归。前端在非 Tauri 环境下走 mock 桥接，因此这套测试不需要 webview 或真实项目，覆盖视图路由、确认闸门与 diff 渲染；Rust 侧的契约由 `cargo test` 保证，两者刻意分工。
+`pnpm e2e` 跑 Playwright 交互层回归；`./scripts/e2e-web.sh` 另起一个真实的 `todo serve`，用同一份构建跑 Web 端全链路（读写真实 TODO.md）。前端在非 Tauri 环境下走 mock 桥接，因此这套测试不需要 webview 或真实项目，覆盖视图路由、确认闸门与 diff 渲染；Rust 侧的契约由 `cargo test` 保证，两者刻意分工。
 
 注意 `vite preview` 默认只监听 `::1`，配置里显式绑定 `127.0.0.1`，否则健康检查永远超时。
 

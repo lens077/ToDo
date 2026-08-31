@@ -1,5 +1,7 @@
 mod hooks;
 
+use todo_cli::serve;
+
 use std::{
     collections::HashSet,
     fs,
@@ -144,6 +146,21 @@ enum Command {
         /// Pass a file path, or `-` to read stdin.
         #[arg(long)]
         review: Option<String>,
+    },
+    /// Serve the HTTP API, and optionally the Web UI, for this project.
+    Serve {
+        #[arg(long, default_value_t = 3017)]
+        port: u16,
+        /// Interface to bind. Loopback by default: a task file is repository
+        /// working state, and exposing it on every interface should be deliberate.
+        #[arg(long, default_value = "127.0.0.1")]
+        host: String,
+        /// Refuse every mutating endpoint. Intended for mobile clients.
+        #[arg(long)]
+        read_only: bool,
+        /// Directory of built Web UI assets to serve at `/`.
+        #[arg(long)]
+        web_root: Option<PathBuf>,
     },
 }
 
@@ -309,6 +326,30 @@ fn run(cli: &Cli) -> Result<u8, Error> {
             *yes,
         ),
         Command::Align { review } => align(cli, &path, review.as_deref()),
+        Command::Serve {
+            port,
+            host,
+            read_only,
+            web_root,
+        } => {
+            let addr: std::net::SocketAddr = format!("{host}:{port}")
+                .parse()
+                .map_err(|_| Error::InvalidAlignment(format!("invalid host/port {host}:{port}")))?;
+            let runtime = tokio::runtime::Builder::new_multi_thread()
+                .enable_all()
+                .build()
+                .map_err(|error| Error::InvalidAlignment(error.to_string()))?;
+            runtime
+                .block_on(serve::run(
+                    path.clone(),
+                    addr,
+                    Duration::from_millis(cli.lock_timeout_ms),
+                    *read_only,
+                    web_root.clone(),
+                ))
+                .map_err(Error::InvalidAlignment)?;
+            Ok(0)
+        }
     }
 }
 

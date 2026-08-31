@@ -441,3 +441,35 @@ fn a_custom_ranker_replaces_the_default_ordering() {
     // Default ordering would put the P1 "alpha" first; the custom ranker wins.
     assert_eq!(bodies, vec!["zulu", "alpha"]);
 }
+
+#[test]
+fn undated_actionable_work_still_appears_on_the_landing_view() {
+    // Regression: a P1 task with no due date matched no band, so the page that
+    // claims to answer "what should I do now" hid the highest-priority item in
+    // the project. Found by driving the real Web UI, not by a unit test.
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("TODO.md");
+    std::fs::write(
+        &path,
+        "---\ntodo-spec: 1\ncolumns:\n  - {id: todo, name: Todo}\n---\n\n## Todo\n\n\
+- [ ] 低优先无日期 <!--t:aaaaaa--> !3\n\
+- [ ] 高优先无日期 <!--t:bbbbbb--> !1\n\
+- [x] 已完成无日期 <!--t:cccccc--> !1\n",
+    )
+    .unwrap();
+
+    let mut backend = todo_core::DesktopBackend::new(std::time::Duration::from_millis(2000));
+    let snapshot = backend.open_project(path.to_str().unwrap()).unwrap();
+
+    let ids: Vec<_> = snapshot
+        .today
+        .next
+        .iter()
+        .map(|task| task.id.clone().unwrap())
+        .collect();
+    assert_eq!(ids, vec!["bbbbbb", "aaaaaa"], "ordered by priority");
+    assert!(
+        snapshot.today.overdue.is_empty() && snapshot.today.today.is_empty(),
+        "undated work must not be forced into a dated band"
+    );
+}
