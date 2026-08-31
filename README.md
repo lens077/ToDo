@@ -68,11 +68,23 @@ CLI 在当前工作目录查找 `TODO.md`，不会向上级目录搜索。把 `t
 | `todo evidence <id> --from <sha> [--to <sha>]` | 写入 Git 物证，`--to` 默认 `HEAD` |
 | `todo reconcile [--apply] [--no-semantic]` | 对账；默认只报告 |
 | `todo hooks preview\|install\|uninstall\|instructions [--agent claude\|codex\|all]` | 管理 agent 接入 |
+| `todo scan [--markdown-only\|--comments-only] [--import [--yes]] [--column <id>]` | 扫描全仓未跟踪的工作 |
 | `todo history [--limit <n>] [--prune-to <n>]` | 列出还原点 |
 | `todo diff <版本>` | 还原点与当前文件的左右对比 |
 | `todo restore <版本> [--yes]` | 恢复到某个版本；不带 `--yes` 只预览 |
 
 部分完成与部分失败的语法见 `docs/format-spec-v1.md` §3.1。
+
+## 全仓扫描
+
+`todo scan` 找出仓库里还没被跟踪的工作，两层都是确定性的，不依赖模型：
+
+- **散落的 Markdown checkbox**：其他 `.md` 文件里的 `- [ ]`。代码围栏内的示例、已带 `<!--t:-->` 的行、以及被管理的任务文件本身都会排除。
+- **源码注释标记**：`TODO` / `FIXME` / `HACK` / `XXX`。注释符按语言选择，字符串字面量内的标记不算——`"// TODO: ..."` 这类测试夹具是最主要的误报来源。
+
+扫描尊重 `.gitignore`（在非 git 目录下同样生效），跳过大于 2 MB 的文件，并按正文归一化后与现有任务去重，因此重复运行会收敛而不是反复提议同一批。
+
+`--import` 只生成提案并打印 diff，**不写盘**；加 `--yes` 才回写，且回写前自动建还原点。导入的任务带 `#scan-md` / `#scan-todo` 等标签，出处记在 `↳` 说明行里。
 
 ## 版本历史
 

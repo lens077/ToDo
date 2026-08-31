@@ -120,6 +120,24 @@ enum Command {
         #[arg(long)]
         yes: bool,
     },
+    /// Find untracked work across the repository. Reports only unless --import.
+    Scan {
+        /// Restrict to loose checkboxes in other Markdown files.
+        #[arg(long)]
+        markdown_only: bool,
+        /// Restrict to TODO/FIXME/HACK/XXX markers in source comments.
+        #[arg(long)]
+        comments_only: bool,
+        /// Show the diff of importing the findings as tasks.
+        #[arg(long)]
+        import: bool,
+        /// Column that imported tasks land in.
+        #[arg(long, default_value = "todo")]
+        column: String,
+        /// Apply the import. Without it, --import only previews.
+        #[arg(long)]
+        yes: bool,
+    },
 }
 
 #[derive(Subcommand)]
@@ -268,7 +286,144 @@ fn run(cli: &Cli) -> Result<u8, Error> {
         Command::History { limit, prune_to } => history_list(cli, &path, *limit, *prune_to),
         Command::Diff { version } => show_diff(cli, &path, *version),
         Command::Restore { version, yes } => restore(cli, &path, *version, *yes),
+        Command::Scan {
+            markdown_only,
+            comments_only,
+            import,
+            column,
+            yes,
+        } => run_scan(
+            cli,
+            &path,
+            *markdown_only,
+            *comments_only,
+            *import,
+            column,
+            *yes,
+        ),
     }
+}
+
+#[derive(Serialize)]
+struct ScanData {
+    report: todo_core::ScanReport,
+    diff: Option<todo_core::TextDiff>,
+    applied: bool,
+}
+
+#[allow(clippy::too_many_arguments)]
+fn run_scan(
+    cli: &Cli,
+    path: &Path,
+    markdown_only: bool,
+    comments_only: bool,
+    import: bool,
+    column: &str,
+    yes: bool,
+) -> Result<u8, Error> {
+    let document = load(path)?;
+    let options = todo_core::ScanOptions {
+        markdown: !comments_only,
+        comments: !markdown_only,
+        task_file: path.to_path_buf(),
+    };
+    let root = path
+        .parent()
+        .filter(|p| !p.as_os_str().is_empty())
+        .unwrap_or(Path::new("."));
+    let report = todo_core::scan(root, &document, &options)?;
+
+    if !import || report.is_empty() {
+        emit(
+            cli,
+            "todo.scan.v1",
+            ScanData {
+                report,
+                diff: None,
+                applied: false,
+            },
+            scan_human,
+        );
+        return Ok(0);
+    }
+
+    let proposed = todo_core::import_text(&document, &report, column)?;
+    let diff = todo_core::diff_lines(&document.source, &proposed);
+    // An import can add hundreds of lines. It goes through the same confirm gate as
+    // a restore: preview by default, write only when explicitly asked.
+    if !yes {
+        emit(
+            cli,
+            "todo.scan.v1",
+            ScanData {
+                report,
+                diff: Some(diff),
+                applied: false,
+            },
+            scan_human,
+        );
+        return Ok(0);
+    }
+    let writer = LockedWriter::new(path, Duration::from_millis(cli.lock_timeout_ms));
+    writer.replace_all("scan-import", &proposed)?;
+    emit(
+        cli,
+        "todo.scan.v1",
+        ScanData {
+            report,
+            diff: Some(diff),
+            applied: true,
+        },
+        scan_human,
+    );
+    Ok(0)
+}
+
+fn scan_human(data: &ScanData) -> String {
+    let report = &data.report;
+    if report.is_empty() {
+        return format!(
+            "no untracked work found ({} file(s) scanned, {} already tracked)",
+            report.stats.files_scanned, report.stats.duplicates_filtered
+        );
+    }
+    let mut lines = Vec::new();
+    for item in &report.loose_checkboxes {
+        lines.push(format!(
+            "md      {}:{}  {}",
+            item.path, item.line, item.text
+        ));
+    }
+    for item in &report.code_comments {
+        lines.push(format!(
+            "{:<7} {}:{}  {}",
+            item.marker.to_lowercase(),
+            item.path,
+            item.line,
+            item.text
+        ));
+    }
+    lines.push(format!(
+        "{} candidate(s); {} file(s) scanned, {} skipped, {} already tracked",
+        report.total(),
+        report.stats.files_scanned,
+        report.stats.files_skipped,
+        report.stats.duplicates_filtered
+    ));
+    if let Some(diff) = &data.diff {
+        lines.push(format!(
+            "import would add {} line(s) and remove {}",
+            diff.added, diff.removed
+        ));
+        lines.push(if data.applied {
+            "imported; run `todo history` to find the restore point".into()
+        } else {
+            "nothing was written; re-run with --import --yes to apply".into()
+        });
+    } else {
+        lines.push("re-run with --import to preview importing these as tasks".into());
+    }
+    lines.join("\n")
 }
 
 #[derive(Serialize)]
