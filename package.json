@@ -1,1 +1,13 @@
-{"name":"todo-workspace","private":true,"packageManager":"pnpm@10.17.1","scripts":{"build":"pnpm --filter @todo/desktop build","typecheck":"pnpm --filter @todo/desktop typecheck"}}
+{
+  "name": "todo-workspace",
+  "private": true,
+  "packageManager": "pnpm@10.17.1",
+  "scripts": {
+    "build": "pnpm --filter @todo/desktop build",
+    "typecheck": "pnpm --filter @todo/desktop typecheck",
+    "e2e": "pnpm --filter @todo/desktop e2e"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.62.1"
+  }
+}

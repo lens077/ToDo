@@ -22,3 +22,8 @@
 *.sqlite
 *.sqlite3
 .*.lock
+
+# Playwright
+/apps/desktop/test-results/
+/apps/desktop/playwright-report/
+/apps/desktop/blob-report/

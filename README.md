@@ -146,6 +146,10 @@ pnpm --filter @todo/desktop tauri build --debug --bundles app
 
 产物为 `target/debug/bundle/macos/Todo.app`。`tauri.conf.json` 中 `bundle.active` 为 `false`，因此需要显式传入 `--bundles app`。该包只有本地 ad-hoc 签名，适合本机验收；对外分发仍需 Developer ID 签名与公证。
 
+桌面端首页是**今日视图**，按优先级、截止日期、是否已开工排序——同等紧急时，把做到一半的排在没动过的前面。看板、随记、扫描与历史各占一个一级视图，行为与边界见 `docs/desktop-mvp-spec.md`。
+
+任何整文件改写（扫描导入、版本恢复）都必须先看左右两栏 diff 再确认：预览会锁定它所基于的文件指纹，文件在此期间被改动则拒绝写入，避免「确认的是一份 diff、写进去的是另一份」。
+
 桌面端提供看板、今日视图和随记账本，行为与边界见 `docs/desktop-mvp-spec.md`。全局速记快捷键在 macOS 上是 `Cmd+Shift+Space`，其他平台是 `Ctrl+Shift+Space`；速记窗口中 `Cmd/Ctrl+Enter` 保存，`Esc` 隐藏。
 
 Capture 是个人收件箱，存放在 `~/.todo/inbox.md`，不属于任何项目，也没有完成状态。分拣后才会成为当前项目的 Project Task。
@@ -156,7 +160,12 @@ Capture 是个人收件箱，存放在 `~/.todo/inbox.md`，不属于任何项�
 cargo test --workspace
 cargo clippy --workspace --all-targets -- -D warnings
 pnpm typecheck && pnpm build
+pnpm e2e
 ```
+
+`pnpm e2e` 跑 Playwright 交互层回归。前端在非 Tauri 环境下走 mock 桥接，因此这套测试不需要 webview 或真实项目，覆盖视图路由、确认闸门与 diff 渲染；Rust 侧的契约由 `cargo test` 保证，两者刻意分工。
+
+注意 `vite preview` 默认只监听 `::1`，配置里显式绑定 `127.0.0.1`，否则健康检查永远超时。
 
 投影性能基准。必须使用 `--release`，debug 构建未经优化，数字没有参考价值：
 
