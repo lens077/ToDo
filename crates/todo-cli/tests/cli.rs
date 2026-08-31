@@ -238,3 +238,61 @@ fn missing_file_is_exit_three_and_usage_is_exit_two() {
     assert_eq!(todo(dir.path(), &["list", "--json"]).status.code(), Some(3));
     assert_eq!(todo(dir.path(), &["nope"]).status.code(), Some(2));
 }
+
+#[test]
+fn restore_without_yes_previews_the_diff_and_writes_nothing() {
+    // The confirmation step is the whole safety mechanism for bulk rewrites: a
+    // restore replaces the entire file, so a preview must never touch disk.
+    let dir = tempdir().unwrap();
+    assert!(todo(dir.path(), &["init"]).status.success());
+    assert!(todo(dir.path(), &["add", "first"]).status.success());
+    let after_add = fs::read_to_string(dir.path().join("TODO.md")).unwrap();
+
+    let preview = todo(dir.path(), &["restore", "1", "--json"]);
+    assert!(preview.status.success());
+    let value: serde_json::Value = serde_json::from_slice(&preview.stdout).unwrap();
+    assert_eq!(value["schema"], "todo.diff.v1");
+    assert_eq!(value["data"]["applied"], false);
+    assert!(
+        value["data"]["diff"]["added"].as_u64().unwrap() > 0,
+        "the preview must describe a real change"
+    );
+    assert_eq!(
+        fs::read_to_string(dir.path().join("TODO.md")).unwrap(),
+        after_add,
+        "a preview must not write"
+    );
+
+    let applied = todo(dir.path(), &["restore", "1", "--yes", "--json"]);
+    assert!(applied.status.success());
+    assert_ne!(
+        fs::read_to_string(dir.path().join("TODO.md")).unwrap(),
+        after_add
+    );
+}
+
+#[test]
+fn history_records_the_operation_behind_each_restore_point() {
+    let dir = tempdir().unwrap();
+    assert!(todo(dir.path(), &["init"]).status.success());
+    assert!(todo(dir.path(), &["add", "first"]).status.success());
+    let listed = todo(dir.path(), &["list", "--json"]);
+    let value: serde_json::Value = serde_json::from_slice(&listed.stdout).unwrap();
+    let id = value["data"]["tasks"][0]["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    assert!(todo(dir.path(), &["progress", &id, "60"]).status.success());
+
+    let output = todo(dir.path(), &["history", "--json"]);
+    let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(value["schema"], "todo.history.v1");
+    let ops: Vec<&str> = value["data"]["entries"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|entry| entry["op"].as_str().unwrap())
+        .collect();
+    assert!(ops.contains(&"progress"), "got {ops:?}");
+    assert!(ops.contains(&"add"), "got {ops:?}");
+}

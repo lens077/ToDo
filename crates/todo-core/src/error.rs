@@ -57,6 +57,16 @@ pub enum Error {
     InvalidCaptureFile { path: PathBuf, message: String },
     #[error("could not resolve the current user's home directory")]
     HomeDirectoryUnavailable,
+    #[error("history version {0} not found")]
+    HistoryVersionNotFound(u64),
+    #[error("could not encode history entry: {0}")]
+    HistoryEncode(String),
+}
+
+impl Error {
+    pub(crate) fn history_encode(source: serde_json::Error) -> Self {
+        Self::HistoryEncode(source.to_string())
+    }
 }
 
 pub type Result<T> = std::result::Result<T, Error>;

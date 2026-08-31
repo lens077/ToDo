@@ -3,6 +3,7 @@
 
 mod desktop;
 mod error;
+mod history;
 mod id;
 mod lock;
 mod model;
@@ -13,6 +14,10 @@ mod write;
 
 pub use desktop::*;
 pub use error::{Error, Result};
+pub use history::{
+    diff_document, diff_lines, DiffHunk, DiffKind, History, HistoryEntry, TextDiff, DEFAULT_KEEP,
+    STATE_DIR,
+};
 pub use id::{generate_task_id, DEFAULT_ID_LENGTH};
 pub use lock::{FileLockGuard, LockedWriter};
 pub use model::*;

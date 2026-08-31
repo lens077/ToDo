@@ -11,8 +11,8 @@ use std::{
 use clap::{Parser, Subcommand};
 use serde::Serialize;
 use todo_core::{
-    atomic_write, generate_task_id, parse_file, Change, Error, InsertPosition, LockedWriter,
-    ReconcileOptions, ReconcileReport, Reconciler, TokenKind,
+    atomic_write, generate_task_id, parse_file, Change, Error, History, InsertPosition,
+    LockedWriter, ReconcileOptions, ReconcileReport, Reconciler, TokenKind,
 };
 
 const TODO_TEMPLATE: &str = "---\ntodo-spec: 1\ncolumns:\n  - {id: todo, name: Todo}\n  - {id: doing, name: Doing}\n  - {id: done, name: Done, type: done}\n---\n\n# Project tasks\n\n## Todo\n\n## Doing\n\n## Done\n";
@@ -101,6 +101,24 @@ enum Command {
     Hooks {
         #[command(subcommand)]
         command: HooksCommand,
+    },
+    /// List restore points recorded before each write.
+    History {
+        #[arg(long, default_value_t = 20)]
+        limit: usize,
+        /// Delete all but the newest N restore points.
+        #[arg(long)]
+        prune_to: Option<usize>,
+    },
+    /// Show the left/right diff between a restore point and the current file.
+    Diff {
+        version: u64,
+    },
+    /// Restore a previous version. Prints the diff and does nothing without --yes.
+    Restore {
+        version: u64,
+        #[arg(long)]
+        yes: bool,
     },
 }
 
@@ -247,7 +265,155 @@ fn run(cli: &Cli) -> Result<u8, Error> {
         Command::Lint => lint(cli, &path),
         Command::Reconcile { apply, no_semantic } => reconcile(cli, &path, *apply, *no_semantic),
         Command::Hooks { command } => run_hooks(cli, command),
+        Command::History { limit, prune_to } => history_list(cli, &path, *limit, *prune_to),
+        Command::Diff { version } => show_diff(cli, &path, *version),
+        Command::Restore { version, yes } => restore(cli, &path, *version, *yes),
     }
+}
+
+#[derive(Serialize)]
+struct HistoryData {
+    entries: Vec<todo_core::HistoryEntry>,
+    pruned: usize,
+}
+
+#[derive(Serialize)]
+struct DiffData {
+    version: u64,
+    diff: todo_core::TextDiff,
+    applied: bool,
+}
+
+fn history_list(
+    cli: &Cli,
+    path: &Path,
+    limit: usize,
+    prune_to: Option<usize>,
+) -> Result<u8, Error> {
+    let history = History::for_file(path);
+    let pruned = match prune_to {
+        Some(keep) => history.prune(keep)?,
+        None => 0,
+    };
+    let mut entries = history.entries()?;
+    entries.reverse();
+    entries.truncate(limit);
+    emit(
+        cli,
+        "todo.history.v1",
+        HistoryData { entries, pruned },
+        |data| {
+            if data.entries.is_empty() {
+                return "no restore points yet".into();
+            }
+            let mut lines: Vec<String> = data
+                .entries
+                .iter()
+                .map(|entry| {
+                    format!(
+                        "v{:<6} {}  {:<14} {} bytes",
+                        entry.version, entry.at, entry.op, entry.bytes
+                    )
+                })
+                .collect();
+            if data.pruned > 0 {
+                lines.push(format!("pruned {} older restore point(s)", data.pruned));
+            }
+            lines.join("\n")
+        },
+    );
+    Ok(0)
+}
+
+/// Renders a diff for review. `version` is the left column, the current file the right.
+fn build_diff(path: &Path, version: u64) -> Result<todo_core::TextDiff, Error> {
+    let previous = History::for_file(path).read(version)?;
+    let current = std::fs::read_to_string(path).unwrap_or_default();
+    Ok(todo_core::diff_lines(&previous, &current))
+}
+
+fn diff_human(data: &DiffData) -> String {
+    let mut lines = vec![format!(
+        "left = v{} (restore point), right = current file",
+        data.version
+    )];
+    for hunk in &data.diff.hunks {
+        let left = hunk
+            .left_line
+            .map(|n| n.to_string())
+            .unwrap_or_else(|| "    ".into());
+        let right = hunk
+            .right_line
+            .map(|n| n.to_string())
+            .unwrap_or_else(|| "    ".into());
+        let marker = match hunk.kind {
+            todo_core::DiffKind::Context => ' ',
+            todo_core::DiffKind::Added => '+',
+            todo_core::DiffKind::Removed => '-',
+        };
+        lines.push(format!("{left:>5} {right:>5} {marker} {}", hunk.text));
+    }
+    lines.push(format!(
+        "{} line(s) only on the right, {} only on the left",
+        data.diff.added, data.diff.removed
+    ));
+    if !data.applied {
+        lines.push("nothing was written; re-run `todo restore <version> --yes` to apply".into());
+    }
+    lines.join("\n")
+}
+
+fn show_diff(cli: &Cli, path: &Path, version: u64) -> Result<u8, Error> {
+    let diff = build_diff(path, version)?;
+    emit(
+        cli,
+        "todo.diff.v1",
+        DiffData {
+            version,
+            diff,
+            applied: false,
+        },
+        diff_human,
+    );
+    Ok(0)
+}
+
+fn restore(cli: &Cli, path: &Path, version: u64, yes: bool) -> Result<u8, Error> {
+    let diff = build_diff(path, version)?;
+    // Without --yes this is a preview: a restore rewrites the whole file, so the
+    // caller sees exactly what changes before anything is written.
+    if !yes {
+        emit(
+            cli,
+            "todo.diff.v1",
+            DiffData {
+                version,
+                diff,
+                applied: false,
+            },
+            diff_human,
+        );
+        return Ok(0);
+    }
+    let content = History::for_file(path).read(version)?;
+    let writer = LockedWriter::new(path, Duration::from_millis(cli.lock_timeout_ms));
+    writer.replace_all("restore", &content)?;
+    emit(
+        cli,
+        "todo.diff.v1",
+        DiffData {
+            version,
+            diff,
+            applied: true,
+        },
+        |data| {
+            format!(
+                "restored v{}; the replaced state is itself a new restore point",
+                data.version
+            )
+        },
+    );
+    Ok(0)
 }
 
 fn run_hooks(cli: &Cli, command: &HooksCommand) -> Result<u8, Error> {
@@ -372,7 +538,7 @@ fn add(
         line.push_str(&format!(" !{priority}"));
     }
     let writer = LockedWriter::new(path, Duration::from_millis(cli.lock_timeout_ms));
-    let result = writer.update(|_| {
+    let result = writer.update_labeled("add", |_| {
         Ok(vec![Change::InsertTask {
             column: Some(column.clone()),
             position: InsertPosition::End,
@@ -395,7 +561,7 @@ fn add(
 fn toggle(cli: &Cli, path: &Path, id: &str, completed: bool) -> Result<u8, Error> {
     let writer = LockedWriter::new(path, Duration::from_millis(cli.lock_timeout_ms));
     let id_owned = id.to_string();
-    let result = writer.update(|document| {
+    let result = writer.update_labeled(if completed { "done" } else { "undone" }, |document| {
         let index = index_of(document, &id_owned)?;
         let mut changes = vec![Change::SetCompleted {
             task: index,
@@ -471,7 +637,7 @@ fn progress(
     let writer = LockedWriter::new(path, Duration::from_millis(cli.lock_timeout_ms));
     let id_owned = id.to_string();
     let note_owned = note.map(str::to_string);
-    let result = writer.update(|document| {
+    let result = writer.update_labeled("progress", |document| {
         let index = index_of(document, &id_owned)?;
         let mut changes = vec![Change::SetMetadata {
             task: index,
@@ -494,7 +660,7 @@ fn fail(cli: &Cli, path: &Path, id: &str, note: Option<&str>) -> Result<u8, Erro
     let writer = LockedWriter::new(path, Duration::from_millis(cli.lock_timeout_ms));
     let id_owned = id.to_string();
     let note_owned = note.map(str::to_string);
-    let result = writer.update(|document| {
+    let result = writer.update_labeled("fail", |document| {
         let index = index_of(document, &id_owned)?;
         // Recording a failure never unchecks the task: status only moves forward
         // (spec §6.5.4). A failure on a done task is a signal for reconciliation,
@@ -530,7 +696,7 @@ fn set_note(
     let writer = LockedWriter::new(path, Duration::from_millis(cli.lock_timeout_ms));
     let id_owned = id.to_string();
     let text_owned = text.map(str::to_string);
-    let result = writer.update(|document| {
+    let result = writer.update_labeled("note", |document| {
         let index = index_of(document, &id_owned)?;
         Ok(vec![match &text_owned {
             Some(text) => Change::SetNote {
@@ -549,7 +715,7 @@ fn evidence(cli: &Cli, path: &Path, id: &str, from: &str, to: &str) -> Result<u8
     let raw = format!("🔗{from}..{to}");
     let writer = LockedWriter::new(path, Duration::from_millis(cli.lock_timeout_ms));
     let id_owned = id.to_string();
-    let result = writer.update(|document| {
+    let result = writer.update_labeled("evidence", |document| {
         let index = document
             .tasks
             .iter()
@@ -697,7 +863,7 @@ fn reconcile(cli: &Cli, path: &Path, apply: bool, no_semantic: bool) -> Result<u
     let mut applied = 0;
     if apply && applicable > 0 {
         let writer = LockedWriter::new(path, Duration::from_millis(cli.lock_timeout_ms));
-        writer.update(|current| {
+        writer.update_labeled("reconcile-apply", |current| {
             let fresh = Reconciler::new(".").reconcile(current, &options)?;
             let changes: Vec<_> = fresh
                 .confirmed

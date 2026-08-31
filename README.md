@@ -68,8 +68,20 @@ CLI 在当前工作目录查找 `TODO.md`，不会向上级目录搜索。把 `t
 | `todo evidence <id> --from <sha> [--to <sha>]` | 写入 Git 物证，`--to` 默认 `HEAD` |
 | `todo reconcile [--apply] [--no-semantic]` | 对账；默认只报告 |
 | `todo hooks preview\|install\|uninstall\|instructions [--agent claude\|codex\|all]` | 管理 agent 接入 |
+| `todo history [--limit <n>] [--prune-to <n>]` | 列出还原点 |
+| `todo diff <版本>` | 还原点与当前文件的左右对比 |
+| `todo restore <版本> [--yes]` | 恢复到某个版本；不带 `--yes` 只预览 |
 
 部分完成与部分失败的语法见 `docs/format-spec-v1.md` §3.1。
+
+## 版本历史
+
+每次写入前自动把改动前的文件存为还原点，放在 `TODO.md` 同级的 `.todo/history/`。该目录用自带的 `.gitignore` 自我屏蔽，不进用户的 git 历史。
+
+- 还原点按序号编号，不做内容寻址：哈希碰撞会让恢复静默返回错误内容，这是恢复机制唯一不能有的故障。
+- 无实际改动的写入不记录，避免重复快照把真正的还原点挤出保留窗口。
+- `todo restore` 本身也是一次写入，被它替换掉的状态同样成为新的还原点，所以恢复可以再撤销。
+- 默认保留 200 个，用 `todo history --prune-to <n>` 清理。
 
 全局选项：`--json` 输出稳定 envelope，`--lock-timeout-ms` 设置文件锁超时，默认 2000 毫秒。
 

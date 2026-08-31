@@ -92,6 +92,20 @@ pub enum DesktopIntent {
     },
 }
 
+impl DesktopIntent {
+    /// Short operation name recorded in version history.
+    pub fn label(&self) -> &'static str {
+        match self {
+            Self::AddTask { .. } => "board-add",
+            Self::SetCompleted {
+                completed: true, ..
+            } => "board-done",
+            Self::SetCompleted { .. } => "board-undone",
+            Self::MoveTask { .. } => "board-move",
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct DesktopBackend {
     project: Option<PathBuf>,
@@ -143,8 +157,12 @@ impl DesktopBackend {
         let path = self.project.as_ref().ok_or(Error::NotTaskFile)?;
         let writer = LockedWriter::new(path, self.lock_timeout);
         let mut created_task_id = None;
-        let document =
-            writer.update(|document| intent_changes(document, &intent, &mut created_task_id))?;
+        // Label the restore point with the desktop action that caused it, so a user
+        // scanning history sees "board-move" rather than an anonymous "update".
+        let label = intent.label();
+        let document = writer.update_labeled(label, |document| {
+            intent_changes(document, &intent, &mut created_task_id)
+        })?;
         Ok((document, created_task_id))
     }
 
