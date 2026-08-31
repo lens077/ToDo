@@ -24,6 +24,7 @@ columns:
 - [ ] hooks context 改为跨平台进程树终止 <!--t:z5t7gq--> #cli #agents !2 ^7000
 - [ ] 评估 list 接入 SQLite 投影的触发条件 <!--t:b6r1vy--> #cli #perf !3 ^8000
 - [ ] 产出可分发的桌面端 release 构建 <!--t:d3l8hn--> #desktop #release !3 ^9000
+- [ ] 补前端 Playwright 交互层回归并纳入 CI <!--t:3zvv9u--> #desktop #test !2
 
 ## Doing
 - [ ] 用 todo 自身管理本项目后续开发 <!--t:1pevv2--> #process !2 🔗2e112404a57360d0d054543cbbdff4ace9862afd..9142b5b6dfed7ee34d7991c60a882c398496a43a

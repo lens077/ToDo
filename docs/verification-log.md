@@ -189,3 +189,40 @@ T3 验收时记录的「`init/adopt` 未走 `LockedWriter`，存在 TOCTOU 窗�
 实现要点：`init` 用 `create_new` 把创建窗口交给内核裁决；`adopt` 因为是重写既有文件，改为先取 advisory lock 再读，写入走 `atomic_write`。回归测试使用真实多进程，因为该竞态只存在于进程之间，进程内测试会给出虚假信心。
 
 验证方自身的错误：首个探针让 24 个进程并发 `echo >>` 同一文件统计成功数，实测会丢行，导致高并发下反而「测不出问题」。改为每个胜出者写独立标记文件后结果才可信。**这个假阴性差点让我判定竞态不存在。**
+
+## 桌面端命令层 e2e 契约测试(通过)
+
+此前桌面端没有任何自动化测试，Rust 与 TypeScript 之间的契约只靠人工逐项审查。而已发现的桌面缺陷**全部是 shape mismatch，没有一个是逻辑错误**，因此测试断言序列化后的 JSON，而不是 Rust 值——断言 Rust 结构体一个历史缺陷都抓不到。
+
+测试位于 `apps/desktop/src-tauri/tests/command_contract.rs`，共 11 项，覆盖 snapshot、mutation、Capture、Triage 与 status 全部命令，并直接使用 `apps/desktop/src/lib/desktop.ts` 中的真实 payload 字面量。
+
+为避免出现「测试路径」与「生产路径」两份实现，命令体已抽到 `ops::DesktopOps`，`#[tauri::command]` 退化为薄适配层。测试驱动的是生产同一份代码。
+
+### 反证：注入缺陷确认测试会变红
+
+绿色测试本身不构成证据。以下每类缺陷都单独注入、确认变红后还原：
+
+| 注入的缺陷 | 结果 |
+|---|---|
+| `MoveTarget`/`DesktopIntent` 的 serde tag 由 `type` 改为 `kind` | ✅ 变红 |
+| `snapshot.project_path` 改为 camelCase | ✅ 变红(2 项) |
+| `TriageResult` 的 `task_id` 改名 | ✅ 变红 |
+| `CommandValue` 去掉 `status` tag 改为 untagged | ✅ 变红(2 项) |
+| `ShortcutStatus` 不再是 tagged union | ✅ 变红 |
+
+这五类正是此前实际发生过的 bridge mismatch。
+
+### 覆盖的产品红线
+
+除 shape 外，测试还锁住三条行为红线：完成状态写回后未触碰行逐字节保留且行数不变；marker-like 与多行 Capture 无损往返；截断的 inbox 必须报错而不是静默丢记录。
+
+| 门禁 | 结果 |
+|---|---|
+| `cargo test --workspace` | ✅ 70 项通过 |
+| `cargo clippy --workspace --all-targets -- -D warnings` | ✅ 干净 |
+| `cargo fmt --all -- --check` | ✅ 干净 |
+| `pnpm typecheck && pnpm build` | ✅ 通过 |
+
+未重建 `.app` bundle，人工验收对象保持不变。
+
+遗留：前端交互层(Playwright)自动化尚未纳入 CI，Tauri IPC 的实际序列化由本测试的 `wire()` 以同一 serde 路径模拟，而非经过真实 webview。
