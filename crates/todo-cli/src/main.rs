@@ -11,8 +11,8 @@ use std::{
 use clap::{Parser, Subcommand};
 use serde::Serialize;
 use todo_core::{
-    generate_task_id, parse_file, Change, Error, InsertPosition, LockedWriter, ReconcileOptions,
-    ReconcileReport, Reconciler, TokenKind,
+    atomic_write, generate_task_id, parse_file, Change, Error, InsertPosition, LockedWriter,
+    ReconcileOptions, ReconcileReport, Reconciler, TokenKind,
 };
 
 const TODO_TEMPLATE: &str = "---\ntodo-spec: 1\ncolumns:\n  - {id: todo, name: Todo}\n  - {id: doing, name: Doing}\n  - {id: done, name: Done, type: done}\n---\n\n# Project tasks\n\n## Todo\n\n## Doing\n\n## Done\n";
@@ -261,22 +261,41 @@ fn hooks_human(result: &hooks::HookResult) -> String {
 }
 
 fn init(cli: &Cli, path: &Path, adopt: bool) -> Result<u8, Error> {
-    if path.exists() {
-        if !adopt {
-            return Err(Error::FileAlreadyExists {
-                path: path.to_path_buf(),
-            });
+    // A legal v1 file does not exist yet, so `LockedWriter::update` cannot be used
+    // for creation. `create_new` closes the create window in the kernel instead:
+    // exactly one racing caller creates the file, every other one sees AlreadyExists.
+    match fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(path)
+    {
+        Ok(mut file) => {
+            use std::io::Write;
+            file.write_all(TODO_TEMPLATE.as_bytes())
+                .map_err(|source| todo_io(path, source))?;
+            file.sync_all().map_err(|source| todo_io(path, source))?;
         }
-        let original = fs::read_to_string(path).map_err(|source| todo_io(path, source))?;
-        if original.starts_with("---\n") {
-            return Err(Error::InvalidTaskLine(
-                "TODO.md already has frontmatter".into(),
-            ));
+        Err(source) if source.kind() == std::io::ErrorKind::AlreadyExists => {
+            if !adopt {
+                return Err(Error::FileAlreadyExists {
+                    path: path.to_path_buf(),
+                });
+            }
+            // Adoption rewrites an existing file, so it takes the same advisory lock
+            // every other writer uses and re-reads under that lock. Reading before
+            // locking would let a concurrent adopt clobber the user's tasks.
+            let writer = LockedWriter::new(path, Duration::from_millis(cli.lock_timeout_ms));
+            let _guard = writer.lock()?;
+            let original = fs::read_to_string(path).map_err(|source| todo_io(path, source))?;
+            if original.starts_with("---\n") {
+                return Err(Error::InvalidTaskLine(
+                    "TODO.md already has frontmatter".into(),
+                ));
+            }
+            let adopted = adopt_source(&original)?;
+            atomic_write(path, adopted.as_bytes())?;
         }
-        let adopted = adopt_source(&original)?;
-        fs::write(path, adopted).map_err(|source| todo_io(path, source))?;
-    } else {
-        fs::write(path, TODO_TEMPLATE).map_err(|source| todo_io(path, source))?;
+        Err(source) => return Err(todo_io(path, source)),
     }
     emit(
         cli,

@@ -63,6 +63,71 @@ fn init_never_overwrites_without_explicit_adopt() {
     assert!(adopted.contains("<!--t:"));
 }
 
+/// Regression: `init` used to check `path.exists()` and then `fs::write`, so two
+/// processes could both pass the check and both write. Measured at 5/40 rounds
+/// before the fix. The invariant is that exactly one caller may succeed.
+#[test]
+fn concurrent_init_has_exactly_one_winner() {
+    for _ in 0..12 {
+        let dir = tempdir().unwrap();
+        let workers: Vec<_> = (0..8)
+            .map(|_| {
+                let path = dir.path().to_path_buf();
+                std::thread::spawn(move || {
+                    Command::new(env!("CARGO_BIN_EXE_todo"))
+                        .current_dir(&path)
+                        .arg("init")
+                        .output()
+                        .unwrap()
+                        .status
+                        .success()
+                })
+            })
+            .collect();
+        let winners = workers
+            .into_iter()
+            .map(|worker| worker.join().unwrap())
+            .filter(|succeeded| *succeeded)
+            .count();
+        assert_eq!(winners, 1, "exactly one init must create the file");
+        let created = fs::read_to_string(dir.path().join("TODO.md")).unwrap();
+        assert_eq!(created, TODO_TEMPLATE_EXPECTED);
+    }
+}
+
+/// Regression: `init --adopt` read the file outside any lock, so a concurrent
+/// adopt could overwrite it with a snapshot taken before the other write.
+/// Measured losing real user tasks in 2/40 rounds before the fix.
+#[test]
+fn concurrent_adopt_never_loses_user_tasks() {
+    for _ in 0..12 {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("TODO.md");
+        fs::write(&path, "- [ ] keep A\n- [ ] keep B\n").unwrap();
+        let workers: Vec<_> = (0..6)
+            .map(|_| {
+                let dir_path = dir.path().to_path_buf();
+                std::thread::spawn(move || {
+                    Command::new(env!("CARGO_BIN_EXE_todo"))
+                        .current_dir(&dir_path)
+                        .args(["init", "--adopt"])
+                        .output()
+                        .unwrap();
+                })
+            })
+            .collect();
+        for worker in workers {
+            worker.join().unwrap();
+        }
+        let adopted = fs::read_to_string(&path).unwrap();
+        assert!(adopted.contains("keep A"), "lost user task A: {adopted}");
+        assert!(adopted.contains("keep B"), "lost user task B: {adopted}");
+        assert!(adopted.contains("todo-spec: 1"));
+    }
+}
+
+const TODO_TEMPLATE_EXPECTED: &str = "---\ntodo-spec: 1\ncolumns:\n  - {id: todo, name: Todo}\n  - {id: doing, name: Doing}\n  - {id: done, name: Done, type: done}\n---\n\n# Project tasks\n\n## Todo\n\n## Doing\n\n## Done\n";
+
 #[test]
 fn lint_has_stable_exit_six_and_json_issues() {
     let dir = tempdir().unwrap();
