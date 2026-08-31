@@ -1,0 +1,144 @@
+{
+  "name": "readme-adversarial",
+  "id": "readme-adversarial",
+  "description": "对抗评审:调研文档/dk/ 下 3 份理解文档各自作为立场,由 3 个 GPT 质询方对当前 README.md 发起证据驱动质询;3 个 Claude 应战方分别与之多轮攻防;captain 亲自终审。每场对抗留下对抗文档于 调研文档/dk/对抗/。",
+  "captainSessionId": "session-327f57b5-b34e-4eec-b2c4-7f5718d90043",
+  "createdAt": 1788177438859,
+  "members": [
+    {
+      "id": "b1476426-76d7-43d1-bdc5-4eddce3f0cb7",
+      "name": "gpt-1",
+      "role": "质询方:以理解文档1(对照docx)立场对README发起对抗",
+      "provider": "openai",
+      "model": "gpt-5.6-sol",
+      "reasoningEffort": "max",
+      "joinedAt": 1788177450775,
+      "status": "idle"
+    },
+    {
+      "id": "c648f858-154e-4906-bde6-a62286547916",
+      "name": "gpt-2",
+      "role": "质询方:以理解文档2(对照1.md)立场对README发起对抗",
+      "provider": "openai",
+      "model": "gpt-5.6-sol",
+      "reasoningEffort": "max",
+      "joinedAt": 1788177450788,
+      "status": "idle"
+    },
+    {
+      "id": "3c1a335d-70dc-4d71-ba2f-fed5dc9a521e",
+      "name": "gpt-3",
+      "role": "质询方:以理解文档3(对照评审报告)立场对README发起对抗",
+      "provider": "openai",
+      "model": "gpt-5.6-sol",
+      "reasoningEffort": "max",
+      "joinedAt": 1788177450801,
+      "status": "idle"
+    },
+    {
+      "id": "6585c3bf-240a-4699-9b24-1b829be4e165",
+      "name": "claude-1",
+      "role": "应战方:与gpt-1多轮攻防并撰写对抗实录",
+      "provider": "anthropic",
+      "model": "claude-fable-5",
+      "reasoningEffort": "max",
+      "joinedAt": 1788177450830,
+      "status": "idle"
+    },
+    {
+      "id": "9a00ad77-cc6e-4467-886f-f13da63174ba",
+      "name": "claude-2",
+      "role": "应战方:与gpt-2多轮攻防并撰写对抗实录",
+      "provider": "anthropic",
+      "model": "claude-fable-5",
+      "reasoningEffort": "max",
+      "joinedAt": 1788177450855,
+      "status": "idle"
+    },
+    {
+      "id": "0e681a12-bde6-4633-a9ff-b689d393c6a2",
+      "name": "claude-3",
+      "role": "应战方:与gpt-3多轮攻防并撰写对抗实录",
+      "provider": "anthropic",
+      "model": "claude-fable-5",
+      "reasoningEffort": "max",
+      "joinedAt": 1788177450874,
+      "status": "idle"
+    }
+  ],
+  "tasks": [
+    {
+      "id": "t1",
+      "subject": "对抗1·质询:理解文档1 vs README",
+      "description": "以 调研文档/dk/我的理解-调研方案与当前实现对照.md 为立场,对仓库根 README.md 发起证据驱动质询,产出 调研文档/dk/对抗/对抗1-GPT质询README.md,攻击点编号 A1、A2…。详细要求见 captain 派发消息。",
+      "status": "completed",
+      "assignee": "gpt-1",
+      "dependencies": [],
+      "createdAt": 1788177463282,
+      "updatedAt": 1788178952222,
+      "output": "已完成并写入 `调研文档/dk/对抗/对抗1-GPT质询README.md`。共 12 个可回查攻击点（6 高、6 中）。最重三条：A3 `init --adopt` 的逐行扫描会改写代码示例并让自定义二级标题下任务在默认列表隐身；A4 README 声称 Rust 1.74，但当前锁定 CLI/桌面依赖分别要求至少 1.85/1.88；A6 不仅 preview，hooks install/uninstall 也会回显可能含 API 密钥的完整 Claude 配置。另以 A1/A2 质询对账能力过度表述及快速开始未激活证据闭环。"
+    },
+    {
+      "id": "t2",
+      "subject": "对抗2·质询:理解文档2 vs README",
+      "description": "以 调研文档/dk/我的理解-调研方案与当前实现对照2.md 为立场,对仓库根 README.md 发起证据驱动质询,产出 调研文档/dk/对抗/对抗2-GPT质询README.md,攻击点编号 B1、B2…。详细要求见 captain 派发消息。",
+      "status": "completed",
+      "assignee": "gpt-2",
+      "dependencies": [],
+      "createdAt": 1788177463293,
+      "updatedAt": 1788178918208,
+      "output": "已完成 `调研文档/dk/对抗/对抗2-GPT质询README.md`，共 12 个可证伪攻击点（高 6 / 中 5 / 低 1）。最重三条：B1 README 宣称 Rust 1.74，但锁定依赖要求 1.88，快速开始硬失败；B3 默认 semantic 对账未接 provider，`--no-semantic` 是空开关却被写成核对代码实际状态；B5 OptimisticLock 未接 CLI/桌面主链路，外部修改保护与退出码 5 属未兑现安全契约。"
+    },
+    {
+      "id": "t3",
+      "subject": "对抗3·质询:理解文档3 vs README",
+      "description": "以 调研文档/dk/我的理解-调研方案与当前实现对照3.md 为立场,对仓库根 README.md 发起证据驱动质询,产出 调研文档/dk/对抗/对抗3-GPT质询README.md,攻击点编号 C1、C2…。详细要求见 captain 派发消息。",
+      "status": "completed",
+      "assignee": "gpt-3",
+      "dependencies": [],
+      "createdAt": 1788177463300,
+      "updatedAt": 1788179843362,
+      "output": "已完成并写入 `调研文档/dk/对抗/对抗3-GPT质询README.md`。共 16 个可回查攻击点（高 9 / 中 7）。最重三条：C1 README 把结构/Git 物证检查写成核对代码实际状态，但 CLI 未接语义完成度实现；C2 non-Git/shallow/partial 下 Git 检查被跳过，默认人类输出仍可报 no findings 且 exit 0；C16 README 承诺的外部修改检测未接入 CLI/桌面 LockedWriter 主链路，存在覆盖非守约编辑器更新的竞态窗口。"
+    },
+    {
+      "id": "t4",
+      "subject": "对抗1·攻防:Claude vs gpt-1",
+      "description": "核实 对抗1-GPT质询README.md 的每条攻击点,与 gpt-1 至少两轮攻防,产出 调研文档/dk/对抗/对抗1-攻防实录.md(含逐条终局裁定)。详细要求见 captain 派发消息。",
+      "status": "completed",
+      "assignee": "claude-1",
+      "dependencies": [
+        "t1"
+      ],
+      "createdAt": 1788177507811,
+      "updatedAt": 1788180310185,
+      "output": "成立8(A3/A4/A5/A6/A8/A9/A11/A12)/部分成立4(A1/A2/A7/A10)/不成立0;一轮交锋即收敛,gpt-1 对 12 条 0 坚持(5 接受 7 修正),严重度从自评 6高6中 校正为 2高7中3低。最重三条:①A3(高)`init --adopt` 逐行前缀扫描活体证实会改写代码围栏内示例(追加可见 <!--t:id-->)并让自定义 `##` 标题下真实任务默认隐身,直接证伪 README:122「只修改自己认识的行」;②A6(高)hooks install/uninstall 与 preview 同面回显完整 settings.json,活体证实含 API 密钥原文,而 README:75 只警告 preview;③A4(中,事实错误必修)README「Rust 1.74」被锁定依赖证伪——clap 4.6.6(MSRV 1.85)直连 todo-cli,桌面链需 1.88,连 CLI-only 构建都过不了 1.74。实录:调研文档/dk/对抗/对抗1-攻防实录.md;第一轮详版:调研文档/dk/对抗/round/claude1-r1.md。"
+    },
+    {
+      "id": "t5",
+      "subject": "对抗2·攻防:Claude vs gpt-2",
+      "description": "核实 对抗2-GPT质询README.md 的每条攻击点,与 gpt-2 至少两轮攻防,产出 调研文档/dk/对抗/对抗2-攻防实录.md(含逐条终局裁定)。详细要求见 captain 派发消息。",
+      "status": "completed",
+      "assignee": "claude-2",
+      "dependencies": [
+        "t2"
+      ],
+      "createdAt": 1788177507817,
+      "updatedAt": 1788180558638,
+      "output": "成立6(B1/B5/B6/B7/B9/B10)/部分成立5(B2/B3/B4/B11/B12)/不成立1(B8,gpt-2自撤)。两轮收敛,gpt-2 全部接受或修正,严重度从自评6高砍到共识2高(B1/B5)。最重三条结论:①B1 成立/高——README 宣称 Rust 1.74,实测真装 1.74.0 后 workspace 与 todo-cli/todo-core 单成员均 exit 101,锁定图 27 包用 edition 2024(manifest 解析即死)、87 包 rust-version>1.74,真实 MSRV≥1.88;②B3 部分成立/高→中——语义对账空开关坐实(Reconciler 恒 semantic:None,实测 --no-semantic 输出逐字节相同、无 skipped 提示),但 README 第7行\"用 Git 物证\"限定手段、全文无语义承诺,\"过度承诺\"系把立场文档叙事当 README 罪状;③B5 成立/高——OptimisticLock 仅测试引用,CLI/桌面全走 LockedWriter(无外部修改复核),退出码5无可达路径,README 第124行为现状式虚假,且即使接线 mtime+hash 仍残留 check→rename TOCTOU,修法=接线+改措辞。实录:调研文档/dk/对抗/对抗2-攻防实录.md;第一轮详细版:调研文档/dk/对抗/round/claude2-r1.md。"
+    },
+    {
+      "id": "t6",
+      "subject": "对抗3·攻防:Claude vs gpt-3",
+      "description": "核实 对抗3-GPT质询README.md 的每条攻击点,与 gpt-3 至少两轮攻防,产出 调研文档/dk/对抗/对抗3-攻防实录.md(含逐条终局裁定)。详细要求见 captain 派发消息。",
+      "status": "completed",
+      "assignee": "claude-3",
+      "dependencies": [
+        "t3"
+      ],
+      "createdAt": 1788177507823,
+      "updatedAt": 1788181461557,
+      "output": "对抗3完成:成立8(C2 C3 C5 C7 C10 C14 C15 C16)/部分成立7(C1 C4 C6 C8 C9 C11 C12)/不成立1(C13,gpt-3撤回)。共识严重度:高3(C2 C5 C16)+分歧高1(C7留档:gpt高/claude中);中6;低5。gpt自评9高7中被砍至3高。最重三条结论:①C2成立/高——沙箱实测同一revert仓库,full clone报confirmed: evidence-reverted exit 6,shallow clone(CI常态)绿色exit 0且hooks注入清零,仅--json有skipped字段;README须写明Git+完整历史前置。②C16成立/高——OptimisticLock全仓仅测试调用,生产exit 5死码,spec §4.3红线未落实,README 124行描述不会发生的行为;边界共识:协作写入者安全真实(16进程实测),无界窗口限reconcile --apply(gpt反驳我方「毫秒级」成立,我方让步)。③C1部分成立/中(自高降级)——物证核对真实有效(实测检出evidence-reverted),错在--no-semantic零差异未标注与「实际状态」外延过宽,gpt撤回「未来态冒充现在时」。实录:调研文档/dk/对抗/对抗3-攻防实录.md;轮次:round/claude3-r1.md、r2.md。两轮交锋无拉锯,gpt让步12处+撤回1条,我方让步2处(C16窗口表述、C7一条论据),存留分歧仅C7严重度(已留档双方最强论据)。"
+    }
+  ],
+  "taskSeq": 6
+}
