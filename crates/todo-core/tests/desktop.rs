@@ -405,3 +405,39 @@ fn today_bands_are_ordered_by_priority_then_due_then_started() {
          missing priority last"
     );
 }
+
+#[test]
+fn a_custom_ranker_replaces_the_default_ordering() {
+    // The paid seam: a hosted ranker plugs in here instead of replacing the view,
+    // so the free tier always has a complete ordering rather than an unsorted list.
+    #[derive(Debug)]
+    struct ReverseAlphabetical;
+    impl todo_core::TaskRanker for ReverseAlphabetical {
+        fn rank(&self, tasks: &mut [todo_core::DesktopTask]) {
+            tasks.sort_by(|a, b| b.body.cmp(&a.body));
+        }
+    }
+
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("TODO.md");
+    std::fs::write(
+        &path,
+        "---\ntodo-spec: 1\ncolumns:\n  - {id: todo, name: Todo}\n---\n\n## Todo\n\n\
+- [ ] alpha <!--t:aaaaaa--> !1 📅2026-08-20\n\
+- [ ] zulu <!--t:bbbbbb--> !3 📅2026-08-20\n",
+    )
+    .unwrap();
+
+    let mut backend = todo_core::DesktopBackend::new(std::time::Duration::from_millis(2000))
+        .with_ranker(std::sync::Arc::new(ReverseAlphabetical));
+    let snapshot = backend.open_project(path.to_str().unwrap()).unwrap();
+
+    let bodies: Vec<_> = snapshot
+        .today
+        .overdue
+        .iter()
+        .map(|task| task.body.clone())
+        .collect();
+    // Default ordering would put the P1 "alpha" first; the custom ranker wins.
+    assert_eq!(bodies, vec!["zulu", "alpha"]);
+}

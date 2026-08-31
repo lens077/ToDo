@@ -117,6 +117,7 @@ pub struct DesktopBackend {
     project: Option<PathBuf>,
     lock_timeout: Duration,
     clock: Arc<dyn Clock>,
+    ranker: Arc<dyn TaskRanker + Send + Sync>,
 }
 
 impl Default for DesktopBackend {
@@ -135,7 +136,14 @@ impl DesktopBackend {
             project: None,
             lock_timeout,
             clock,
+            ranker: Arc::new(DefaultRanker),
         }
+    }
+
+    /// Swaps in an alternative ordering, such as a hosted ranker.
+    pub fn with_ranker(mut self, ranker: Arc<dyn TaskRanker + Send + Sync>) -> Self {
+        self.ranker = ranker;
+        self
     }
 
     pub fn open_project(&mut self, path: impl AsRef<Path>) -> Result<DesktopSnapshot> {
@@ -204,7 +212,7 @@ impl DesktopBackend {
         // The landing view answers "what should I do now", so each band is ordered
         // by urgency rather than by position in the file.
         for band in [&mut view.overdue, &mut view.today, &mut view.upcoming] {
-            sort_by_urgency(band);
+            self.ranker.rank(band);
         }
         let hash = document
             .snapshot
@@ -339,6 +347,29 @@ fn task_view(task: &crate::Task) -> DesktopTask {
         progress: task.progress(),
         failed_on: task.failure().map(str::to_string),
         note: task.note.as_ref().map(|note| note.text.clone()),
+    }
+}
+
+/// Supplies an ordering for a Today band.
+///
+/// The built-in implementation is deterministic and free. A hosted ranker that
+/// weighs dependencies, estimated effort and recent activity is the paid seam:
+/// it plugs in here rather than replacing the view, so the free tier keeps a
+/// complete ordering and never degrades into an unsorted list when no ranker is
+/// configured.
+pub trait TaskRanker: std::fmt::Debug {
+    /// Reorders `tasks` in place. Must be a total order and must neither add nor
+    /// drop entries — the caller renders exactly what it passed in.
+    fn rank(&self, tasks: &mut [DesktopTask]);
+}
+
+/// Priority, then due date, then work already started. Always available.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct DefaultRanker;
+
+impl TaskRanker for DefaultRanker {
+    fn rank(&self, tasks: &mut [DesktopTask]) {
+        sort_by_urgency(tasks);
     }
 }
 
