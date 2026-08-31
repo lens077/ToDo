@@ -1,10 +1,11 @@
+pub mod ops;
 mod watch;
 
 use serde::Serialize;
 use std::{
     fmt::Display,
     path::PathBuf,
-    sync::{Arc, Mutex},
+    sync::Mutex,
     time::{Duration, Instant},
 };
 use tauri::{Emitter, Manager, State};
@@ -15,8 +16,7 @@ use todo_core::{
 use watch::{TargetFileWatcher, WatchSignal};
 
 struct AppState {
-    backend: Arc<Mutex<DesktopBackend>>,
-    capture_store: CaptureStore,
+    ops: ops::DesktopOps,
     watcher: Mutex<Option<TargetFileWatcher>>,
     status: Mutex<DesktopStatus>,
 }
@@ -56,7 +56,7 @@ pub enum CommandValue<T> {
 }
 
 impl<T> CommandValue<T> {
-    fn from_result<E: Display>(result: Result<T, E>) -> Self {
+    pub fn from_result<E: Display>(result: Result<T, E>) -> Self {
         match result {
             Ok(value) => Self::Available { value },
             Err(error) => Self::Unavailable {
@@ -72,45 +72,24 @@ fn open_project(
     state: State<'_, AppState>,
     path: String,
 ) -> Result<DesktopSnapshot, String> {
-    let snapshot = {
-        let mut backend = state
-            .backend
-            .lock()
-            .map_err(|_| "desktop backend lock is poisoned".to_string())?;
-        backend
-            .open_project(&path)
-            .map_err(|error| error.to_string())?
-    };
+    let snapshot = state.ops.open_project(&path)?;
     start_watcher(&app, &state, PathBuf::from(&snapshot.project_path))?;
     Ok(snapshot)
 }
 
 #[tauri::command]
 fn snapshot(state: State<'_, AppState>) -> Result<DesktopSnapshot, String> {
-    state
-        .backend
-        .lock()
-        .map_err(|_| "desktop backend lock is poisoned".to_string())?
-        .snapshot()
-        .map_err(|error| error.to_string())
+    state.ops.snapshot()
 }
 
 #[tauri::command]
 fn mutate(state: State<'_, AppState>, intent: DesktopIntent) -> Result<DesktopSnapshot, String> {
-    state
-        .backend
-        .lock()
-        .map_err(|_| "desktop backend lock is poisoned".to_string())?
-        .mutate(intent)
-        .map_err(|error| error.to_string())
+    state.ops.mutate(intent)
 }
 
 #[tauri::command]
 fn capture_list(state: State<'_, AppState>) -> Result<Vec<Capture>, String> {
-    state
-        .capture_store
-        .list()
-        .map_err(|error| error.to_string())
+    state.ops.capture_list()
 }
 
 #[tauri::command]
@@ -118,19 +97,12 @@ fn capture_append(
     state: State<'_, AppState>,
     text: String,
 ) -> Result<CaptureAppendResponse, String> {
-    let (capture, captures) = state
-        .capture_store
-        .append_with_snapshot(&text)
-        .map_err(|error| error.to_string())?;
-    Ok(CaptureAppendResponse { capture, captures })
+    state.ops.capture_append(&text)
 }
 
 #[tauri::command]
 fn capture_delete(state: State<'_, AppState>, id: String) -> Result<Vec<Capture>, String> {
-    state
-        .capture_store
-        .delete(&id)
-        .map_err(|error| error.to_string())
+    state.ops.capture_delete(&id)
 }
 
 #[tauri::command]
@@ -139,24 +111,7 @@ fn capture_triage(
     id: String,
     column: Option<String>,
 ) -> Result<CaptureTriageResponse, String> {
-    let (result, snapshot) = {
-        let mut backend = state
-            .backend
-            .lock()
-            .map_err(|_| "desktop backend lock is poisoned".to_string())?;
-        let result = state
-            .capture_store
-            .triage_to_task(&id, &mut *backend, column.as_deref())
-            .map_err(|error| error.to_string())?;
-        let snapshot = CommandValue::from_result(backend.snapshot());
-        (result, snapshot)
-    };
-    let captures = CommandValue::from_result(state.capture_store.list());
-    Ok(CaptureTriageResponse {
-        result,
-        snapshot,
-        captures,
-    })
+    state.ops.capture_triage(&id, column.as_deref())
 }
 
 #[tauri::command]
@@ -189,7 +144,7 @@ fn start_watcher(
     state: &State<'_, AppState>,
     path: PathBuf,
 ) -> Result<(), String> {
-    let backend = state.backend.clone();
+    let backend = state.ops.backend.clone();
     let handle = app.clone();
     let watcher =
         TargetFileWatcher::spawn(
@@ -267,8 +222,7 @@ pub fn run() {
                 .build(),
         )
         .manage(AppState {
-            backend: Arc::new(Mutex::new(DesktopBackend::default())),
-            capture_store,
+            ops: ops::DesktopOps::new(DesktopBackend::default(), capture_store),
             watcher: Mutex::new(None),
             status: Mutex::new(DesktopStatus {
                 startup_ms: None,
