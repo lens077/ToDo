@@ -11,7 +11,23 @@ use crate::{generate_task_id, parse_file, Change, Document, Result, TokenKind};
 pub struct ReconcileReport {
     pub confirmed: Vec<ReconcileFinding>,
     pub suspected: Vec<ReconcileFinding>,
-    pub skipped: Vec<String>,
+    /// Checks that could not run at all, e.g. the git evidence layer in a shallow
+    /// clone. Serialized as `checks_skipped` to keep it distinct from the count of
+    /// findings awaiting manual judgment, which is a different thing entirely.
+    #[serde(rename = "checks_skipped")]
+    pub checks_skipped: Vec<String>,
+}
+
+impl ReconcileReport {
+    /// True when at least one layer did not run, so "no findings" is not a clean bill
+    /// of health but an unfinished inspection.
+    pub fn incomplete(&self) -> bool {
+        !self.checks_skipped.is_empty()
+    }
+
+    pub fn has_findings(&self) -> bool {
+        !self.confirmed.is_empty() || !self.suspected.is_empty()
+    }
 }
 
 #[derive(Debug, Clone, serde::Serialize)]
@@ -134,20 +150,27 @@ impl<'a> Reconciler<'a> {
         let mut report = ReconcileReport {
             confirmed: Vec::new(),
             suspected: Vec::new(),
-            skipped: Vec::new(),
+            checks_skipped: Vec::new(),
         };
         structural_document(document, &mut report);
         let git = GitEvidence::open(&self.root);
         let mut candidates = Vec::new();
         match git {
-            Some(git) if git.incomplete_history => report.skipped.push(
+            Some(git) if git.incomplete_history => report.checks_skipped.push(
                 "git evidence check skipped: shallow or partial clone has incomplete history"
                     .into(),
             ),
             Some(git) => evidence_checks(document, &git, &mut report, &mut candidates),
             None => report
-                .skipped
+                .checks_skipped
                 .push("git evidence check skipped: git unavailable or not a repository".into()),
+        }
+        if options.semantic && self.semantic.is_none() {
+            // Asking for the semantic layer and silently getting nothing is the same
+            // failure as the shallow-clone case: the caller believes a layer ran.
+            report
+                .checks_skipped
+                .push("semantic check skipped: no semantic reconciler is configured".into());
         }
         if options.semantic {
             if let Some(semantic) = self.semantic {

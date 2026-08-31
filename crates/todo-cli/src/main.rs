@@ -176,7 +176,9 @@ struct NextData {
 struct ReconcileData {
     report: ReconcileReport,
     applied: usize,
-    skipped_manual: usize,
+    /// Findings that exist but have no safe automatic fix. Distinct from
+    /// `report.checks_skipped`, which is about checks that never ran.
+    findings_requiring_manual_action: usize,
 }
 #[derive(Serialize)]
 struct LintData {
@@ -690,7 +692,8 @@ fn reconcile(cli: &Cli, path: &Path, apply: bool, no_semantic: bool) -> Result<u
         .iter()
         .filter(|finding| finding.suggested_change.is_some())
         .count();
-    let skipped_manual = report.confirmed.len() + report.suspected.len() - applicable;
+    let findings_requiring_manual_action =
+        report.confirmed.len() + report.suspected.len() - applicable;
     let mut applied = 0;
     if apply && applicable > 0 {
         let writer = LockedWriter::new(path, Duration::from_millis(cli.lock_timeout_ms));
@@ -705,18 +708,24 @@ fn reconcile(cli: &Cli, path: &Path, apply: bool, no_semantic: bool) -> Result<u
             Ok(changes)
         })?;
     }
-    let code = if report.confirmed.is_empty() && report.suspected.is_empty() {
-        0
-    } else {
+    // Findings outrank an incomplete run: if something concrete was found the caller
+    // already has work to do. But "nothing found" while a layer never ran must not
+    // report success, or a shallow-clone CI job reads an unfinished inspection as a
+    // clean bill of health.
+    let code = if report.has_findings() {
         6
+    } else if report.incomplete() {
+        7
+    } else {
+        0
     };
     emit(
         cli,
-        "todo.reconcile.v1",
+        "todo.reconcile.v2",
         ReconcileData {
             report,
             applied,
-            skipped_manual,
+            findings_requiring_manual_action,
         },
         reconcile_human,
     );
@@ -725,28 +734,42 @@ fn reconcile(cli: &Cli, path: &Path, apply: bool, no_semantic: bool) -> Result<u
 
 fn reconcile_human(data: &ReconcileData) -> String {
     let report = &data.report;
-    if report.confirmed.is_empty() && report.suspected.is_empty() {
-        return format!(
-            "no reconciliation findings\napplied {}, skipped {} (manual judgment required)",
-            data.applied, data.skipped_manual
-        );
-    }
-    let findings = report
-        .confirmed
-        .iter()
-        .map(|finding| format!("confirmed: {}", finding.judgment))
-        .chain(
+    let mut sections = Vec::new();
+
+    if report.has_findings() {
+        sections.push(
             report
-                .suspected
+                .confirmed
                 .iter()
-                .map(|finding| format!("suspected: {}", finding.judgment)),
-        )
-        .collect::<Vec<_>>()
-        .join("\n");
-    format!(
-        "{findings}\napplied {}, skipped {} (manual judgment required)",
-        data.applied, data.skipped_manual
-    )
+                .map(|finding| format!("confirmed: {}", finding.judgment))
+                .chain(
+                    report
+                        .suspected
+                        .iter()
+                        .map(|finding| format!("suspected: {}", finding.judgment)),
+                )
+                .collect::<Vec<_>>()
+                .join("\n"),
+        );
+    } else if report.incomplete() {
+        // Never the bare "no findings" line when a layer was skipped: that sentence
+        // reads as "checked and clean" and is exactly the claim we cannot make.
+        sections.push("no findings from the checks that ran — this run was INCOMPLETE".into());
+    } else {
+        sections.push("no reconciliation findings (all checks ran)".into());
+    }
+
+    for reason in &report.checks_skipped {
+        sections.push(format!("NOT CHECKED: {reason}"));
+    }
+
+    sections.push(format!(
+        "applied {}, {} finding(s) need manual judgment, {} check(s) did not run",
+        data.applied,
+        data.findings_requiring_manual_action,
+        report.checks_skipped.len()
+    ));
+    sections.join("\n")
 }
 
 fn load(path: &Path) -> Result<todo_core::Document, Error> {

@@ -59,16 +59,23 @@ CLI 在当前工作目录查找 `TODO.md`，不会向上级目录搜索。把 `t
 | `todo init [--adopt]` | 创建 `TODO.md`，或接管已有清单 |
 | `todo list [--column <id>] [--all]` | 列出任务；`--all` 包含已完成与游离任务 |
 | `todo add <正文> [--column <id>] [--tag <值>] [--due <日期>] [--priority <1-3>]` | 新增任务 |
-| `todo done <id>` / `todo undone <id>` | 切换完成状态 |
+| `todo done <id>` / `todo undone <id>` | 切换完成状态；`done` 会清除 `◐`、`⚠` |
+| `todo progress <id> <1-99> [--note <文本>]` | 记录部分完成 |
+| `todo fail <id> [--note <文本>]` | 记录一次失败的尝试；不改变完成状态 |
+| `todo note <id> <文本>` / `todo note <id> --clear` | 写入或清除 `↳` 说明行 |
 | `todo next` | 给出下一个可执行任务 |
 | `todo lint` | 检查格式问题，发现问题时退出码为 6 |
 | `todo evidence <id> --from <sha> [--to <sha>]` | 写入 Git 物证，`--to` 默认 `HEAD` |
 | `todo reconcile [--apply] [--no-semantic]` | 对账；默认只报告 |
 | `todo hooks preview\|install\|uninstall\|instructions [--agent claude\|codex\|all]` | 管理 agent 接入 |
 
+部分完成与部分失败的语法见 `docs/format-spec-v1.md` §3.1。
+
 全局选项：`--json` 输出稳定 envelope，`--lock-timeout-ms` 设置文件锁超时，默认 2000 毫秒。
 
-退出码：`0` 成功、`1` 一般错误、`2` 用法错误、`3` 未初始化、`4` 锁超时、`5` 乐观锁冲突、`6` lint 发现问题。
+退出码：`0` 成功、`1` 一般错误、`2` 用法错误、`3` 未初始化、`4` 锁超时、`5` 乐观锁冲突、`6` lint 或对账发现问题、`7` 有检查未能执行。
+
+**退出码 `7` 的含义是「没查完」，不是「没问题」。** 浅克隆、非 git 目录或未配置语义对账器时，对应检查整层跳过；此时 `reconcile` 不会返回 `0`，人类输出会打印 `NOT CHECKED:` 行，JSON 的 `report.checks_skipped` 列出原因。不要把 `7` 当作通过。
 
 `todo reconcile --apply` 只执行确定且无外部引用的清理，绝不删除 `🔗`、`⛔`、`→` 等物证 token，也不改写完成状态。规则见 `docs/format-spec-v1.md` §6.5。
 

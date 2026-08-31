@@ -114,7 +114,7 @@ fn shallow_and_partial_repositories_skip_evidence_checks() {
         .unwrap();
     assert!(report.confirmed.is_empty());
     assert!(report.suspected.is_empty());
-    assert!(!report.skipped.is_empty());
+    assert!(!report.checks_skipped.is_empty());
 
     git(&clone_path, &["config", "remote.origin.promisor", "true"]);
     let partial = Reconciler::new(&clone_path)
@@ -125,7 +125,7 @@ fn shallow_and_partial_repositories_skip_evidence_checks() {
         .unwrap();
     assert!(partial.confirmed.is_empty());
     assert!(partial.suspected.is_empty());
-    assert!(!partial.skipped.is_empty());
+    assert!(!partial.checks_skipped.is_empty());
 }
 
 #[test]
@@ -154,7 +154,10 @@ fn nongit_repository_degrades_without_evidence_claims() {
         .unwrap();
     assert!(report.confirmed.is_empty());
     assert!(report.suspected.is_empty());
-    assert!(report.skipped.iter().any(|value| value.contains("git")));
+    assert!(report
+        .checks_skipped
+        .iter()
+        .any(|value| value.contains("git")));
 }
 
 #[test]

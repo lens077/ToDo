@@ -209,7 +209,7 @@ fn instructions_target(path: &Path, agent: &'static str, write: bool) -> Result<
     })
 }
 fn instruction_block() -> String {
-    format!("{BEGIN}\n## TODO.md workflow\n- TODO.md is the sole task source; use the `todo` CLI rather than editing task state indirectly.\n- Inspect work with `todo list --json`, `todo next --json`, and `todo reconcile --no-semantic --json`.\n- Create work with `todo add \"body\" --tag name`; finish with `todo done <id>`.\n- JSON responses use stable versioned `schema`, `ok`, and `data` fields.\n- Exit codes: 0 success, 1 error, 2 usage, 3 uninitialized, 4 lock timeout, 5 retry conflict, 6 findings.\n- Before coding, record the starting commit: `START=$(git rev-parse HEAD)`.\n- After committing, run `todo evidence <id> --from \"$START\"` (`--to` defaults to HEAD), then `todo done <id>`.\n- Never hand-edit evidence tokens; every task write must use the locked CLI.\n- Evidence recording is mandatory: reconciliation relies on commit ranges instead of guessing from the whole codebase.\n- Run `todo reconcile --no-semantic` before handing work back; never auto-resolve report-only evidence findings.\n{END}\n")
+    format!("{BEGIN}\n## TODO.md workflow\n- TODO.md is the sole task source; use the `todo` CLI rather than editing task state indirectly.\n- Inspect work with `todo list --json`, `todo next --json`, and `todo reconcile --no-semantic --json`.\n- Create work with `todo add \"body\" --tag name`; finish with `todo done <id>`.\n- JSON responses use stable versioned `schema`, `ok`, and `data` fields.\n- Exit codes: 0 success, 1 error, 2 usage, 3 uninitialized, 4 lock timeout, 5 retry conflict, 6 findings, 7 checks incomplete.\n- Exit 7 means a check could not run (shallow clone, no git, no semantic reconciler). Treat it as unverified, never as clean.\n- Report partial work instead of leaving a task open: `todo progress <id> <1-99> --note \"what is done, what is left\"`.\n- Record a failed attempt with `todo fail <id> --note \"why\"`; it never unchecks a task.\n- Before coding, record the starting commit: `START=$(git rev-parse HEAD)`.\n- After committing, run `todo evidence <id> --from \"$START\"` (`--to` defaults to HEAD), then `todo done <id>`.\n- Never hand-edit evidence tokens; every task write must use the locked CLI.\n- Evidence recording is mandatory: reconciliation relies on commit ranges instead of guessing from the whole codebase.\n- Run `todo reconcile --no-semantic` before handing work back; never auto-resolve report-only evidence findings.\n{END}\n")
 }
 fn replace_block(original: &str, block: &str) -> String {
     if let Some(start) = original.find(BEGIN) {
@@ -245,9 +245,16 @@ pub fn context_with_deadline(timeout: Duration) -> String {
     if !next.trim().is_empty() && !next.contains("no actionable task") {
         lines.push(format!("TODO next: {}", next.trim()))
     }
+    // `NOT CHECKED:` lines travel with the findings. An agent told only about
+    // findings would read an incomplete run as a clean repository and skip its own
+    // verification, which is the failure this injection exists to prevent.
     for line in reconcile
         .lines()
-        .filter(|line| line.starts_with("confirmed:") || line.starts_with("suspected:"))
+        .filter(|line| {
+            line.starts_with("confirmed:")
+                || line.starts_with("suspected:")
+                || line.starts_with("NOT CHECKED:")
+        })
         .take(37)
     {
         lines.push(format!("TODO reconcile: {line}"))

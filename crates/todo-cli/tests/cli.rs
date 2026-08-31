@@ -144,23 +144,52 @@ fn lint_has_stable_exit_six_and_json_issues() {
 }
 
 #[test]
-fn reconcile_defaults_to_report_only_and_non_git_degrades_cleanly() {
+fn reconcile_reports_a_skipped_evidence_layer_instead_of_claiming_success() {
+    // Outside a git repository the evidence layer cannot run. Exiting 0 here would
+    // tell CI the repository was checked and clean, which is the one thing this run
+    // is not entitled to say.
     let dir = tempdir().unwrap();
     assert!(todo(dir.path(), &["init"]).status.success());
     let before = fs::read(dir.path().join("TODO.md")).unwrap();
     let output = todo(dir.path(), &["reconcile", "--json", "--no-semantic"]);
-    assert!(output.status.success());
+
+    assert_eq!(
+        output.status.code(),
+        Some(7),
+        "incomplete run must not exit 0"
+    );
     let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
-    assert_eq!(value["schema"], "todo.reconcile.v1");
+    assert_eq!(value["schema"], "todo.reconcile.v2");
     assert!(value["data"]["report"]["confirmed"]
         .as_array()
         .unwrap()
         .is_empty());
-    assert!(value["data"]["report"]["suspected"]
+    let skipped = value["data"]["report"]["checks_skipped"]
         .as_array()
-        .unwrap()
-        .is_empty());
+        .unwrap();
+    assert!(
+        skipped
+            .iter()
+            .any(|line| line.as_str().unwrap().contains("git")),
+        "the skipped git evidence check must be named: {skipped:?}"
+    );
+    // Report-only: the file is never touched.
     assert_eq!(fs::read(dir.path().join("TODO.md")).unwrap(), before);
+}
+
+#[test]
+fn reconcile_human_output_never_says_clean_when_a_check_was_skipped() {
+    let dir = tempdir().unwrap();
+    assert!(todo(dir.path(), &["init"]).status.success());
+    let output = todo(dir.path(), &["reconcile", "--no-semantic"]);
+    let text = String::from_utf8(output.stdout).unwrap();
+
+    assert!(text.contains("INCOMPLETE"), "got: {text}");
+    assert!(text.contains("NOT CHECKED"), "got: {text}");
+    assert!(
+        !text.contains("no reconciliation findings (all checks ran)"),
+        "must not claim a complete run: {text}"
+    );
 }
 
 #[test]
@@ -194,7 +223,7 @@ fn reconcile_apply_preserves_confirmed_evidence_without_action() {
     assert!(after.contains("⛔missing"));
     let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
     assert_eq!(value["data"]["applied"], 0);
-    assert_eq!(value["data"]["skipped_manual"], 2);
+    assert_eq!(value["data"]["findings_requiring_manual_action"], 2);
     assert_eq!(
         value["data"]["report"]["confirmed"][0]["suggested_action"],
         serde_json::Value::Null
