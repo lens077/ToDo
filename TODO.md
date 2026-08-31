@@ -26,6 +26,6 @@ columns:
 - [ ] 产出可分发的桌面端 release 构建 <!--t:d3l8hn--> #desktop #release !3 ^9000
 
 ## Doing
-- [ ] 用 todo 自身管理本项目后续开发 <!--t:1pevv2--> #process !2
+- [ ] 用 todo 自身管理本项目后续开发 <!--t:1pevv2--> #process !2 🔗2e112404a57360d0d054543cbbdff4ace9862afd..9142b5b6dfed7ee34d7991c60a882c398496a43a
 
 ## Done
