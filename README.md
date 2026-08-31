@@ -67,7 +67,8 @@ CLI 在当前工作目录查找 `TODO.md`，不会向上级目录搜索。把 `t
 | `todo lint` | 检查格式问题，发现问题时退出码为 6 |
 | `todo evidence <id> --from <sha> [--to <sha>]` | 写入 Git 物证，`--to` 默认 `HEAD` |
 | `todo reconcile [--apply] [--no-semantic]` | 对账；默认只报告 |
-| `todo hooks preview\|install\|uninstall\|instructions [--agent claude\|codex\|all]` | 管理 agent 接入 |
+| `todo hooks preview\|install\|uninstall\|instructions [--agent claude\|codex\|deepseek-harness\|all]` | 管理 agent 接入 |
+| `todo align [--review <文件\|->]` | 打印全仓对齐提示词，或校验 agent 的回复 |
 | `todo scan [--markdown-only\|--comments-only] [--import [--yes]] [--column <id>]` | 扫描全仓未跟踪的工作 |
 | `todo history [--limit <n>] [--prune-to <n>]` | 列出还原点 |
 | `todo diff <版本>` | 还原点与当前文件的左右对比 |
@@ -85,6 +86,23 @@ CLI 在当前工作目录查找 `TODO.md`，不会向上级目录搜索。把 `t
 扫描尊重 `.gitignore`（在非 git 目录下同样生效），跳过大于 2 MB 的文件，并按正文归一化后与现有任务去重，因此重复运行会收敛而不是反复提议同一批。
 
 `--import` 只生成提案并打印 diff，**不写盘**；加 `--yes` 才回写，且回写前自动建还原点。导入的任务带 `#scan-md` / `#scan-todo` 等标签，出处记在 `↳` 说明行里。
+
+### 第三层：与代码现实对齐
+
+前两层是确定性的，这一层是判断题，交给 agent：
+
+```bash
+todo align > prompt.md          # 把提示词交给 agent 执行
+todo align --review reply.json  # 校验它的回复
+```
+
+提示词按「操作规程」而不是「请求」来写：固定步骤、显式停止规则、单一输出格式。三条约束对应三种已知的失败：
+
+- **误报即死刑**，所以 `unknown` 是一等判定，且提示词明说不确定时它就是正确答案。
+- **覆盖要可证明**，所以 agent 必须对给定清单里每个 id 都给结论，漏掉的会被列进 `NOT REVIEWED`。
+- **模型没有决定权**，所有判定都是提议。任何 `done` 缺少 `path:line` 引用会被程序拒绝，不会出现在确认界面上。
+
+`--review` 只校验和汇报，**永远不写文件**；有拒绝项或漏查项时退出码为 6。
 
 ## 版本历史
 

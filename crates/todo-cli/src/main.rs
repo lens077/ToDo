@@ -138,6 +138,13 @@ enum Command {
         #[arg(long)]
         yes: bool,
     },
+    /// Print the repository-alignment prompt for an agent to run.
+    Align {
+        /// Validate an agent's reply instead of printing the prompt.
+        /// Pass a file path, or `-` to read stdin.
+        #[arg(long)]
+        review: Option<String>,
+    },
 }
 
 #[derive(Subcommand)]
@@ -301,7 +308,71 @@ fn run(cli: &Cli) -> Result<u8, Error> {
             column,
             *yes,
         ),
+        Command::Align { review } => align(cli, &path, review.as_deref()),
     }
+}
+
+fn align(cli: &Cli, path: &Path, review: Option<&str>) -> Result<u8, Error> {
+    let Some(source) = review else {
+        print!("{}", todo_core::ALIGNMENT_PROMPT);
+        return Ok(0);
+    };
+    let raw = if source == "-" {
+        use std::io::Read;
+        let mut buffer = String::new();
+        std::io::stdin()
+            .read_to_string(&mut buffer)
+            .map_err(|error| Error::InvalidAlignment(error.to_string()))?;
+        buffer
+    } else {
+        std::fs::read_to_string(source)
+            .map_err(|error| Error::InvalidAlignment(format!("{source}: {error}")))?
+    };
+    let document = load(path)?;
+    let result = todo_core::review_alignment(&document, &raw)?;
+    // Rejections and gaps are findings in their own right: an agent that skipped
+    // half the list has not aligned anything.
+    let code = if !result.rejected.is_empty() || !result.missing.is_empty() {
+        6
+    } else {
+        0
+    };
+    emit(cli, "todo.alignment.v1", result, |data| {
+        let mut lines = Vec::new();
+        for verdict in data.actionable() {
+            lines.push(format!(
+                "{:<16} {}  {}  [{}]",
+                format!("{:?}", verdict.verdict).to_lowercase(),
+                verdict.task_id,
+                verdict.reason,
+                verdict.citations.join(", ")
+            ));
+        }
+        for rejected in &data.rejected {
+            lines.push(format!(
+                "REJECTED {} — {}",
+                rejected.task_id, rejected.reason
+            ));
+        }
+        if !data.missing.is_empty() {
+            lines.push(format!(
+                "NOT REVIEWED: {} task(s) got no verdict: {}",
+                data.missing.len(),
+                data.missing.join(", ")
+            ));
+        }
+        if data.truncated {
+            lines.push("the agent reported truncating its input; re-run for the rest".into());
+        }
+        lines.push(format!(
+            "{} accepted, {} rejected, {} not reviewed — nothing was written",
+            data.accepted.len(),
+            data.rejected.len(),
+            data.missing.len()
+        ));
+        lines.join("\n")
+    });
+    Ok(code)
 }
 
 #[derive(Serialize)]

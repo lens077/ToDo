@@ -9,6 +9,7 @@ mod lock;
 mod model;
 mod parse;
 mod projection;
+mod prompt;
 mod reconcile;
 mod scan;
 mod write;
@@ -24,6 +25,10 @@ pub use lock::{FileLockGuard, LockedWriter};
 pub use model::*;
 pub use parse::{parse, parse_file};
 pub use projection::{ProjectedTask, Projection, ProjectionSnapshot, UpdateStats, SCHEMA_HASH};
+pub use prompt::{
+    review_alignment, AlignmentResponse, AlignmentReview, AlignmentVerdict, Confidence,
+    RejectedVerdict, Verdict, ALIGNMENT_PROMPT,
+};
 pub use reconcile::*;
 pub use scan::{import_text, scan, CodeComment, LooseCheckbox, ScanOptions, ScanReport, ScanStats};
 pub use write::{apply_changes, atomic_write, Change, Edit, InsertPosition, OptimisticLock};

@@ -19,6 +19,8 @@ pub const END: &str = "<!-- todo:end -->";
 pub enum Agent {
     Claude,
     Codex,
+    #[value(name = "deepseek-harness", alias = "dsh")]
+    DeepseekHarness,
     All,
 }
 #[derive(Serialize)]
@@ -72,6 +74,27 @@ fn plan(home: &Path, agent: Agent, write: bool, action: Action) -> Result<HookRe
             targets.push(instructions_target(Path::new("AGENTS.md"), "codex", write)?)
         } else {
             targets.push(HookTarget{agent:"codex",path:home.join(".codex/config.toml").display().to_string(),content:"Codex has no SessionStart context hook; no config change. Use `todo hooks instructions --agent codex`.".into(),changed:false,backup:None})
+        }
+    }
+    if matches!(agent, Agent::DeepseekHarness | Agent::All) {
+        if matches!(action, Action::Instructions) {
+            // DSH reads AGENTS.md like Codex. When both are requested the same file
+            // is planned twice; dedupe so the managed block is not written twice.
+            if !targets.iter().any(|target| target.path == "AGENTS.md") {
+                targets.push(instructions_target(
+                    Path::new("AGENTS.md"),
+                    "deepseek-harness",
+                    write,
+                )?)
+            }
+        } else {
+            targets.push(HookTarget {
+                agent: "deepseek-harness",
+                path: home.join(".dsh/config.toml").display().to_string(),
+                content: "deepseek-harness has no SessionStart context hook; no config change. Use `todo hooks instructions --agent deepseek-harness`.".into(),
+                changed: false,
+                backup: None,
+            })
         }
     }
     Ok(HookResult { targets })

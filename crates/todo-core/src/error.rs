@@ -61,6 +61,8 @@ pub enum Error {
     HistoryVersionNotFound(u64),
     #[error("could not encode history entry: {0}")]
     HistoryEncode(String),
+    #[error("invalid alignment response: {0}")]
+    InvalidAlignment(String),
 }
 
 impl Error {
