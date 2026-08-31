@@ -108,6 +108,7 @@ pub struct Task {
     pub column: Option<String>,
     pub metadata: Vec<MetadataToken>,
     pub unknown_tokens: Vec<MetadataToken>,
+    pub note: Option<TaskNote>,
     /// Bytes occupied by the line excluding its newline.
     pub line_range: Range<usize>,
     /// Bytes occupied by the complete line including its newline when present.
@@ -115,6 +116,32 @@ pub struct Task {
     pub checkbox_range: Range<usize>,
     pub body_range: Range<usize>,
     pub metadata_range: Range<usize>,
+}
+
+impl Task {
+    /// Partial completion percentage, when the task carries a `◐` token.
+    pub fn progress(&self) -> Option<u8> {
+        self.metadata.iter().find_map(|token| match token.kind {
+            TokenKind::Progress(value) => Some(value),
+            _ => None,
+        })
+    }
+
+    /// Date of the last failed attempt, when the task carries a `⚠` token.
+    pub fn failure(&self) -> Option<&str> {
+        self.metadata.iter().find_map(|token| match &token.kind {
+            TokenKind::Failure(date) => Some(date.as_str()),
+            _ => None,
+        })
+    }
+
+    /// True when work has started but the task is neither complete nor merely queued.
+    ///
+    /// A failure alone counts: an attempt that failed is work in flight, even when
+    /// no percentage was recorded.
+    pub fn partial(&self) -> bool {
+        !self.completed && (self.progress().is_some() || self.failure().is_some())
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -133,8 +160,36 @@ pub enum TokenKind {
     CompletionDate(String),
     Priority(u8),
     Sort(i64),
-    Evidence { from: String, to: String },
+    Evidence {
+        from: String,
+        to: String,
+    },
     Dependency(String),
-    Reference { path: String, id: String },
+    Reference {
+        path: String,
+        id: String,
+    },
+    /// `◐<0-100>` — partial completion percentage. Its presence means the task is
+    /// underway; it never implies completion (spec §6.5.4 keeps status monotonic).
+    Progress(u8),
+    /// `⚠<YYYY-MM-DD>` — the date an attempt on this task last failed. Independent
+    /// of progress: a task can be 80% done and still carry an unresolved failure.
+    Failure(String),
     Unknown,
+}
+
+/// A `↳ <text> <!--n:ID-->` line directly beneath a task line.
+///
+/// The note is a lazy paragraph continuation of the task's list item, so every
+/// CommonMark renderer folds it into that item and none of them turn it into an
+/// indented code block. It carries the prose a line-tail token cannot hold: what
+/// got finished, what is left, and why an attempt failed.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TaskNote {
+    pub text: String,
+    pub indent: String,
+    /// Bytes occupied by the line excluding its newline.
+    pub line_range: Range<usize>,
+    /// Bytes occupied by the complete line including its newline when present.
+    pub full_line_range: Range<usize>,
 }

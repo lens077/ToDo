@@ -6,7 +6,7 @@ use serde::Deserialize;
 use crate::{
     error::{io_error, Error, Result},
     Column, ColumnDefinition, Document, FileSnapshot, Frontmatter, LineEnding, MetadataToken, Task,
-    TokenKind, UnrecognizedTaskLikeLine,
+    TaskNote, TokenKind, UnrecognizedTaskLikeLine,
 };
 
 #[derive(Deserialize)]
@@ -131,6 +131,7 @@ fn parse_inner(source: String, snapshot: Option<FileSnapshot>) -> Result<Documen
         if let Some(id) = &task.id {
             ids.entry(id.clone()).or_insert(task_index);
         }
+        task.note = parse_note_line(&source, &lines, line_index, task.id.as_deref());
         tasks.push(task);
     }
 
@@ -144,6 +145,33 @@ fn parse_inner(source: String, snapshot: Option<FileSnapshot>) -> Result<Documen
         unrecognized_task_like_lines,
         bom,
         snapshot,
+    })
+}
+
+/// Read the `↳ <text> <!--n:ID-->` line directly beneath a task line.
+///
+/// The note must sit on the very next physical line and its `n:` anchor must name
+/// the task that owns it. Both conditions are required: without the anchor a note
+/// would silently reattach itself to whichever task it drifted next to, and
+/// scanning further than one line would let an unrelated paragraph be adopted.
+fn parse_note_line(
+    source: &str,
+    lines: &[Line],
+    task_line_index: usize,
+    task_id: Option<&str>,
+) -> Option<TaskNote> {
+    let id = task_id?;
+    let line = lines.get(task_line_index + 1)?;
+    let raw = &source[line.start..line.content_end];
+    let indent_len = raw.len() - raw.trim_start_matches([' ', '\t']).len();
+    let body = raw[indent_len..].strip_prefix('↳')?.trim_start();
+    let anchor = format!("<!--n:{id}-->");
+    let text = body.strip_suffix(&anchor)?.trim_end();
+    Some(TaskNote {
+        text: text.to_string(),
+        indent: raw[..indent_len].to_string(),
+        line_range: line.start..line.content_end,
+        full_line_range: line.start..line.end,
     })
 }
 
@@ -298,6 +326,7 @@ fn parse_task_line(
         column,
         metadata,
         unknown_tokens,
+        note: None,
         line_range: line.start..line.content_end,
         full_line_range: line.start..line.end,
         checkbox_range: marker.range,
@@ -551,11 +580,29 @@ fn classify_token(raw: &str) -> TokenKind {
             }
         }
     }
+    if let Some(value) = normalized
+        .strip_prefix('◐')
+        .and_then(|value| value.parse::<u8>().ok())
+    {
+        // 0 and 100 are rejected: 0 is indistinguishable from "not started" and 100
+        // would be a second way to say "done", which §6.5.4 reserves for the checkbox.
+        if (1..=99).contains(&value) {
+            return TokenKind::Progress(value);
+        }
+    }
+    if let Some(value) = normalized
+        .strip_prefix('⚠')
+        .filter(|value| valid_date(value))
+    {
+        return TokenKind::Failure(value.into());
+    }
     TokenKind::Unknown
 }
 
 fn looks_like_unknown_token(raw: &str) -> bool {
-    raw.starts_with("<!--") || raw.starts_with(['#', '@', '!', '^', '→']) || raw.contains(':')
+    raw.starts_with("<!--")
+        || raw.starts_with(['#', '@', '!', '^', '→', '◐', '⚠'])
+        || raw.contains(':')
 }
 
 pub(crate) fn valid_id(id: &str) -> bool {

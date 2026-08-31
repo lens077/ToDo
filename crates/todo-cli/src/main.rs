@@ -62,6 +62,27 @@ enum Command {
     Undone {
         id: String,
     },
+    /// Record partial completion: `todo progress <id> 60 --note "…"`.
+    Progress {
+        id: String,
+        /// Percent complete, 1-99. Use `todo done` for 100 and leave it unset for 0.
+        percent: u8,
+        #[arg(long)]
+        note: Option<String>,
+    },
+    /// Record that an attempt failed, without moving the task backwards.
+    Fail {
+        id: String,
+        #[arg(long)]
+        note: Option<String>,
+    },
+    /// Write or clear the `↳` note line under a task.
+    Note {
+        id: String,
+        text: Option<String>,
+        #[arg(long)]
+        clear: bool,
+    },
     Evidence {
         id: String,
         #[arg(long)]
@@ -134,6 +155,9 @@ struct TaskView {
     priority: Option<u8>,
     order_key: Option<i64>,
     dependencies: Vec<String>,
+    progress: Option<u8>,
+    failed_on: Option<String>,
+    note: Option<String>,
     line: usize,
 }
 #[derive(Serialize)]
@@ -211,6 +235,11 @@ fn run(cli: &Cli) -> Result<u8, Error> {
         } => add(cli, &path, body, column, tags, due, *priority),
         Command::Done { id } => toggle(cli, &path, id, true),
         Command::Undone { id } => toggle(cli, &path, id, false),
+        Command::Progress { id, percent, note } => {
+            progress(cli, &path, id, *percent, note.as_deref())
+        }
+        Command::Fail { id, note } => fail(cli, &path, id, note.as_deref()),
+        Command::Note { id, text, clear } => set_note(cli, &path, id, text.as_deref(), *clear),
         Command::Evidence { id, from, to } => evidence(cli, &path, id, from, to),
         Command::Next => next(cli, &path),
         Command::Lint => lint(cli, &path),
@@ -365,15 +394,27 @@ fn toggle(cli: &Cli, path: &Path, id: &str, completed: bool) -> Result<u8, Error
     let writer = LockedWriter::new(path, Duration::from_millis(cli.lock_timeout_ms));
     let id_owned = id.to_string();
     let result = writer.update(|document| {
-        let index = document
-            .tasks
-            .iter()
-            .position(|task| task.id.as_deref() == Some(&id_owned))
-            .ok_or_else(|| Error::TaskNotFound(id_owned.clone()))?;
-        Ok(vec![Change::SetCompleted {
+        let index = index_of(document, &id_owned)?;
+        let mut changes = vec![Change::SetCompleted {
             task: index,
             completed,
-        }])
+        }];
+        if completed {
+            // A finished task carries no partial-progress claim. Leaving ◐/⚠ behind
+            // would leave the line asserting two different states at once.
+            for (token, _) in
+                document.tasks[index]
+                    .metadata
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, token)| {
+                        matches!(token.kind, TokenKind::Progress(_) | TokenKind::Failure(_))
+                    })
+            {
+                changes.push(Change::RemoveMetadata { task: index, token });
+            }
+        }
+        Ok(changes)
     })?;
     let view = views(&result)
         .into_iter()
@@ -386,6 +427,118 @@ fn toggle(cli: &Cli, path: &Path, id: &str, completed: bool) -> Result<u8, Error
         |data| human_task(&data.task),
     );
     Ok(0)
+}
+
+/// Locate a task by stable id, or fail with the id the caller asked for.
+fn index_of(document: &todo_core::Document, id: &str) -> Result<usize, Error> {
+    document
+        .tasks
+        .iter()
+        .position(|task| task.id.as_deref() == Some(id))
+        .ok_or_else(|| Error::TaskNotFound(id.into()))
+}
+
+fn emit_task(cli: &Cli, document: &todo_core::Document, id: &str) -> Result<u8, Error> {
+    let view = views(document)
+        .into_iter()
+        .find(|task| task.id.as_deref() == Some(id))
+        .ok_or_else(|| Error::TaskNotFound(id.into()))?;
+    emit(
+        cli,
+        "todo.mutation.v1",
+        MutationData { task: view },
+        |data| human_task(&data.task),
+    );
+    Ok(0)
+}
+
+fn progress(
+    cli: &Cli,
+    path: &Path,
+    id: &str,
+    percent: u8,
+    note: Option<&str>,
+) -> Result<u8, Error> {
+    if !(1..=99).contains(&percent) {
+        // Routing 0 and 100 to the commands that own those states keeps a single way
+        // to express "not started" and "done".
+        return Err(Error::InvalidTaskLine(format!(
+            "progress must be 1-99; got {percent}. Use `todo done` for complete, or leave progress unset for not started"
+        )));
+    }
+    let writer = LockedWriter::new(path, Duration::from_millis(cli.lock_timeout_ms));
+    let id_owned = id.to_string();
+    let note_owned = note.map(str::to_string);
+    let result = writer.update(|document| {
+        let index = index_of(document, &id_owned)?;
+        let mut changes = vec![Change::SetMetadata {
+            task: index,
+            kind: TokenKind::Progress(percent),
+            raw: format!("◐{percent}"),
+        }];
+        if let Some(text) = &note_owned {
+            changes.push(Change::SetNote {
+                task: index,
+                text: text.clone(),
+            });
+        }
+        Ok(changes)
+    })?;
+    emit_task(cli, &result, id)
+}
+
+fn fail(cli: &Cli, path: &Path, id: &str, note: Option<&str>) -> Result<u8, Error> {
+    let today = chrono::Local::now().date_naive().to_string();
+    let writer = LockedWriter::new(path, Duration::from_millis(cli.lock_timeout_ms));
+    let id_owned = id.to_string();
+    let note_owned = note.map(str::to_string);
+    let result = writer.update(|document| {
+        let index = index_of(document, &id_owned)?;
+        // Recording a failure never unchecks the task: status only moves forward
+        // (spec §6.5.4). A failure on a done task is a signal for reconciliation,
+        // not a licence to rewrite the completion claim.
+        let mut changes = vec![Change::SetMetadata {
+            task: index,
+            kind: TokenKind::Failure(today.clone()),
+            raw: format!("⚠{today}"),
+        }];
+        if let Some(text) = &note_owned {
+            changes.push(Change::SetNote {
+                task: index,
+                text: text.clone(),
+            });
+        }
+        Ok(changes)
+    })?;
+    emit_task(cli, &result, id)
+}
+
+fn set_note(
+    cli: &Cli,
+    path: &Path,
+    id: &str,
+    text: Option<&str>,
+    clear: bool,
+) -> Result<u8, Error> {
+    if clear == text.is_some() {
+        return Err(Error::InvalidTaskLine(
+            "provide note text, or --clear to remove it".into(),
+        ));
+    }
+    let writer = LockedWriter::new(path, Duration::from_millis(cli.lock_timeout_ms));
+    let id_owned = id.to_string();
+    let text_owned = text.map(str::to_string);
+    let result = writer.update(|document| {
+        let index = index_of(document, &id_owned)?;
+        Ok(vec![match &text_owned {
+            Some(text) => Change::SetNote {
+                task: index,
+                text: text.clone(),
+            },
+            None => Change::RemoveNote { task: index },
+        }])
+    })?;
+    emit_task(cli, &result, id)
 }
 
 fn evidence(cli: &Cli, path: &Path, id: &str, from: &str, to: &str) -> Result<u8, Error> {
@@ -641,6 +794,9 @@ fn views(document: &todo_core::Document) -> Vec<TaskView> {
                 priority,
                 order_key,
                 dependencies,
+                progress: task.progress(),
+                failed_on: task.failure().map(str::to_string),
+                note: task.note.as_ref().map(|note| note.text.clone()),
                 line: document.source.as_bytes()[..document.tasks[index].line_range.start]
                     .iter()
                     .filter(|byte| **byte == b'\n')
@@ -687,8 +843,22 @@ fn error_code(error: &Error) -> u8 {
     }
 }
 fn human_task(task: &TaskView) -> String {
+    // Partial state is shown inline: a human reading `[ ] body` alone would read a
+    // 60%-done task with a failed attempt as untouched work.
+    let mut suffix = String::new();
+    if let Some(percent) = task.progress {
+        suffix.push_str(&format!(" ◐{percent}%"));
+    }
+    if let Some(date) = &task.failed_on {
+        suffix.push_str(&format!(" ⚠failed {date}"));
+    }
+    let note = task
+        .note
+        .as_deref()
+        .map(|text| format!("\n      ↳ {text}"))
+        .unwrap_or_default();
     format!(
-        "{} [{}] {}",
+        "{} [{}] {}{suffix}{note}",
         if task.completed { "x" } else { " " },
         task.id.as_deref().unwrap_or("no-id"),
         task.body

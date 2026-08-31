@@ -42,6 +42,14 @@ pub enum Change {
         column: String,
         position: InsertPosition,
     },
+    /// Write the `↳ … <!--n:ID-->` line under a task, replacing any existing note.
+    SetNote {
+        task: usize,
+        text: String,
+    },
+    RemoveNote {
+        task: usize,
+    },
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -219,9 +227,15 @@ fn change_to_edits(document: &Document, change: &Change) -> Result<Vec<Edit>> {
         }
         Change::DeleteTask { task } => {
             let task = task_at(document, *task)?;
+            // A note belongs to its task; leaving it behind would orphan a line whose
+            // anchor names an id that no longer exists.
+            let end = task
+                .note
+                .as_ref()
+                .map_or(task.full_line_range.end, |note| note.full_line_range.end);
             Ok(vec![edit(
                 document,
-                task.full_line_range.clone(),
+                task.full_line_range.start..end,
                 String::new(),
             )])
         }
@@ -230,7 +244,67 @@ fn change_to_edits(document: &Document, change: &Change) -> Result<Vec<Edit>> {
             column,
             position,
         } => move_task_edits(document, *task, column, *position),
+        Change::SetNote { task, text } => {
+            reject_newline(text)?;
+            validate_note_text(text)?;
+            let task = task_at(document, *task)?;
+            let id = task.id.as_deref().ok_or(Error::MissingTaskId)?;
+            let rendered = format!("{}↳ {text} <!--n:{id}-->", note_indent(task));
+            match &task.note {
+                Some(note) => Ok(vec![edit(document, note.line_range.clone(), rendered)]),
+                None => {
+                    let offset = task.full_line_range.end;
+                    let newline = local_newline(document, offset);
+                    // Without a trailing newline on the task line the note would be
+                    // appended to it; add the break first, then the note line.
+                    let (prefix, suffix) = if document.source[..offset].ends_with('\n') {
+                        ("", newline)
+                    } else {
+                        (newline, "")
+                    };
+                    Ok(vec![edit(
+                        document,
+                        offset..offset,
+                        format!("{prefix}{rendered}{suffix}"),
+                    )])
+                }
+            }
+        }
+        Change::RemoveNote { task } => {
+            let task = task_at(document, *task)?;
+            match &task.note {
+                Some(note) => Ok(vec![edit(
+                    document,
+                    note.full_line_range.clone(),
+                    String::new(),
+                )]),
+                None => Ok(Vec::new()),
+            }
+        }
     }
+}
+
+/// Indent that keeps a note line inside its task's list item.
+///
+/// Six spaces past the task's own indent aligns the note under the task body. An
+/// indented code block cannot interrupt a paragraph, so this stays a lazy
+/// continuation line rather than becoming a code block.
+fn note_indent(task: &crate::Task) -> String {
+    format!("{}      ", task.indent)
+}
+
+fn validate_note_text(text: &str) -> Result<()> {
+    if text.trim().is_empty() {
+        return Err(Error::InvalidTaskLine("note text is empty".into()));
+    }
+    // The anchor is the only HTML comment allowed on a note line; comment syntax in
+    // the prose would let a note swallow or fake its own anchor.
+    if text.contains("<!--") || text.contains("-->") {
+        return Err(Error::InvalidTaskLine(
+            "note text must not contain HTML comment markers".into(),
+        ));
+    }
+    Ok(())
 }
 
 fn move_task_edits(
