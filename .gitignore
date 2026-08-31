@@ -1,0 +1,25 @@
+# Rust build output
+/target/
+**/*.rs.bk
+
+# JavaScript dependencies and build output
+/node_modules/
+**/node_modules/
+/apps/desktop/dist/
+/apps/desktop/tsconfig.tsbuildinfo
+
+# Local test and agent artifacts
+/.playwright-cli/
+/.agent-teams/
+/docs/SGH/
+*.log
+.DS_Store
+
+# Local runtime state
+.env
+.env.*
+!.env.example
+*.db
+*.sqlite
+*.sqlite3
+.*.lock

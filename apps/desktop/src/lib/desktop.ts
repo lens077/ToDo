@@ -1,0 +1,568 @@
+import { invoke } from '@tauri-apps/api/core';
+import { listen, type UnlistenFn } from '@tauri-apps/api/event';
+import { getCurrentWindow } from '@tauri-apps/api/window';
+import { open } from '@tauri-apps/plugin-dialog';
+
+export type TaskPriority = 1 | 2 | 3 | null;
+
+export interface DesktopColumn {
+  id: string;
+  name: string;
+  done: boolean;
+}
+
+export interface DesktopTask {
+  id: string | null;
+  body: string;
+  completed: boolean;
+  column: string | null;
+  due: string | null;
+  priority: TaskPriority;
+  tags: string[];
+}
+
+export interface TodayView {
+  overdue: DesktopTask[];
+  today: DesktopTask[];
+  upcoming: DesktopTask[];
+}
+
+export interface DesktopSnapshot {
+  project_path: string;
+  revision: string;
+  columns: DesktopColumn[];
+  tasks: DesktopTask[];
+  today: TodayView;
+}
+
+export interface Capture {
+  id: string;
+  created_at: string;
+  text: string;
+}
+
+export type ShortcutStatus =
+  | { status: 'pending' }
+  | { status: 'registered' }
+  | { status: 'error'; message: string };
+
+export interface DesktopStatus {
+  startup_ms: number | null;
+  shortcut_status: ShortcutStatus;
+}
+
+export interface CaptureAppendResult {
+  capture: Capture;
+  captures: Capture[];
+}
+
+export type DesktopMutation =
+  | { type: 'add_task'; body: string; column: string | null }
+  | { type: 'set_completed'; id: string; completed: boolean }
+  | {
+      type: 'move_task';
+      id: string;
+      column: string;
+      target:
+        | { type: 'column_start' }
+        | { type: 'column_end' }
+        | { type: 'before'; task_id: string }
+        | { type: 'after'; task_id: string };
+    };
+
+type TriageOutcome =
+  | { status: 'completed'; task_id: string }
+  | { status: 'task_created_capture_retained'; task_id: string; message: string };
+
+export type TriageResult = TriageOutcome & {
+  snapshot?: DesktopSnapshot;
+  captures?: Capture[];
+  snapshot_error?: string;
+  captures_error?: string;
+};
+
+export type DesktopEvent =
+  | { type: 'snapshot'; snapshot: DesktopSnapshot }
+  | { type: 'error'; error: DesktopBridgeError };
+
+export class DesktopBridgeError extends Error {
+  readonly kind: 'conflict' | 'locked' | 'parse' | 'no_project' | 'unknown';
+
+  constructor(message: string, kind = classifyError(message)) {
+    super(message);
+    this.name = 'DesktopBridgeError';
+    this.kind = kind;
+  }
+}
+
+const MOCK_TODAY = '2026-08-31';
+type MockMode = 'default' | 'empty' | 'no-project' | 'load-error';
+let mockMode: MockMode = (() => {
+  if (typeof window === 'undefined') return 'default';
+  const requested = new URLSearchParams(window.location.search).get('mock');
+  return requested === 'empty' || requested === 'no-project' || requested === 'load-error' ? requested : 'default';
+})();
+const mockColumns: DesktopColumn[] = [
+  { id: 'inbox', name: '待梳理', done: false },
+  { id: 'doing', name: '正在推进', done: false },
+  { id: 'review', name: '等待验证', done: false },
+  { id: 'done', name: '已完成', done: true },
+];
+
+const mockInitialTasks: DesktopTask[] = [
+  {
+    id: 'fl8c2a',
+    body: '为 reconcile findings 补齐 evidence diff 摘要',
+    completed: false,
+    column: 'doing',
+    due: '2026-08-30',
+    priority: 1,
+    tags: ['core', 'evidence'],
+  },
+  {
+    id: 'k9p4dr',
+    body: '测量 1,000 项 Snapshot 构建预算',
+    completed: false,
+    column: 'doing',
+    due: MOCK_TODAY,
+    priority: 2,
+    tags: ['desktop'],
+  },
+  {
+    id: 'm2v7qx',
+    body: '完善 agent hook 安装后的首次使用说明',
+    completed: false,
+    column: 'inbox',
+    due: '2026-09-02',
+    priority: 2,
+    tags: ['agents', 'docs'],
+  },
+  {
+    id: 'a4n8sj',
+    body: '补充文件冲突恢复的端到端覆盖',
+    completed: false,
+    column: 'review',
+    due: null,
+    priority: 1,
+    tags: ['rust'],
+  },
+  {
+    id: 'w6h0bp',
+    body: '发布前跑一遍键盘与屏幕阅读器路径',
+    completed: false,
+    column: 'inbox',
+    due: '2026-09-06',
+    priority: 3,
+    tags: ['qa'],
+  },
+  {
+    id: 'd8q3mf',
+    body: '确定 TODO.md v1 的保真写回边界',
+    completed: true,
+    column: 'done',
+    due: '2026-08-28',
+    priority: 2,
+    tags: ['format'],
+  },
+];
+
+let mockRevision = 17;
+let mockTasks = cloneTasks(mockInitialTasks);
+let mockCaptures: Capture[] = [
+  {
+    id: 'cap-b7k2',
+    created_at: '2026-08-31T08:42:00Z',
+    text: '把外部编辑冲突 banner 的复现步骤补到验收记录里',
+  },
+  {
+    id: 'cap-n4w8',
+    created_at: '2026-08-31T09:17:00Z',
+    text: '研究 Windows 全局快捷键是否与系统输入法冲突',
+  },
+  {
+    id: 'cap-r2m6',
+    created_at: '2026-08-30T16:05:00Z',
+    text: '把 README 的首次使用路径缩短到三步',
+  },
+];
+let mockCaptureSequence = 4;
+let mockTaskSequence = 1;
+const mockListeners = new Set<(event: DesktopEvent) => void>();
+
+function isTauriRuntime(): boolean {
+  return typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
+}
+
+function classifyError(message: string): DesktopBridgeError['kind'] {
+  const value = message.toLowerCase();
+  if (value.includes('rebase') || value.includes('conflict') || value.includes('外部更新')) return 'conflict';
+  if (value.includes('lock') || value.includes('timeout') || value.includes('busy')) return 'locked';
+  if (value.includes('parse') || value.includes('marker') || value.includes('frontmatter')) return 'parse';
+  if (value.includes('not a todo.md task file') || value.includes('not task file') || value.includes('no project') || value.includes('未打开')) return 'no_project';
+  return 'unknown';
+}
+
+function asBridgeError(value: unknown): DesktopBridgeError {
+  if (value instanceof DesktopBridgeError) return value;
+  if (value instanceof Error) return new DesktopBridgeError(value.message);
+  if (typeof value === 'string') return new DesktopBridgeError(value);
+  return new DesktopBridgeError('桌面后端返回了未知错误');
+}
+
+function normalizeTask(raw: unknown): DesktopTask {
+  const task = (raw ?? {}) as Partial<DesktopTask>;
+  const priority = task.priority === 1 || task.priority === 2 || task.priority === 3 ? task.priority : null;
+  return {
+    id: typeof task.id === 'string' ? task.id : null,
+    body: typeof task.body === 'string' ? task.body : '',
+    completed: Boolean(task.completed),
+    column: typeof task.column === 'string' ? task.column : null,
+    due: typeof task.due === 'string' ? task.due : null,
+    priority,
+    tags: Array.isArray(task.tags) ? task.tags.filter((tag): tag is string => typeof tag === 'string') : [],
+  };
+}
+
+function normalizeSnapshot(raw: unknown): DesktopSnapshot {
+  const value = (raw ?? {}) as Partial<DesktopSnapshot>;
+  if (typeof value.project_path !== 'string' || typeof value.revision !== 'string') {
+    throw new DesktopBridgeError('桌面后端返回的 Snapshot 不完整');
+  }
+  const tasks = Array.isArray(value.tasks) ? value.tasks.map(normalizeTask) : [];
+  const byId = new Map(tasks.filter((task) => task.id).map((task) => [task.id, task]));
+  const normalizeGroup = (items: unknown): DesktopTask[] =>
+    Array.isArray(items)
+      ? items.map(normalizeTask).map((task) => (task.id ? byId.get(task.id) ?? task : task))
+      : [];
+  return {
+    project_path: value.project_path,
+    revision: value.revision,
+    columns: Array.isArray(value.columns)
+      ? value.columns.map((column) => {
+          const item = column as Partial<DesktopColumn>;
+          return {
+            id: String(item.id ?? ''),
+            name: String(item.name ?? item.id ?? ''),
+            done: Boolean(item.done),
+          };
+        })
+      : [],
+    tasks,
+    today: {
+      overdue: normalizeGroup(value.today?.overdue),
+      today: normalizeGroup(value.today?.today),
+      upcoming: normalizeGroup(value.today?.upcoming),
+    },
+  };
+}
+
+function normalizeCapture(raw: unknown): Capture {
+  const capture = (raw ?? {}) as Partial<Capture>;
+  return {
+    id: String(capture.id ?? ''),
+    created_at: String(capture.created_at ?? ''),
+    text: String(capture.text ?? ''),
+  };
+}
+
+function cloneTasks(tasks: DesktopTask[]): DesktopTask[] {
+  return tasks.map((task) => ({ ...task, tags: [...task.tags] }));
+}
+
+function deriveMockToday(tasks: DesktopTask[]): TodayView {
+  const upcomingEnd = '2026-09-07';
+  const active = tasks.filter((task) => !task.completed && task.due);
+  return {
+    overdue: active.filter((task) => task.due! < MOCK_TODAY),
+    today: active.filter((task) => task.due === MOCK_TODAY),
+    upcoming: active.filter((task) => task.due! > MOCK_TODAY && task.due! <= upcomingEnd),
+  };
+}
+
+function mockSnapshot(): DesktopSnapshot {
+  const tasks = mockMode === 'empty' ? [] : cloneTasks(mockTasks);
+  return {
+    project_path: '/Users/demo/field-notes/TODO.md',
+    revision: `mock-${String(mockRevision).padStart(4, '0')}`,
+    columns: mockColumns.map((column) => ({ ...column })),
+    tasks,
+    today: deriveMockToday(tasks),
+  };
+}
+
+function emitMock(event: DesktopEvent): void {
+  window.setTimeout(() => {
+    mockListeners.forEach((listener) => listener(event));
+  }, 24);
+}
+
+async function call<T>(command: string, args?: Record<string, unknown>): Promise<T> {
+  try {
+    return await invoke<T>(command, args);
+  } catch (error) {
+    throw asBridgeError(error);
+  }
+}
+
+async function mockMutate(intent: DesktopMutation): Promise<DesktopSnapshot> {
+  if (intent.type === 'add_task') {
+    const id = `mck${String(mockTaskSequence++).padStart(3, '0')}`;
+    mockTasks.push({
+      id,
+      body: intent.body.trim(),
+      completed: false,
+      column: intent.column ?? mockColumns[0]?.id ?? null,
+      due: null,
+      priority: null,
+      tags: [],
+    });
+  } else if (intent.type === 'set_completed') {
+    mockTasks = mockTasks.map((task) =>
+      task.id === intent.id ? { ...task, completed: intent.completed } : task,
+    );
+  } else {
+    mockTasks = mockTasks.map((task) =>
+      task.id === intent.id
+        ? {
+            ...task,
+            column: intent.column,
+            completed: task.completed || Boolean(mockColumns.find((column) => column.id === intent.column)?.done),
+          }
+        : task,
+    );
+  }
+  mockRevision += 1;
+  const snapshot = mockSnapshot();
+  emitMock({ type: 'snapshot', snapshot });
+  return snapshot;
+}
+
+function normalizeStatus(raw: unknown): DesktopStatus {
+  const status = (raw ?? {}) as {
+    startup_ms?: unknown;
+    shortcut_status?: { status?: unknown; message?: unknown };
+  };
+  const startupMs = status.startup_ms;
+  const shortcut = status.shortcut_status;
+  if (startupMs !== null && typeof startupMs !== 'number') {
+    throw new DesktopBridgeError('desktop_status.startup_ms 格式无效');
+  }
+  if (shortcut?.status === 'registered' || shortcut?.status === 'pending') {
+    return { startup_ms: startupMs, shortcut_status: { status: shortcut.status } };
+  }
+  if (shortcut?.status === 'error' && typeof shortcut.message === 'string') {
+    return {
+      startup_ms: startupMs,
+      shortcut_status: { status: 'error', message: shortcut.message },
+    };
+  }
+  throw new DesktopBridgeError('desktop_status.shortcut_status 格式无效');
+}
+
+type CommandValue<T> =
+  | { status: 'available'; value: T }
+  | { status: 'unavailable'; message: string };
+
+function readCommandValue<T>(raw: unknown, normalize: (value: unknown) => T): { value?: T; error?: string } {
+  const commandValue = raw as Partial<CommandValue<unknown>> | null;
+  if (commandValue?.status === 'available' && 'value' in commandValue) {
+    return { value: normalize(commandValue.value) };
+  }
+  if (commandValue?.status === 'unavailable') {
+    return { error: typeof commandValue.message === 'string' ? commandValue.message : '后端结果暂时不可用' };
+  }
+  return { error: '后端返回了未知的 CommandValue' };
+}
+
+export const desktop = {
+  isTauri: isTauriRuntime(),
+
+  currentWindowLabel(): string {
+    if (isTauriRuntime()) return getCurrentWindow().label;
+    return new URLSearchParams(window.location.search).get('window') === 'capture' ? 'capture' : 'main';
+  },
+
+  async hideCurrentWindow(): Promise<void> {
+    if (isTauriRuntime()) await getCurrentWindow().hide();
+  },
+
+  async status(): Promise<DesktopStatus> {
+    if (!isTauriRuntime()) {
+      return {
+        startup_ms: 86,
+        shortcut_status: { status: 'registered' },
+      };
+    }
+    return normalizeStatus(await call<unknown>('desktop_status'));
+  },
+
+  async snapshot(): Promise<DesktopSnapshot> {
+    if (isTauriRuntime()) return normalizeSnapshot(await call<unknown>('snapshot'));
+    if (mockMode === 'no-project') throw new DesktopBridgeError('no project is open');
+    if (mockMode === 'load-error') throw new DesktopBridgeError('frontmatter parse failed near todo-spec');
+    return mockSnapshot();
+  },
+
+  async openProject(path: string): Promise<DesktopSnapshot> {
+    if (isTauriRuntime()) return normalizeSnapshot(await call<unknown>('open_project', { path }));
+    mockMode = 'default';
+    return mockSnapshot();
+  },
+
+  async chooseAndOpenProject(): Promise<DesktopSnapshot | null> {
+    if (!isTauriRuntime()) {
+      mockMode = 'default';
+      return mockSnapshot();
+    }
+    const selected = await open({ directory: true, multiple: false, title: '选择包含 TODO.md 的项目' });
+    return typeof selected === 'string' ? this.openProject(selected) : null;
+  },
+
+  async mutate(intent: DesktopMutation): Promise<DesktopSnapshot> {
+    if (!isTauriRuntime()) return mockMutate(intent);
+    return normalizeSnapshot(await call<unknown>('mutate', { intent }));
+  },
+
+  async captureList(): Promise<Capture[]> {
+    if (!isTauriRuntime()) return mockCaptures.map((capture) => ({ ...capture }));
+    const result = await call<unknown>('capture_list');
+    if (!Array.isArray(result)) throw new DesktopBridgeError('capture_list 没有返回 Capture 列表');
+    return result.map(normalizeCapture);
+  },
+
+  async captureAppend(text: string): Promise<CaptureAppendResult> {
+    if (!isTauriRuntime()) {
+      const capture: Capture = {
+        id: `cap-mock-${String(mockCaptureSequence++).padStart(2, '0')}`,
+        created_at: '2026-08-31T10:30:00Z',
+        text: text.trim(),
+      };
+      mockCaptures = [...mockCaptures, capture];
+      return {
+        capture: { ...capture },
+        captures: mockCaptures.map((item) => ({ ...item })),
+      };
+    }
+    const raw = (await call<unknown>('capture_append', { text })) as Record<string, unknown>;
+    if (!Array.isArray(raw.captures)) throw new DesktopBridgeError('capture_append 没有返回 authoritative Capture 列表');
+    return {
+      capture: normalizeCapture(raw.capture),
+      captures: raw.captures.map(normalizeCapture),
+    };
+  },
+
+  async captureDelete(id: string): Promise<Capture[]> {
+    if (!isTauriRuntime()) {
+      mockCaptures = mockCaptures.filter((capture) => capture.id !== id);
+      return mockCaptures.map((capture) => ({ ...capture }));
+    }
+    const captures = await call<unknown>('capture_delete', { id });
+    if (!Array.isArray(captures)) throw new DesktopBridgeError('capture_delete 没有返回 authoritative Capture 列表');
+    return captures.map(normalizeCapture);
+  },
+
+  async captureTriage(id: string, column: string): Promise<TriageResult> {
+    if (!isTauriRuntime()) {
+      const capture = mockCaptures.find((item) => item.id === id);
+      if (!capture) throw new DesktopBridgeError('Capture 已不存在');
+      const taskId = `tri${String(mockTaskSequence++).padStart(3, '0')}`;
+      mockTasks.push({
+        id: taskId,
+        body: capture.text,
+        completed: false,
+        column,
+        due: null,
+        priority: null,
+        tags: ['capture'],
+      });
+      mockRevision += 1;
+      const partial = id === 'cap-b7k2';
+      if (!partial) mockCaptures = mockCaptures.filter((item) => item.id !== id);
+      const commandValues = {
+        snapshot: mockSnapshot(),
+        captures: mockCaptures.map((item) => ({ ...item })),
+      };
+      const result: TriageResult = partial
+        ? {
+            status: 'task_created_capture_retained',
+            task_id: taskId,
+            message: '任务已创建，但 Capture 文件删除时遇到锁竞争。',
+            ...commandValues,
+          }
+        : { status: 'completed', task_id: taskId, ...commandValues };
+      emitMock({ type: 'snapshot', snapshot: result.snapshot! });
+      return result;
+    }
+    const raw = (await call<unknown>('capture_triage', { id, column })) as Record<string, unknown>;
+    const taggedResult = (raw.result ?? {}) as Record<string, unknown>;
+    if (typeof taggedResult.task_id !== 'string' || !taggedResult.task_id) {
+      throw new DesktopBridgeError('capture_triage.result 缺少 task_id');
+    }
+    if (taggedResult.status !== 'completed' && taggedResult.status !== 'task_created_capture_retained') {
+      throw new DesktopBridgeError('capture_triage.result.status 格式无效');
+    }
+    const snapshotValue = readCommandValue(raw.snapshot, normalizeSnapshot);
+    const capturesValue = readCommandValue(raw.captures, (value) => {
+      if (!Array.isArray(value)) throw new DesktopBridgeError('capture_triage 返回的 Capture 列表无效');
+      return value.map(normalizeCapture);
+    });
+    const commandValues = {
+      snapshot: snapshotValue.value,
+      captures: capturesValue.value,
+      snapshot_error: snapshotValue.error,
+      captures_error: capturesValue.error,
+    };
+    if (taggedResult.status === 'task_created_capture_retained') {
+      if (typeof taggedResult.message !== 'string') {
+        throw new DesktopBridgeError('capture_triage partial result 缺少 message');
+      }
+      return {
+        status: taggedResult.status,
+        task_id: taggedResult.task_id,
+        message: taggedResult.message,
+        ...commandValues,
+      };
+    }
+    return {
+      status: 'completed',
+      task_id: taggedResult.task_id,
+      ...commandValues,
+    };
+  },
+
+  async subscribe(listener: (event: DesktopEvent) => void): Promise<UnlistenFn> {
+    if (!isTauriRuntime()) {
+      mockListeners.add(listener);
+      return () => mockListeners.delete(listener);
+    }
+    const unlistenSnapshot = await listen<unknown>('desktop://snapshot-changed', (event) => {
+      try {
+        listener({ type: 'snapshot', snapshot: normalizeSnapshot(event.payload) });
+      } catch (error) {
+        listener({ type: 'error', error: asBridgeError(error) });
+      }
+    });
+    const unlistenError = await listen<unknown>('desktop://snapshot-error', (event) => {
+      listener({ type: 'error', error: asBridgeError(event.payload) });
+    });
+    return () => {
+      unlistenSnapshot();
+      unlistenError();
+    };
+  },
+};
+
+export function shortProjectName(path: string): string {
+  const normalized = path.replace(/\\/g, '/').replace(/\/TODO\.md$/i, '');
+  return normalized.split('/').filter(Boolean).at(-1) ?? '当前项目';
+}
+
+export function compareRevisions(left: string, right: string): number | null {
+  if (left === right) return 0;
+  const numeric = /^\d+$/.test(left) && /^\d+$/.test(right);
+  if (numeric) return BigInt(left) > BigInt(right) ? 1 : -1;
+  const leftMock = /^mock-(\d+)$/.exec(left);
+  const rightMock = /^mock-(\d+)$/.exec(right);
+  if (leftMock && rightMock) return Number(leftMock[1]) > Number(rightMock[1]) ? 1 : -1;
+  return null;
+}

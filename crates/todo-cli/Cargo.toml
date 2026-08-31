@@ -1,0 +1,19 @@
+[package]
+name = "todo-cli"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+
+[[bin]]
+name = "todo"
+path = "src/main.rs"
+
+[dependencies]
+todo-core = { path = "../todo-core" }
+clap.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+pulldown-cmark.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
