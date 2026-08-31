@@ -370,3 +370,38 @@ fn global_capture_path_uses_the_product_home_location() {
     let path = todo_core::global_capture_path().unwrap();
     assert!(path.ends_with(std::path::Path::new(".todo").join("inbox.md")));
 }
+
+#[test]
+fn today_bands_are_ordered_by_priority_then_due_then_started() {
+    // The landing view answers "what should I do now", so file order is not good
+    // enough: P1 must outrank P3 regardless of where each line sits.
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("TODO.md");
+    std::fs::write(
+        &path,
+        "---\ntodo-spec: 1\ncolumns:\n  - {id: todo, name: Todo}\n---\n\n## Todo\n\n\
+- [ ] 低优先 <!--t:aaaaaa--> !3 📅2026-08-20\n\
+- [ ] 无优先级 <!--t:bbbbbb--> 📅2026-08-20\n\
+- [ ] 高优先 <!--t:cccccc--> !1 📅2026-08-20\n\
+- [ ] 高优先已开工 <!--t:dddddd--> !1 📅2026-08-20 ◐60\n",
+    )
+    .unwrap();
+
+    let backend = todo_core::DesktopBackend::new(std::time::Duration::from_millis(2000));
+    let mut backend = backend;
+    let snapshot = backend.open_project(path.to_str().unwrap()).unwrap();
+
+    let ids: Vec<_> = snapshot
+        .today
+        .overdue
+        .iter()
+        .map(|task| task.id.clone().unwrap())
+        .collect();
+
+    assert_eq!(
+        ids,
+        vec!["dddddd", "cccccc", "aaaaaa", "bbbbbb"],
+        "priority first; started work ahead of untouched at equal priority; \
+         missing priority last"
+    );
+}

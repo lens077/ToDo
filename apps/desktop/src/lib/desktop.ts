@@ -19,6 +19,77 @@ export interface DesktopTask {
   due: string | null;
   priority: TaskPriority;
   tags: string[];
+  /** Partial completion percentage (1-99) when the task carries a `◐` token. */
+  progress: number | null;
+  /** Date of the last failed attempt when the task carries a `⚠` token. */
+  failed_on: string | null;
+  /** Text of the `↳` note line. */
+  note: string | null;
+}
+
+export type DiffKind = 'context' | 'added' | 'removed';
+
+export interface DiffHunk {
+  left_line: number | null;
+  right_line: number | null;
+  kind: DiffKind;
+  text: string;
+}
+
+export interface TextDiff {
+  hunks: DiffHunk[];
+  added: number;
+  removed: number;
+}
+
+/**
+ * A whole-file rewrite awaiting confirmation.
+ *
+ * `base_hash` pins the document the diff was computed against; applying it after
+ * the file moved on is refused, so a user never confirms one diff and gets another.
+ */
+export interface ProposedRewrite {
+  diff: TextDiff;
+  proposed: string;
+  base_hash: string;
+}
+
+export interface LooseCheckbox {
+  path: string;
+  line: number;
+  text: string;
+  completed: boolean;
+}
+
+export interface CodeComment {
+  path: string;
+  line: number;
+  marker: string;
+  text: string;
+}
+
+export interface ScanReport {
+  loose_checkboxes: LooseCheckbox[];
+  code_comments: CodeComment[];
+  stats: {
+    files_scanned: number;
+    files_skipped: number;
+    duplicates_filtered: number;
+  };
+}
+
+export interface ScanPreview {
+  report: ScanReport;
+  rewrite: ProposedRewrite | null;
+}
+
+export interface HistoryEntry {
+  version: number;
+  at: string;
+  file: string;
+  op: string;
+  bytes: number;
+  blob: string;
 }
 
 export interface TodayView {
@@ -118,6 +189,9 @@ const mockInitialTasks: DesktopTask[] = [
     due: '2026-08-30',
     priority: 1,
     tags: ['core', 'evidence'],
+    progress: null,
+    failed_on: null,
+    note: null,
   },
   {
     id: 'k9p4dr',
@@ -127,6 +201,9 @@ const mockInitialTasks: DesktopTask[] = [
     due: MOCK_TODAY,
     priority: 2,
     tags: ['desktop'],
+    progress: null,
+    failed_on: null,
+    note: null,
   },
   {
     id: 'm2v7qx',
@@ -136,6 +213,9 @@ const mockInitialTasks: DesktopTask[] = [
     due: '2026-09-02',
     priority: 2,
     tags: ['agents', 'docs'],
+    progress: null,
+    failed_on: null,
+    note: null,
   },
   {
     id: 'a4n8sj',
@@ -145,6 +225,9 @@ const mockInitialTasks: DesktopTask[] = [
     due: null,
     priority: 1,
     tags: ['rust'],
+    progress: null,
+    failed_on: null,
+    note: null,
   },
   {
     id: 'w6h0bp',
@@ -154,6 +237,9 @@ const mockInitialTasks: DesktopTask[] = [
     due: '2026-09-06',
     priority: 3,
     tags: ['qa'],
+    progress: null,
+    failed_on: null,
+    note: null,
   },
   {
     id: 'd8q3mf',
@@ -163,6 +249,9 @@ const mockInitialTasks: DesktopTask[] = [
     due: '2026-08-28',
     priority: 2,
     tags: ['format'],
+    progress: null,
+    failed_on: null,
+    note: null,
   },
 ];
 
@@ -220,6 +309,14 @@ function normalizeTask(raw: unknown): DesktopTask {
     due: typeof task.due === 'string' ? task.due : null,
     priority,
     tags: Array.isArray(task.tags) ? task.tags.filter((tag): tag is string => typeof tag === 'string') : [],
+    // Only 1-99 is a valid partial state; anything else is treated as absent so a
+    // malformed value cannot render as a progress bar that claims 0% or 100%.
+    progress:
+      typeof task.progress === 'number' && task.progress >= 1 && task.progress <= 99
+        ? task.progress
+        : null,
+    failed_on: typeof task.failed_on === 'string' ? task.failed_on : null,
+    note: typeof task.note === 'string' && task.note.length > 0 ? task.note : null,
   };
 }
 
@@ -290,6 +387,50 @@ function mockSnapshot(): DesktopSnapshot {
   };
 }
 
+function mockRewrite(): ProposedRewrite {
+  const hunks: DiffHunk[] = [
+    { left_line: 1, right_line: 1, kind: 'context', text: '## Todo' },
+    { left_line: 2, right_line: null, kind: 'removed', text: '- [ ] 旧的一行 <!--t:aaaaaa-->' },
+    {
+      left_line: null,
+      right_line: 2,
+      kind: 'added',
+      text: '- [x] 旧的一行 <!--t:aaaaaa--> ✅2026-09-01',
+    },
+  ];
+  return {
+    diff: { hunks, added: 1, removed: 1 },
+    proposed: '（mock 模式不写文件）',
+    base_hash: 'mockbase00000000',
+  };
+}
+
+function mockScanPreview(
+  markdown: boolean,
+  comments: boolean,
+  importInto: string | null,
+): ScanPreview {
+  const report: ScanReport = {
+    loose_checkboxes: markdown
+      ? [{ path: 'docs/plan.md', line: 12, text: '写迁移脚本', completed: false }]
+      : [],
+    code_comments: comments
+      ? [{ path: 'src/router.rs', line: 88, marker: 'TODO', text: '给登录接口加限流' }]
+      : [],
+    stats: { files_scanned: 114, files_skipped: 2, duplicates_filtered: 3 },
+  };
+  const empty = report.loose_checkboxes.length + report.code_comments.length === 0;
+  return { report, rewrite: importInto && !empty ? mockRewrite() : null };
+}
+
+function mockHistory(): HistoryEntry[] {
+  return [
+    { version: 3, at: '2026-09-01T10:24:02+08:00', file: 'TODO.md', op: 'progress', bytes: 286, blob: 'v000003.snap' },
+    { version: 2, at: '2026-09-01T10:23:41+08:00', file: 'TODO.md', op: 'board-move', bytes: 264, blob: 'v000002.snap' },
+    { version: 1, at: '2026-09-01T10:22:19+08:00', file: 'TODO.md', op: 'add', bytes: 210, blob: 'v000001.snap' },
+  ];
+}
+
 function emitMock(event: DesktopEvent): void {
   window.setTimeout(() => {
     mockListeners.forEach((listener) => listener(event));
@@ -315,6 +456,9 @@ async function mockMutate(intent: DesktopMutation): Promise<DesktopSnapshot> {
       due: null,
       priority: null,
       tags: [],
+      progress: null,
+      failed_on: null,
+      note: null,
     });
   } else if (intent.type === 'set_completed') {
     mockTasks = mockTasks.map((task) =>
@@ -409,6 +553,50 @@ export const desktop = {
     return mockSnapshot();
   },
 
+  /**
+   * Scans the repository. Passing `importInto` also prepares the rewrite that
+   * importing would produce; nothing is written either way.
+   */
+  async scanRepository(
+    markdown: boolean,
+    comments: boolean,
+    importInto: string | null,
+  ): Promise<ScanPreview> {
+    if (!isTauriRuntime()) return mockScanPreview(markdown, comments, importInto);
+    return await call<ScanPreview>('scan_repository', {
+      markdown,
+      comments,
+      importInto,
+    });
+  },
+
+  /** Writes a rewrite the user has confirmed. Refused if the file moved on. */
+  async applyRewrite(rewrite: ProposedRewrite, op: string): Promise<DesktopSnapshot> {
+    if (!isTauriRuntime()) return mockSnapshot();
+    return normalizeSnapshot(
+      await call<unknown>('apply_rewrite', {
+        proposed: rewrite.proposed,
+        baseHash: rewrite.base_hash,
+        op,
+      }),
+    );
+  },
+
+  async historyList(): Promise<HistoryEntry[]> {
+    if (!isTauriRuntime()) return mockHistory();
+    return await call<HistoryEntry[]>('history_list');
+  },
+
+  async historyPreview(version: number): Promise<ProposedRewrite> {
+    if (!isTauriRuntime()) return mockRewrite();
+    return await call<ProposedRewrite>('history_preview', { version });
+  },
+
+  async alignmentPrompt(): Promise<string> {
+    if (!isTauriRuntime()) return '# 任务：核对 TODO 与代码现实\n\n（mock 模式下的占位提示词）\n';
+    return await call<string>('alignment_prompt');
+  },
+
   async chooseAndOpenProject(): Promise<DesktopSnapshot | null> {
     if (!isTauriRuntime()) {
       mockMode = 'default';
@@ -474,6 +662,9 @@ export const desktop = {
         due: null,
         priority: null,
         tags: ['capture'],
+        progress: null,
+        failed_on: null,
+        note: null,
       });
       mockRevision += 1;
       const partial = id === 'cap-b7k2';

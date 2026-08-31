@@ -338,6 +338,11 @@ export function useDesktop() {
     partialTriages,
     chooseProject,
     refreshSnapshot,
+    // Adopts a snapshot from a write that bypassed `mutate`, such as a confirmed
+    // rewrite. Authoritative: the caller already wrote the file.
+    applySnapshot: (next: DesktopSnapshot) => {
+      applySnapshot(next, true);
+    },
     clearBanner: () => setBanner(null),
     addTask: (body: string, column: string | null) =>
       runMutation('task:new', { type: 'add_task', body, column }),

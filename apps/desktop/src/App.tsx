@@ -3,13 +3,15 @@ import { BoardView } from './components/BoardView';
 import { CaptureView } from './components/CaptureView';
 import { CommandBar } from './components/CommandBar';
 import { EmptyState } from './components/EmptyState';
+import { ReviewView } from './components/ReviewView';
 import { Sidebar, type MainView } from './components/Sidebar';
 import { StatusBanner } from './components/StatusBanner';
 import { TodayView } from './components/TodayView';
 import { useDesktop } from './hooks/useDesktop';
 
 export function App() {
-  const [activeView, setActiveView] = React.useState<MainView>('board');
+  // The homepage answers "what should I do now"; the board is one click away.
+  const [activeView, setActiveView] = React.useState<MainView>('today');
   const model = useDesktop();
   const todayCount = model.snapshot
     ? model.snapshot.today.overdue.length + model.snapshot.today.today.length + model.snapshot.today.upcoming.length
@@ -56,6 +58,8 @@ export function App() {
               onDelete={model.deleteCapture}
               onTriage={model.triageCapture}
             />
+          ) : activeView === 'review' ? (
+            <ReviewView snapshot={model.snapshot} onApplied={model.applySnapshot} />
           ) : model.snapshot ? (
             activeView === 'board' ? (
               <BoardView

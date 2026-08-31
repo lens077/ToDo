@@ -2,7 +2,7 @@ import type { WorkspaceStatus } from '../hooks/useDesktop';
 import { shortProjectName } from '../lib/desktop';
 import { Icon, type IconName } from './Icon';
 
-export type MainView = 'board' | 'today' | 'capture';
+export type MainView = 'today' | 'board' | 'capture' | 'review';
 
 interface SidebarProps {
   activeView: MainView;
@@ -13,10 +13,12 @@ interface SidebarProps {
   onChooseProject: () => void;
 }
 
+// Today leads: the default landing view is "what should I do now", not the board.
 const navItems: Array<{ id: MainView; label: string; icon: IconName }> = [
-  { id: 'board', label: '看板', icon: 'board' },
   { id: 'today', label: '今日', icon: 'calendar' },
+  { id: 'board', label: '看板', icon: 'board' },
   { id: 'capture', label: '随记', icon: 'capture' },
+  { id: 'review', label: '扫描与历史', icon: 'folder' },
 ];
 
 export function Sidebar({

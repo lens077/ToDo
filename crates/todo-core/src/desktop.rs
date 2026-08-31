@@ -56,6 +56,12 @@ pub struct DesktopTask {
     pub due: Option<String>,
     pub priority: Option<u8>,
     pub tags: Vec<String>,
+    /// Partial completion percentage, when the task carries a `◐` token.
+    pub progress: Option<u8>,
+    /// Date of the last failed attempt, when the task carries a `⚠` token.
+    pub failed_on: Option<String>,
+    /// Text of the `↳` note line, when present.
+    pub note: Option<String>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
@@ -176,7 +182,7 @@ impl DesktopBackend {
             .filter(|task| !task.completed)
             .cloned()
             .collect();
-        let view = TodayView {
+        let mut view = TodayView {
             overdue: active
                 .iter()
                 .filter(|task| task_due_date(task).is_some_and(|due| due < today))
@@ -195,6 +201,11 @@ impl DesktopBackend {
                 .cloned()
                 .collect(),
         };
+        // The landing view answers "what should I do now", so each band is ordered
+        // by urgency rather than by position in the file.
+        for band in [&mut view.overdue, &mut view.today, &mut view.upcoming] {
+            sort_by_urgency(band);
+        }
         let hash = document
             .snapshot
             .as_ref()
@@ -325,7 +336,39 @@ fn task_view(task: &crate::Task) -> DesktopTask {
         due,
         priority,
         tags,
+        progress: task.progress(),
+        failed_on: task.failure().map(str::to_string),
+        note: task.note.as_ref().map(|note| note.text.clone()),
     }
+}
+
+/// Orders a Today band: priority first, then due date, then work already started.
+///
+/// Started work is surfaced above untouched work at equal urgency, because
+/// finishing something at 60% is usually cheaper than starting something new.
+/// The order is total and deterministic, so the list does not reshuffle between
+/// renders of the same data.
+fn sort_by_urgency(tasks: &mut [DesktopTask]) {
+    tasks.sort_by(|left, right| {
+        // Missing priority sorts last, not as 0.
+        let priority = left
+            .priority
+            .unwrap_or(u8::MAX)
+            .cmp(&right.priority.unwrap_or(u8::MAX));
+        let due = task_due_date(left)
+            .map(|date| date.to_string())
+            .unwrap_or_else(|| "9999-99-99".into())
+            .cmp(
+                &task_due_date(right)
+                    .map(|date| date.to_string())
+                    .unwrap_or_else(|| "9999-99-99".into()),
+            );
+        let started = right.progress.is_some().cmp(&left.progress.is_some());
+        priority
+            .then(due)
+            .then(started)
+            .then_with(|| left.body.cmp(&right.body))
+    });
 }
 
 fn task_due_date(task: &DesktopTask) -> Option<NaiveDate> {

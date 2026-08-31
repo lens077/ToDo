@@ -115,6 +115,54 @@ fn capture_triage(
 }
 
 #[tauri::command]
+fn scan_repository(
+    state: State<'_, AppState>,
+    markdown: bool,
+    comments: bool,
+    import_into: Option<String>,
+) -> Result<ops::ScanPreview, String> {
+    state
+        .ops
+        .scan_repository(markdown, comments, import_into.as_deref())
+}
+
+#[tauri::command]
+fn apply_rewrite(
+    state: State<'_, AppState>,
+    proposed: String,
+    base_hash: String,
+    op: String,
+) -> Result<DesktopSnapshot, String> {
+    state.ops.apply_rewrite(&proposed, &base_hash, &op)
+}
+
+#[tauri::command]
+fn history_list(state: State<'_, AppState>) -> Result<Vec<todo_core::HistoryEntry>, String> {
+    state.ops.history_list()
+}
+
+#[tauri::command]
+fn history_preview(
+    state: State<'_, AppState>,
+    version: u64,
+) -> Result<ops::ProposedRewrite, String> {
+    state.ops.history_preview(version)
+}
+
+#[tauri::command]
+fn alignment_prompt(state: State<'_, AppState>) -> String {
+    state.ops.alignment_prompt()
+}
+
+#[tauri::command]
+fn alignment_review(
+    state: State<'_, AppState>,
+    raw: String,
+) -> Result<todo_core::AlignmentReview, String> {
+    state.ops.alignment_review(&raw)
+}
+
+#[tauri::command]
 fn desktop_status(state: State<'_, AppState>) -> Result<DesktopStatus, String> {
     let status = state
         .status
@@ -237,6 +285,12 @@ pub fn run() {
             capture_append,
             capture_delete,
             capture_triage,
+            scan_repository,
+            apply_rewrite,
+            history_list,
+            history_preview,
+            alignment_prompt,
+            alignment_review,
             desktop_status
         ])
         .setup(move |app| {

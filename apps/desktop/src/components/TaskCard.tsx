@@ -107,7 +107,21 @@ export function TaskCard({
             #{tag}
           </span>
         ))}
+        {/* Partial state is shown on the card: a 60%-done task with a failed
+            attempt must not read as untouched work. */}
+        {!task.completed && task.progress !== null && (
+          <span className="task-partial" aria-label={`已完成 ${task.progress}%`}>
+            ◐ {task.progress}%
+          </span>
+        )}
+        {!task.completed && task.failed_on && (
+          <span className="task-failed" aria-label={`上次失败于 ${task.failed_on}`}>
+            ⚠ {task.failed_on}
+          </span>
+        )}
       </div>
+
+      {task.note && !compact && <p className="task-note">↳ {task.note}</p>}
 
       {busy && <span className="task-card__saving">写入中</span>}
     </article>
