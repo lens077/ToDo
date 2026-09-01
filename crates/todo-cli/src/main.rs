@@ -1331,17 +1331,50 @@ fn valid_date(value: &str) -> bool {
             .all(|(i, b)| i == 4 || i == 7 || b.is_ascii_digit())
 }
 fn adopt_source(source: &str) -> Result<String, Error> {
-    let mut out=String::from("---\ntodo-spec: 1\ncolumns:\n  - {id: todo, name: Todo}\n  - {id: doing, name: Doing}\n  - {id: done, name: Done, type: done}\n---\n\n## Todo\n");
+    let mut out = String::from(
+        "---\ntodo-spec: 1\ncolumns:\n  - {id: todo, name: Todo}\n  - {id: doing, name: Doing}\n  - {id: done, name: Done, type: done}\n---\n\n## Todo\n",
+    );
     let mut existing = HashSet::new();
+    let mut fence: Option<(u8, usize)> = None;
     for line in source.split_inclusive('\n') {
-        let trimmed = line.trim_start_matches([' ', '\t']);
+        let content = line.trim_end_matches(['\r', '\n']);
+        let trimmed = content.trim_start_matches([' ', '\t']);
+        let fence_byte = trimmed
+            .as_bytes()
+            .first()
+            .copied()
+            .filter(|byte| matches!(byte, b'`' | b'~'));
+        let fence_len = trimmed
+            .bytes()
+            .take_while(|byte| Some(*byte) == fence_byte)
+            .count();
+
+        if let Some((byte, minimum)) = fence {
+            if Some(byte) == fence_byte
+                && fence_len >= minimum
+                && trimmed[fence_len..].trim().is_empty()
+            {
+                fence = None;
+            }
+            out.push_str(line);
+            continue;
+        }
+        if fence_len >= 3 {
+            fence = Some((
+                fence_byte.expect("a non-zero fence has a delimiter"),
+                fence_len,
+            ));
+            out.push_str(line);
+            continue;
+        }
+
         if (trimmed.starts_with("- [ ]")
             || trimmed.starts_with("- [x]")
             || trimmed.starts_with("- [X]"))
             && !line.contains("<!--t:")
         {
-            let ending = if line.ends_with("\n") { "\n" } else { "" };
-            out.push_str(line.trim_end_matches(['\r', '\n']));
+            let ending = if line.ends_with('\n') { "\n" } else { "" };
+            out.push_str(content);
             let id = generate_task_id(&existing)?;
             existing.insert(id.clone());
             out.push_str(&format!(" <!--t:{id}-->{ending}"));

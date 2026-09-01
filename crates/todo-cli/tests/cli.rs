@@ -63,6 +63,28 @@ fn init_never_overwrites_without_explicit_adopt() {
     assert!(adopted.contains("<!--t:"));
 }
 
+#[test]
+fn adopt_preserves_fenced_task_examples_byte_for_byte() {
+    let dir = tempdir().unwrap();
+    let path = dir.path().join("TODO.md");
+    let backtick_fence = "```markdown\n- [ ] example with trailing spaces  \n```\n";
+    let tilde_fence = "~~~~text\r\n- [x] another example\r\n~~~~\r\n";
+    let source = format!("- [ ] real task\n{backtick_fence}{tilde_fence}");
+    fs::write(&path, &source).unwrap();
+
+    let output = todo(dir.path(), &["init", "--adopt"]);
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let adopted = fs::read_to_string(path).unwrap();
+
+    assert!(adopted.contains(backtick_fence));
+    assert!(adopted.contains(tilde_fence));
+    assert_eq!(adopted.matches("<!--t:").count(), 1);
+}
+
 /// Regression: `init` used to check `path.exists()` and then `fs::write`, so two
 /// processes could both pass the check and both write. Measured at 5/40 rounds
 /// before the fix. The invariant is that exactly one caller may succeed.
