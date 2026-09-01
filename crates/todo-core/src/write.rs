@@ -77,7 +77,7 @@ impl<'a> OptimisticLock<'a> {
         Self { document }
     }
 
-    pub fn write(&self, changes: &[Change]) -> Result<Document> {
+    pub fn validate(&self) -> Result<()> {
         let snapshot = self
             .document
             .snapshot
@@ -89,6 +89,16 @@ impl<'a> OptimisticLock<'a> {
         if hash_bytes(&bytes) != snapshot.hash || metadata.modified().ok() != snapshot.modified {
             return Err(Error::ConcurrentModification);
         }
+        Ok(())
+    }
+
+    pub fn write(&self, changes: &[Change]) -> Result<Document> {
+        self.validate()?;
+        let snapshot = self
+            .document
+            .snapshot
+            .as_ref()
+            .ok_or(Error::ConcurrentModification)?;
         let output = apply_changes(self.document, changes)?;
         atomic_write(&snapshot.path, output.as_bytes())?;
         crate::parse_file(&snapshot.path)

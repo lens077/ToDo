@@ -1391,3 +1391,13 @@ fn todo_io(path: &Path, source: std::io::Error) -> Error {
         source,
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn concurrent_modification_uses_exit_code_five() {
+        assert_eq!(error_code(&Error::ConcurrentModification), 5);
+    }
+}

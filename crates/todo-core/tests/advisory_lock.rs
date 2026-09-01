@@ -1,6 +1,7 @@
 use std::{
     fs,
-    sync::{Arc, Barrier},
+    io::Write,
+    sync::{mpsc, Arc, Barrier},
     thread,
     time::Duration,
 };
@@ -42,6 +43,42 @@ fn concurrent_writers_serialize_read_modify_write_cycles() {
     for index in 0..writers {
         assert!(document.source.contains(&format!("concurrent-{index}")));
     }
+}
+
+#[test]
+fn external_editor_during_locked_update_triggers_optimistic_conflict() {
+    let directory = tempdir().unwrap();
+    let path = directory.path().join("TODO.md");
+    fs::write(&path, format!("{BASE}- [ ] guarded <!--t:abc123-->\n")).unwrap();
+
+    let (derive_started_tx, derive_started_rx) = mpsc::channel();
+    let (external_written_tx, external_written_rx) = mpsc::channel();
+    let external_path = path.clone();
+    let external = thread::spawn(move || {
+        derive_started_rx.recv().unwrap();
+        let mut file = fs::OpenOptions::new()
+            .append(true)
+            .open(&external_path)
+            .unwrap();
+        file.write_all(b"<!-- external editor -->\n").unwrap();
+        file.sync_all().unwrap();
+        external_written_tx.send(()).unwrap();
+    });
+
+    let result = LockedWriter::new(&path, Duration::from_secs(1)).update(|_document| {
+        derive_started_tx.send(()).unwrap();
+        external_written_rx.recv().unwrap();
+        Ok(vec![Change::SetCompleted {
+            task: 0,
+            completed: true,
+        }])
+    });
+    external.join().unwrap();
+
+    assert!(matches!(result, Err(Error::ConcurrentModification)));
+    let contents = fs::read_to_string(path).unwrap();
+    assert!(contents.contains("- [ ] guarded"));
+    assert!(contents.ends_with("<!-- external editor -->\n"));
 }
 
 #[test]

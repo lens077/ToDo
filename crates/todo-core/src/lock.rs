@@ -9,7 +9,7 @@ use fs2::FileExt;
 
 use crate::{
     apply_changes, atomic_write, error::io_error, parse_file, Change, Document, Error, History,
-    Result,
+    OptimisticLock, Result,
 };
 
 pub struct LockedWriter {
@@ -51,13 +51,18 @@ impl LockedWriter {
         let document = parse_file(&self.path)?;
         let changes = derive(&document)?;
         let output = apply_changes(&document, &changes)?;
+        let optimistic = OptimisticLock::new(&document);
         if output != document.source {
+            // Validate after deriving changes: an external editor does not share our
+            // advisory lock and may have changed the file while the closure ran.
+            optimistic.validate()?;
             // A no-op write would otherwise fill history with identical snapshots and
             // push real restore points out of the retention window.
             History::for_file(&self.path).record(&self.path, op)?;
         }
-        atomic_write(&self.path, output.as_bytes())?;
-        parse_file(&self.path)
+        // `write` validates again after history I/O, closing the larger race window
+        // before the atomic replacement.
+        optimistic.write(&changes)
     }
 
     /// Replaces the whole file with `content` after snapshotting the previous state.
@@ -66,13 +71,16 @@ impl LockedWriter {
     /// history restore) rather than as a list of [`Change`] values.
     pub fn replace_all(&self, op: &str, content: &str) -> Result<Document> {
         let _guard = self.lock()?;
-        let current = std::fs::read_to_string(&self.path).unwrap_or_default();
-        if current == content {
-            return parse_file(&self.path);
+        let current = parse_file(&self.path)?;
+        if current.source == content {
+            return Ok(current);
         }
         // Reject a replacement that would not parse, before it reaches disk.
         crate::parse(content.to_string())?;
+        let optimistic = OptimisticLock::new(&current);
+        optimistic.validate()?;
         History::for_file(&self.path).record(&self.path, op)?;
+        optimistic.validate()?;
         atomic_write(&self.path, content.as_bytes())?;
         parse_file(&self.path)
     }
