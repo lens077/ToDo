@@ -1,7 +1,7 @@
 use std::path::Path;
 
 use tempfile::tempdir;
-use todo_core::{parse, Projection};
+use todo_core::{parse, project_document, Projection};
 
 fn source(body: &str) -> String {
     format!("---\ntodo-spec: 1\ncolumns:\n  - {{id: todo, name: Todo}}\n  - {{id: done, name: Done, type: done}}\n---\n\n## Todo\n{body}\n## Done\n- [x] shipped <!--t:cccccc--> ✅2026-08-30\n")
@@ -30,6 +30,20 @@ fn projects_all_task_fields_and_relations() {
     let child = tasks.iter().find(|task| task.id == "bbbbbb").unwrap();
     assert_eq!(child.parent_id.as_deref(), Some("aaaaaa"));
     assert_eq!(child.line, 10);
+}
+
+#[test]
+fn mainline_projection_preserves_partial_failure_and_note_fields() {
+    let document = parse(source(
+        "- [ ] active <!--t:aaaaaa--> ◐70 ⚠2026-09-01\n      ↳ load test context <!--n:aaaaaa-->",
+    ))
+    .unwrap();
+
+    let tasks = project_document(Path::new("TODO.md"), &document).unwrap();
+    let active = tasks.iter().find(|task| task.id == "aaaaaa").unwrap();
+    assert_eq!(active.progress, Some(70));
+    assert_eq!(active.failed_on.as_deref(), Some("2026-09-01"));
+    assert_eq!(active.note.as_deref(), Some("load test context"));
 }
 
 #[test]
@@ -67,6 +81,37 @@ fn incremental_update_matches_full_rebuild_and_preserves_unaffected_rows() {
         .rebuild(&[(Path::new("TODO.md"), &changed)])
         .unwrap();
     assert_eq!(incremental.snapshot().unwrap(), rebuilt.snapshot().unwrap());
+}
+
+#[test]
+fn note_only_incremental_changes_refresh_the_projected_row() {
+    let directory = tempdir().unwrap();
+    let path = directory.path().join("index.db");
+    let original = parse(source(
+        "- [ ] active <!--t:aaaaaa-->\n      ↳ old context <!--n:aaaaaa-->",
+    ))
+    .unwrap();
+    let changed = parse(source(
+        "- [ ] active <!--t:aaaaaa-->\n      ↳ fresh context <!--n:aaaaaa-->",
+    ))
+    .unwrap();
+    let mut projection = Projection::open(path).unwrap();
+    projection
+        .rebuild(&[(Path::new("TODO.md"), &original)])
+        .unwrap();
+
+    let stats = projection
+        .update_file(Path::new("TODO.md"), &changed)
+        .unwrap();
+
+    assert_eq!(stats.updated, 1);
+    let task = projection
+        .tasks()
+        .unwrap()
+        .into_iter()
+        .find(|task| task.id == "aaaaaa")
+        .unwrap();
+    assert_eq!(task.note.as_deref(), Some("fresh context"));
 }
 
 #[test]

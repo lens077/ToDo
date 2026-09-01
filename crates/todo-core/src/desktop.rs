@@ -1,11 +1,11 @@
 use crate::{
-    generate_task_id, parse_file, Change, Document, Error, InsertPosition, LockedWriter, Result,
-    TokenKind,
+    generate_task_id, parse_file, project_document, Change, Document, Error, InsertPosition,
+    LockedWriter, ProjectedTask, Result, TokenKind,
 };
 use chrono::{DateTime, Days, Local, NaiveDate, SecondsFormat, Utc};
 use serde::{Deserialize, Serialize};
 use std::{
-    collections::HashSet,
+    collections::{HashMap, HashSet},
     fmt::Debug,
     fs,
     path::{Path, PathBuf},
@@ -188,7 +188,20 @@ impl DesktopBackend {
 
     fn derive(&self, document: &Document) -> Result<DesktopSnapshot> {
         let path = self.project.as_ref().ok_or(Error::NotTaskFile)?;
-        let tasks: Vec<_> = document.tasks.iter().map(task_view).collect();
+        let mut projected: HashMap<_, _> = project_document(path, document)?
+            .into_iter()
+            .map(|task| (task.id.clone(), task))
+            .collect();
+        let tasks: Vec<_> = document
+            .tasks
+            .iter()
+            .map(|task| {
+                task.id
+                    .as_ref()
+                    .and_then(|id| projected.remove(id))
+                    .map_or_else(|| task_view(task), projected_task_view)
+            })
+            .collect();
         let today = self.clock.local_today();
         let upcoming_end = today.checked_add_days(Days::new(7)).unwrap_or(today);
         let active: Vec<_> = tasks
@@ -338,6 +351,21 @@ fn find_task(document: &Document, id: &str) -> Result<usize> {
         .iter()
         .position(|task| task.id.as_deref() == Some(id))
         .ok_or_else(|| Error::TaskNotFound(id.into()))
+}
+
+fn projected_task_view(task: ProjectedTask) -> DesktopTask {
+    DesktopTask {
+        id: Some(task.id),
+        body: task.body,
+        completed: task.completed,
+        column: task.column,
+        due: task.due,
+        priority: task.priority,
+        tags: task.tags,
+        progress: task.progress,
+        failed_on: task.failed_on,
+        note: task.note,
+    }
 }
 
 fn task_view(task: &crate::Task) -> DesktopTask {

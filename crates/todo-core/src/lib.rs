@@ -24,7 +24,9 @@ pub use id::{generate_task_id, DEFAULT_ID_LENGTH};
 pub use lock::{FileLockGuard, LockedWriter};
 pub use model::*;
 pub use parse::{parse, parse_file};
-pub use projection::{ProjectedTask, Projection, ProjectionSnapshot, UpdateStats, SCHEMA_HASH};
+pub use projection::{
+    project_document, ProjectedTask, Projection, ProjectionSnapshot, UpdateStats, SCHEMA_HASH,
+};
 pub use prompt::{
     review_alignment, AlignmentResponse, AlignmentReview, AlignmentVerdict, Confidence,
     RejectedVerdict, Verdict, ALIGNMENT_PROMPT,

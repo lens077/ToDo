@@ -3,7 +3,7 @@ mod hooks;
 use todo_cli::serve;
 
 use std::{
-    collections::HashSet,
+    collections::{HashMap, HashSet},
     fs,
     path::{Path, PathBuf},
     process::ExitCode,
@@ -283,7 +283,7 @@ fn run(cli: &Cli) -> Result<u8, Error> {
         Command::Init { adopt } => init(cli, &path, *adopt),
         Command::List { column, all } => {
             let doc = load(&path)?;
-            let mut tasks: Vec<_> = views(&doc)
+            let mut tasks: Vec<_> = projected_views(&path, &doc)?
                 .into_iter()
                 .filter(|task| *all || (!task.completed && task.column.is_some()))
                 .filter(|task| {
@@ -1514,6 +1514,39 @@ fn load(path: &Path) -> Result<todo_core::Document, Error> {
         parse_file(path)
     }
 }
+fn projected_views(path: &Path, document: &todo_core::Document) -> Result<Vec<TaskView>, Error> {
+    let mut projected: HashMap<_, _> = todo_core::project_document(path, document)?
+        .into_iter()
+        .map(|task| (task.id.clone(), task))
+        .collect();
+    Ok(views(document)
+        .into_iter()
+        .map(|view| {
+            let Some(task) = view.id.as_ref().and_then(|id| projected.remove(id)) else {
+                return view;
+            };
+            TaskView {
+                id: Some(task.id),
+                body: task.body,
+                completed: task.completed,
+                column: task.column,
+                indent_level: task.indent_level,
+                parent_id: task.parent_id,
+                due: task.due,
+                tags: task.tags,
+                assignees: task.assignees,
+                priority: task.priority,
+                order_key: task.order_key,
+                dependencies: task.deps,
+                progress: task.progress,
+                failed_on: task.failed_on,
+                note: task.note,
+                line: task.line,
+            }
+        })
+        .collect())
+}
+
 fn views(document: &todo_core::Document) -> Vec<TaskView> {
     document
         .tasks

@@ -12,12 +12,15 @@ CREATE TABLE tasks(
   id TEXT PRIMARY KEY, body TEXT NOT NULL, completed INTEGER NOT NULL, column_id TEXT,
   indent_level INTEGER NOT NULL, parent_id TEXT, due TEXT, tags TEXT NOT NULL,
   assignees TEXT NOT NULL, priority INTEGER, order_key INTEGER, evidence TEXT NOT NULL,
-  deps TEXT NOT NULL, file_path TEXT NOT NULL, line INTEGER NOT NULL, source_hash TEXT NOT NULL
+  deps TEXT NOT NULL, progress INTEGER, failed_on TEXT, note TEXT, file_path TEXT NOT NULL,
+  line INTEGER NOT NULL, source_hash TEXT NOT NULL
 );
 CREATE INDEX tasks_file_line ON tasks(file_path,line);
 "#;
 
-pub const SCHEMA_HASH: &str = "todo-core-schema-v1-9326a2c1";
+pub const SCHEMA_HASH: &str = "todo-core-schema-v2-4b8d19e7";
+const INSERT_TASK_SQL: &str = "INSERT INTO tasks(id,body,completed,column_id,indent_level,parent_id,due,tags,assignees,priority,order_key,evidence,deps,progress,failed_on,note,file_path,line,source_hash) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,?19)";
+const UPDATE_TASK_SQL: &str = "UPDATE tasks SET body=?2,completed=?3,column_id=?4,indent_level=?5,parent_id=?6,due=?7,tags=?8,assignees=?9,priority=?10,order_key=?11,evidence=?12,deps=?13,progress=?14,failed_on=?15,note=?16,file_path=?17,line=?18,source_hash=?19 WHERE id=?1";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProjectedTask {
@@ -34,6 +37,9 @@ pub struct ProjectedTask {
     pub order_key: Option<i64>,
     pub evidence: Vec<String>,
     pub deps: Vec<String>,
+    pub progress: Option<u8>,
+    pub failed_on: Option<String>,
+    pub note: Option<String>,
     pub file_path: String,
     pub line: usize,
 }
@@ -54,6 +60,13 @@ pub struct UpdateStats {
 
 pub struct Projection {
     connection: Connection,
+}
+
+/// Rebuilds an ephemeral SQLite read model from one authoritative Markdown document.
+pub fn project_document(path: &Path, document: &Document) -> Result<Vec<ProjectedTask>> {
+    let mut projection = Projection::open_in_memory()?;
+    projection.rebuild(&[(path, document)])?;
+    projection.tasks()
 }
 
 impl Projection {
@@ -124,7 +137,7 @@ impl Projection {
 
     pub fn tasks(&self) -> Result<Vec<ProjectedTask>> {
         let mut statement = self.connection.prepare(
-            "SELECT id,body,completed,column_id,indent_level,parent_id,due,tags,assignees,priority,order_key,evidence,deps,file_path,line FROM tasks ORDER BY file_path,line",
+            "SELECT id,body,completed,column_id,indent_level,parent_id,due,tags,assignees,priority,order_key,evidence,deps,progress,failed_on,note,file_path,line FROM tasks ORDER BY file_path,line",
         )?;
         let values = statement
             .query_map([], |row| {
@@ -142,8 +155,11 @@ impl Projection {
                     order_key: row.get(10)?,
                     evidence: decode_list(&row.get::<_, String>(11)?),
                     deps: decode_list(&row.get::<_, String>(12)?),
-                    file_path: row.get(13)?,
-                    line: row.get::<_, i64>(14)? as usize,
+                    progress: row.get::<_, Option<i64>>(13)?.map(|value| value as u8),
+                    failed_on: row.get(14)?,
+                    note: row.get(15)?,
+                    file_path: row.get(16)?,
+                    line: row.get::<_, i64>(17)? as usize,
                 })
             })?
             .collect::<std::result::Result<_, _>>()?;
@@ -254,16 +270,28 @@ struct TaskRow {
     order_key: Option<i64>,
     evidence: Vec<String>,
     deps: Vec<String>,
+    progress: Option<u8>,
+    failed_on: Option<String>,
+    note: Option<String>,
     file_path: String,
     line: usize,
     source_hash: String,
 }
 
 fn task_rows(document: &Document, path: &Path) -> Vec<TaskRow> {
+    let mut source_offset = 0;
+    let mut line = 1;
+    let file_path = path.to_string_lossy().into_owned();
     document
         .tasks
         .iter()
         .filter_map(|task| {
+            line += document.source.as_bytes()[source_offset..task.line_range.start]
+                .iter()
+                .filter(|byte| **byte == b'\n')
+                .count();
+            source_offset = task.line_range.start;
+            let task_line = line;
             let id = task.id.clone()?;
             let mut due = None;
             let mut tags = Vec::new();
@@ -287,7 +315,11 @@ fn task_rows(document: &Document, path: &Path) -> Vec<TaskRow> {
             let parent_id = task
                 .parent
                 .and_then(|parent| document.tasks[parent].id.clone());
-            let raw = &document.source[task.line_range.clone()];
+            let source_end = task
+                .note
+                .as_ref()
+                .map_or(task.line_range.end, |note| note.full_line_range.end);
+            let raw = &document.source[task.line_range.start..source_end];
             Some(TaskRow {
                 id,
                 body: task.body.clone(),
@@ -302,12 +334,11 @@ fn task_rows(document: &Document, path: &Path) -> Vec<TaskRow> {
                 order_key,
                 evidence,
                 deps,
-                file_path: path.to_string_lossy().into_owned(),
-                line: document.source.as_bytes()[..task.line_range.start]
-                    .iter()
-                    .filter(|byte| **byte == b'\n')
-                    .count()
-                    + 1,
+                progress: task.progress(),
+                failed_on: task.failure().map(str::to_string),
+                note: task.note.as_ref().map(|note| note.text.clone()),
+                file_path: file_path.clone(),
+                line: task_line,
                 source_hash: format!("{:016x}", crate::parse::hash_bytes(raw.as_bytes())),
             })
         })
@@ -330,9 +361,7 @@ fn project_file(
     project_columns(transaction, path, document)?;
     upsert_file(transaction, path, document)?;
     if insert {
-        for row in task_rows(document, path) {
-            insert_task(transaction, &row)?;
-        }
+        insert_tasks(transaction, &task_rows(document, path))?;
     }
     Ok(())
 }
@@ -365,38 +394,87 @@ fn upsert_file(transaction: &Transaction<'_>, path: &Path, document: &Document) 
     Ok(())
 }
 
+fn insert_tasks(transaction: &Transaction<'_>, rows: &[TaskRow]) -> Result<()> {
+    const PLACEHOLDERS: &str = "(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)";
+    for chunk in rows.chunks(500) {
+        let values = std::iter::repeat_n(PLACEHOLDERS, chunk.len())
+            .collect::<Vec<_>>()
+            .join(",");
+        let sql = format!(
+            "INSERT INTO tasks(id,body,completed,column_id,indent_level,parent_id,due,tags,assignees,priority,order_key,evidence,deps,progress,failed_on,note,file_path,line,source_hash) VALUES {values}"
+        );
+        let mut params = Vec::with_capacity(chunk.len() * 19);
+        for row in chunk {
+            task_values(row, &mut params);
+        }
+        transaction.execute(&sql, rusqlite::params_from_iter(params))?;
+    }
+    Ok(())
+}
+
+fn task_values(row: &TaskRow, values: &mut Vec<rusqlite::types::Value>) {
+    use rusqlite::types::Value;
+    values.extend([
+        Value::Text(row.id.clone()),
+        Value::Text(row.body.clone()),
+        Value::Integer(row.completed as i64),
+        row.column.clone().map_or(Value::Null, Value::Text),
+        Value::Integer(row.indent_level as i64),
+        row.parent_id.clone().map_or(Value::Null, Value::Text),
+        row.due.clone().map_or(Value::Null, Value::Text),
+        Value::Text(encode_list(&row.tags)),
+        Value::Text(encode_list(&row.assignees)),
+        row.priority
+            .map(|value| Value::Integer(i64::from(value)))
+            .unwrap_or(Value::Null),
+        row.order_key.map_or(Value::Null, Value::Integer),
+        Value::Text(encode_list(&row.evidence)),
+        Value::Text(encode_list(&row.deps)),
+        row.progress
+            .map(|value| Value::Integer(i64::from(value)))
+            .unwrap_or(Value::Null),
+        row.failed_on.clone().map_or(Value::Null, Value::Text),
+        row.note.clone().map_or(Value::Null, Value::Text),
+        Value::Text(row.file_path.clone()),
+        Value::Integer(row.line as i64),
+        Value::Text(row.source_hash.clone()),
+    ]);
+}
+
 fn insert_task(transaction: &Transaction<'_>, row: &TaskRow) -> Result<()> {
-    execute_task(transaction, "INSERT INTO tasks(id,body,completed,column_id,indent_level,parent_id,due,tags,assignees,priority,order_key,evidence,deps,file_path,line,source_hash) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16)", row)
+    let mut statement = transaction.prepare_cached(INSERT_TASK_SQL)?;
+    execute_task(&mut statement, row)
 }
 fn update_task(transaction: &Transaction<'_>, row: &TaskRow) -> Result<()> {
-    execute_task(transaction, "UPDATE tasks SET body=?2,completed=?3,column_id=?4,indent_level=?5,parent_id=?6,due=?7,tags=?8,assignees=?9,priority=?10,order_key=?11,evidence=?12,deps=?13,file_path=?14,line=?15,source_hash=?16 WHERE id=?1", row)
+    let mut statement = transaction.prepare_cached(UPDATE_TASK_SQL)?;
+    execute_task(&mut statement, row)
 }
-fn execute_task(transaction: &Transaction<'_>, sql: &str, row: &TaskRow) -> Result<()> {
+fn execute_task(statement: &mut rusqlite::Statement<'_>, row: &TaskRow) -> Result<()> {
     let tags = encode_list(&row.tags);
     let assignees = encode_list(&row.assignees);
     let evidence = encode_list(&row.evidence);
     let deps = encode_list(&row.deps);
-    transaction.execute(
-        sql,
-        params![
-            row.id,
-            row.body,
-            row.completed as i64,
-            row.column,
-            row.indent_level as i64,
-            row.parent_id,
-            row.due,
-            tags,
-            assignees,
-            row.priority.map(i64::from),
-            row.order_key,
-            evidence,
-            deps,
-            row.file_path,
-            row.line as i64,
-            row.source_hash
-        ],
-    )?;
+    statement.execute(params![
+        row.id,
+        row.body,
+        row.completed as i64,
+        row.column,
+        row.indent_level as i64,
+        row.parent_id,
+        row.due,
+        tags,
+        assignees,
+        row.priority.map(i64::from),
+        row.order_key,
+        evidence,
+        deps,
+        row.progress.map(i64::from),
+        row.failed_on,
+        row.note,
+        row.file_path,
+        row.line as i64,
+        row.source_hash
+    ])?;
     Ok(())
 }
 
