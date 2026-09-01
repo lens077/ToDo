@@ -257,10 +257,12 @@ pub fn run() {
                 .with_handler(|app, _shortcut, event| {
                     if event.state() == ShortcutState::Pressed {
                         match show_capture_window(app) {
+                            #[cfg(debug_assertions)]
                             Ok(elapsed_us) => {
-                                #[cfg(debug_assertions)]
                                 eprintln!("capture_shortcut_dispatch_us={elapsed_us}");
                             }
+                            #[cfg(not(debug_assertions))]
+                            Ok(_) => {}
                             Err(error) => {
                                 let _ = app.emit("desktop://shortcut-error", error);
                             }
