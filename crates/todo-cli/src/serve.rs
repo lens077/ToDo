@@ -29,8 +29,8 @@ use axum::{
 };
 use serde::{Deserialize, Serialize};
 use todo_core::{
-    diff_lines, import_text, parse_file, review_alignment, scan, Change, DesktopBackend,
-    DesktopIntent, DesktopSnapshot, History, LockedWriter, MoveTarget, ScanOptions, TokenKind,
+    diff_lines, import_text, parse_file, review_alignment, scan, DesktopBackend, DesktopIntent,
+    DesktopSnapshot, History, LockedWriter, MoveTarget, ScanOptions,
 };
 use tower_http::{cors::CorsLayer, services::ServeDir};
 
@@ -219,6 +219,10 @@ async fn create_task(
 #[derive(Deserialize)]
 struct Completed {
     completed: bool,
+    #[serde(default)]
+    note: Option<String>,
+    #[serde(default)]
+    evidence: Option<todo_core::EvidenceRange>,
 }
 
 async fn set_completed(
@@ -231,6 +235,8 @@ async fn set_completed(
         DesktopIntent::SetCompleted {
             id,
             completed: input.completed,
+            note: input.note,
+            evidence: input.evidence,
         },
     )
 }
@@ -270,24 +276,17 @@ async fn set_progress(
     Json(input): Json<ProgressInput>,
 ) -> ApiResult<DesktopSnapshot> {
     state.writable()?;
-    if !(1..=99).contains(&input.percent) {
-        return Err(ApiError {
-            status: StatusCode::BAD_REQUEST,
-            message: format!(
-                "progress must be 1-99; got {}. Use the completed endpoint for done",
-                input.percent
-            ),
-        });
-    }
-    write_tokens(
+    let note = input.note.ok_or_else(|| ApiError {
+        status: StatusCode::BAD_REQUEST,
+        message: "partial completion requires a note".into(),
+    })?;
+    mutate(
         &state,
-        &id,
-        "progress",
-        vec![(
-            TokenKind::Progress(input.percent),
-            format!("◐{}", input.percent),
-        )],
-        input.note,
+        DesktopIntent::SetPartial {
+            id,
+            percent: input.percent,
+            note,
+        },
     )
 }
 
@@ -303,50 +302,11 @@ async fn set_failed(
     Json(input): Json<FailInput>,
 ) -> ApiResult<DesktopSnapshot> {
     state.writable()?;
-    let today = chrono::Local::now().date_naive().to_string();
-    write_tokens(
-        &state,
-        &id,
-        "fail",
-        vec![(TokenKind::Failure(today.clone()), format!("⚠{today}"))],
-        input.note,
-    )
-}
-
-fn write_tokens(
-    state: &ServeState,
-    id: &str,
-    op: &str,
-    tokens: Vec<(TokenKind, String)>,
-    note: Option<String>,
-) -> ApiResult<DesktopSnapshot> {
-    let writer = LockedWriter::new(&state.path, state.lock_timeout);
-    let id = id.to_string();
-    writer
-        .update_labeled(op, |document| {
-            let index = document
-                .tasks
-                .iter()
-                .position(|task| task.id.as_deref() == Some(&id))
-                .ok_or_else(|| todo_core::Error::TaskNotFound(id.clone()))?;
-            let mut changes: Vec<Change> = tokens
-                .iter()
-                .map(|(kind, raw)| Change::SetMetadata {
-                    task: index,
-                    kind: kind.clone(),
-                    raw: raw.clone(),
-                })
-                .collect();
-            if let Some(text) = &note {
-                changes.push(Change::SetNote {
-                    task: index,
-                    text: text.clone(),
-                });
-            }
-            Ok(changes)
-        })
-        .map_err(ApiError::from)?;
-    Ok(Json(state.backend()?.snapshot().map_err(ApiError::from)?))
+    let note = input.note.ok_or_else(|| ApiError {
+        status: StatusCode::BAD_REQUEST,
+        message: "failed attempt requires a note".into(),
+    })?;
+    mutate(&state, DesktopIntent::SetFailed { id, note })
 }
 
 #[derive(Deserialize)]

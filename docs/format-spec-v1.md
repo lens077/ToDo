@@ -45,6 +45,7 @@ columns:
 
 - `todo-spec: 1` — **文件的身份标记**,必需。没有它的 markdown 文件不被本工具视为任务文件(避免误伤用户的普通笔记)。
 - `columns` — 列定义。`id` 是稳定标识符(ASCII,语义锚点);`name` 是显示名(任意语言,用户可随便改);`type` 可选,取值 `done`(移入该列的任务自动标记完成)。
+- `completion-policy` — 结局说明策略,可选值为 `normal` 或 `strict`,缺省为 `normal`。`normal` 下完成说明可选、部分完成与失败说明必填;`strict` 下三种结局说明都必填。字段名固定使用连字符,不得写成 `completion_policy`。
 - frontmatter 中未被本规范定义的键**必须原样保留**。
 
 ### 1.2 列(column)

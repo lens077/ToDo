@@ -22,7 +22,14 @@ fn preview_does_not_write_and_matches_install_content() {
         &todo(
             home.path(),
             cwd.path(),
-            &["hooks", "preview", "--agent", "claude", "--json"],
+            &[
+                "hooks",
+                "preview",
+                "--agent",
+                "claude",
+                "--json",
+                "--show-content",
+            ],
         )
         .stdout,
     )
@@ -33,7 +40,14 @@ fn preview_does_not_write_and_matches_install_content() {
         &todo(
             home.path(),
             cwd.path(),
-            &["hooks", "install", "--agent", "claude", "--json"],
+            &[
+                "hooks",
+                "install",
+                "--agent",
+                "claude",
+                "--json",
+                "--show-content",
+            ],
         )
         .stdout,
     )
@@ -141,14 +155,21 @@ fn instructions_replace_managed_block_and_preserve_user_content() {
 }
 
 #[test]
-fn installed_shell_command_succeeds_when_todo_missing() {
+fn installed_shell_command_uses_absolute_binary_without_path() {
     let home = tempdir().unwrap();
     let cwd = tempdir().unwrap();
     let value: serde_json::Value = serde_json::from_slice(
         &todo(
             home.path(),
             cwd.path(),
-            &["hooks", "preview", "--agent", "claude", "--json"],
+            &[
+                "hooks",
+                "preview",
+                "--agent",
+                "claude",
+                "--json",
+                "--show-content",
+            ],
         )
         .stdout,
     )
@@ -158,12 +179,99 @@ fn installed_shell_command_succeeds_when_todo_missing() {
     let shell = settings["hooks"]["SessionStart"][0]["hooks"][0]["command"]
         .as_str()
         .unwrap();
+    let executable = std::fs::canonicalize(env!("CARGO_BIN_EXE_todo")).unwrap();
+    assert!(shell.starts_with("TODO_HOOK_ID=todo-session-context '/"));
+    assert!(shell.contains(&executable.display().to_string()));
     let status = Command::new("sh")
         .args(["-c", shell])
         .env("PATH", "/usr/bin:/bin")
+        .current_dir(cwd.path())
         .status()
         .unwrap();
     assert!(status.success());
     assert!(!shell.contains("timeout"));
-    assert!(shell.ends_with("|| true"));
+    assert!(!shell.contains("|| true"));
+}
+
+#[test]
+fn hooks_doctor_reports_resolved_executable() {
+    let home = tempdir().unwrap();
+    let cwd = tempdir().unwrap();
+    let output = Command::new(env!("CARGO_BIN_EXE_todo"))
+        .env("HOME", home.path())
+        .env("PATH", "/usr/bin:/bin")
+        .current_dir(cwd.path())
+        .args(["hooks", "doctor", "--json"])
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(value["ok"], true);
+    assert_eq!(value["data"]["available"], true);
+    let executable = value["data"]["executable"].as_str().unwrap();
+    assert!(std::path::Path::new(executable).is_absolute());
+    assert!(value["data"]["command"]
+        .as_str()
+        .unwrap()
+        .contains(executable));
+    assert!(!value["data"]["message"].as_str().unwrap().is_empty());
+}
+
+/// `preview`, `install` and `uninstall` all read the same settings.json. Warning
+/// about only one of them implies the other two are safe to paste into an issue,
+/// which is how the key leaks. None of them may print secrets by default.
+#[test]
+fn hook_commands_never_print_config_secrets_without_show_content() {
+    let secret = "sk-ant-LEAKED-TEST-9999";
+    for command in ["preview", "install", "uninstall"] {
+        let home = tempdir().unwrap();
+        let cwd = tempdir().unwrap();
+        let path = home.path().join(".claude/settings.json");
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(
+            &path,
+            format!("{{\n  \"env\": {{\"ANTHROPIC_API_KEY\": \"{secret}\"}}\n}}\n"),
+        )
+        .unwrap();
+
+        for args in [
+            vec!["hooks", command, "--agent", "claude"],
+            vec!["hooks", command, "--agent", "claude", "--json"],
+        ] {
+            let output = todo(home.path(), cwd.path(), &args);
+            let text = String::from_utf8_lossy(&output.stdout);
+            assert!(
+                !text.contains(secret),
+                "`todo {}` leaked the API key by default: {text}",
+                args.join(" ")
+            );
+            assert!(
+                text.contains(path.to_str().unwrap()),
+                "`todo {}` must still report the target path: {text}",
+                args.join(" ")
+            );
+        }
+    }
+}
+
+#[test]
+fn show_content_still_prints_the_full_config_when_asked() {
+    let secret = "sk-ant-LEAKED-TEST-9999";
+    let home = tempdir().unwrap();
+    let cwd = tempdir().unwrap();
+    let path = home.path().join(".claude/settings.json");
+    fs::create_dir_all(path.parent().unwrap()).unwrap();
+    fs::write(
+        &path,
+        format!("{{\n  \"env\": {{\"ANTHROPIC_API_KEY\": \"{secret}\"}}\n}}\n"),
+    )
+    .unwrap();
+
+    let output = todo(
+        home.path(),
+        cwd.path(),
+        &["hooks", "preview", "--agent", "claude", "--show-content"],
+    );
+    let text = String::from_utf8_lossy(&output.stdout);
+    assert!(text.contains(secret), "opt-in must print the body: {text}");
 }

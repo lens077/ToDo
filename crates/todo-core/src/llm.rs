@@ -164,6 +164,13 @@ impl LlmSemanticReconciler {
         LlmConfig::from_env()?.map(Self::new).transpose()
     }
 
+    /// Whether BYOK configuration is present at all. Callers use this to tell
+    /// "the semantic layer is switched off" apart from "it was configured and
+    /// then silently not run", which must never be reported as a clean check.
+    pub fn is_configured() -> bool {
+        env_value("TODO_LLM_PROVIDER").is_some()
+    }
+
     fn request(&self, candidates: &[SemanticCandidate]) -> std::result::Result<String, String> {
         let config = self.config.resolve()?;
         let endpoint = provider_endpoint(&config.base_url, config.provider);

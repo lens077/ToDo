@@ -10,11 +10,12 @@ use std::{
     time::Duration,
 };
 
-use clap::{Parser, Subcommand};
+use clap::{Parser, Subcommand, ValueEnum};
 use serde::Serialize;
 use todo_core::{
-    atomic_write, generate_task_id, parse_file, Change, Error, History, InsertPosition,
-    LlmSemanticReconciler, LockedWriter, ReconcileOptions, ReconcileReport, Reconciler, TokenKind,
+    atomic_write, generate_task_id, parse_file, Change, CompletionOutcome, CompletionPolicy, Error,
+    History, InsertPosition, LlmSemanticReconciler, LockedWriter, ReconcileOptions,
+    ReconcileReport, Reconciler, TokenKind,
 };
 
 const TODO_TEMPLATE: &str = "---\ntodo-spec: 1\ncolumns:\n  - {id: todo, name: Todo}\n  - {id: doing, name: Doing}\n  - {id: done, name: Done, type: done}\n---\n\n# Project tasks\n\n## Todo\n\n## Doing\n\n## Done\n";
@@ -25,7 +26,7 @@ const ARCHIVE_TEMPLATE: &str = "---\ntodo-spec: 1\ncolumns:\n  - {id: archived, 
     name = "todo",
     version,
     about = "TODO.md canonical CLI",
-    after_help = "Exit codes: 0 success; 1 general error; 2 usage error; 3 not initialized; 4 lock timeout; 5 optimistic conflict; 6 lint issues"
+    after_help = "Exit codes: 0 success; 1 general error; 2 usage error; 3 not initialized; 4 lock timeout; 5 optimistic conflict; 6 findings (lint issues or reconcile findings); 7 checks incomplete (a check could not run — unverified, not clean)"
 )]
 struct Cli {
     #[arg(long, global = true, default_value_t = 2000)]
@@ -41,6 +42,11 @@ enum Command {
     Init {
         #[arg(long)]
         adopt: bool,
+    },
+    /// Read or update the project's completion policy.
+    Policy {
+        #[arg(value_enum)]
+        policy: Option<PolicyValue>,
     },
     List {
         #[arg(long)]
@@ -61,6 +67,11 @@ enum Command {
     },
     Done {
         id: String,
+        #[arg(long)]
+        note: Option<String>,
+        /// Record the suggested commit range when it is available.
+        #[arg(long)]
+        evidence: bool,
     },
     Undone {
         id: String,
@@ -171,26 +182,55 @@ enum Command {
     },
 }
 
+#[derive(Debug, Clone, Copy, ValueEnum)]
+enum PolicyValue {
+    Normal,
+    Strict,
+}
+
+impl From<PolicyValue> for CompletionPolicy {
+    fn from(value: PolicyValue) -> Self {
+        match value {
+            PolicyValue::Normal => Self::Normal,
+            PolicyValue::Strict => Self::Strict,
+        }
+    }
+}
+
 #[derive(Subcommand)]
 enum HooksCommand {
     Preview {
         #[arg(long, value_enum, default_value = "all")]
         agent: hooks::Agent,
+        /// Print the full config file, which may contain API keys. Off by default.
+        #[arg(long)]
+        show_content: bool,
     },
     Install {
         #[arg(long, value_enum, default_value = "all")]
         agent: hooks::Agent,
+        /// Print the full config file, which may contain API keys. Off by default.
+        #[arg(long)]
+        show_content: bool,
     },
     Uninstall {
         #[arg(long, value_enum, default_value = "all")]
         agent: hooks::Agent,
+        /// Print the full config file, which may contain API keys. Off by default.
+        #[arg(long)]
+        show_content: bool,
     },
     Instructions {
         #[arg(long, value_enum, default_value = "all")]
         agent: hooks::Agent,
         #[arg(long)]
         write: bool,
+        /// Print the full file body instead of a summary.
+        #[arg(long)]
+        show_content: bool,
     },
+    /// Check whether the installed SessionStart command can find the todo CLI.
+    Doctor,
     #[command(hide = true)]
     Context {
         #[arg(long, value_enum, default_value = "claude")]
@@ -207,6 +247,10 @@ struct Envelope<T: Serialize> {
 #[derive(Serialize)]
 struct Message {
     message: String,
+}
+#[derive(Serialize)]
+struct PolicyData {
+    policy: CompletionPolicy,
 }
 #[derive(Serialize, Clone)]
 struct TaskView {
@@ -285,6 +329,7 @@ fn run(cli: &Cli) -> Result<u8, Error> {
     let path = PathBuf::from("TODO.md");
     match &cli.command {
         Command::Init { adopt } => init(cli, &path, *adopt),
+        Command::Policy { policy: value } => policy(cli, &path, value.map(CompletionPolicy::from)),
         Command::List { column, all } => {
             let doc = load(&path)?;
             let mut tasks: Vec<_> = projected_views(&path, &doc)?
@@ -313,7 +358,9 @@ fn run(cli: &Cli) -> Result<u8, Error> {
             due,
             priority,
         } => add(cli, &path, body, column, tags, due, *priority),
-        Command::Done { id } => toggle(cli, &path, id, true),
+        Command::Done { id, note, evidence } => {
+            complete(cli, &path, id, note.as_deref(), *evidence)
+        }
         Command::Undone { id } => toggle(cli, &path, id, false),
         Command::Progress { id, percent, note } => {
             progress(cli, &path, id, *percent, note.as_deref())
@@ -328,7 +375,7 @@ fn run(cli: &Cli) -> Result<u8, Error> {
             apply,
             semantic,
             no_semantic,
-        } => reconcile(cli, &path, *apply, *semantic && !*no_semantic),
+        } => reconcile(cli, &path, *apply, *semantic && !*no_semantic, *no_semantic),
         Command::Hooks { command } => run_hooks(cli, command),
         Command::History { limit, prune_to } => history_list(cli, &path, *limit, *prune_to),
         Command::Diff { version } => show_diff(cli, &path, *version),
@@ -715,34 +762,82 @@ fn run_hooks(cli: &Cli, command: &HooksCommand) -> Result<u8, Error> {
             print!("{}", hooks::context());
             Ok(0)
         }
-        HooksCommand::Preview { agent } => {
+        HooksCommand::Doctor => {
+            let result = hooks::doctor();
+            let exit = if result.available { 0 } else { 1 };
+            emit(cli, "todo.hooks.doctor.v1", result, |data| {
+                data.message.clone()
+            });
+            Ok(exit)
+        }
+        HooksCommand::Preview {
+            agent,
+            show_content,
+        } => {
             let result = hooks::preview(&home, *agent)?;
-            emit(cli, "todo.hooks.v1", result, hooks_human);
+            emit_hooks(cli, "todo.hooks.v1", result, *show_content);
             Ok(0)
         }
-        HooksCommand::Install { agent } => {
+        HooksCommand::Install {
+            agent,
+            show_content,
+        } => {
             let result = hooks::install(&home, *agent)?;
-            emit(cli, "todo.hooks.v1", result, hooks_human);
+            emit_hooks(cli, "todo.hooks.v1", result, *show_content);
             Ok(0)
         }
-        HooksCommand::Uninstall { agent } => {
+        HooksCommand::Uninstall {
+            agent,
+            show_content,
+        } => {
             let result = hooks::uninstall(&home, *agent)?;
-            emit(cli, "todo.hooks.v1", result, hooks_human);
+            emit_hooks(cli, "todo.hooks.v1", result, *show_content);
             Ok(0)
         }
-        HooksCommand::Instructions { agent, write } => {
+        HooksCommand::Instructions {
+            agent,
+            write,
+            show_content,
+        } => {
             let result = hooks::instructions(&home, *agent, *write)?;
-            emit(cli, "todo.hooks.instructions.v1", result, hooks_human);
+            emit_hooks(cli, "todo.hooks.instructions.v1", result, *show_content);
             Ok(0)
         }
     }
+}
+
+/// Agent config files hold API keys, so their contents are never printed unless
+/// explicitly asked for. `preview`, `install` and `uninstall` all read the same
+/// `settings.json`: warning about only one of them would imply the others are
+/// safe to paste into an issue, which is exactly how a key leaks.
+fn emit_hooks(cli: &Cli, schema: &'static str, mut result: hooks::HookResult, show_content: bool) {
+    if !show_content {
+        for target in &mut result.targets {
+            target.content = format!(
+                "<{} bytes hidden; re-run with --show-content to print it (may contain API keys)>",
+                target.content.len()
+            );
+        }
+    }
+    emit(cli, schema, result, hooks_human);
 }
 
 fn hooks_human(result: &hooks::HookResult) -> String {
     result
         .targets
         .iter()
-        .map(|target| format!("target: {}\n{}", target.path, target.content))
+        .map(|target| {
+            let mut line = format!(
+                "target: {}\nagent: {}  changed: {}",
+                target.path, target.agent, target.changed
+            );
+            if let Some(backup) = &target.backup {
+                line.push_str(&format!("  backup: {backup}"));
+            }
+            line.push('\n');
+            line.push_str(&target.content);
+            line
+        })
         .collect::<Vec<_>>()
         .join("\n")
 }
@@ -774,11 +869,6 @@ fn init(cli: &Cli, path: &Path, adopt: bool) -> Result<u8, Error> {
             let writer = LockedWriter::new(path, Duration::from_millis(cli.lock_timeout_ms));
             let _guard = writer.lock()?;
             let original = fs::read_to_string(path).map_err(|source| todo_io(path, source))?;
-            if original.starts_with("---\n") {
-                return Err(Error::InvalidTaskLine(
-                    "TODO.md already has frontmatter".into(),
-                ));
-            }
             let adopted = adopt_source(&original)?;
             atomic_write(path, adopted.as_bytes())?;
         }
@@ -848,6 +938,120 @@ fn add(
     Ok(0)
 }
 
+fn complete(
+    cli: &Cli,
+    path: &Path,
+    id: &str,
+    note: Option<&str>,
+    with_evidence: bool,
+) -> Result<u8, Error> {
+    let writer = LockedWriter::new(path, Duration::from_millis(cli.lock_timeout_ms));
+    let id_owned = id.to_string();
+    let note_owned = note.map(str::to_string);
+    let result = writer.update_labeled("done", |document| {
+        let index = index_of(document, &id_owned)?;
+        require_note(document, CompletionOutcome::Done, note_owned.as_deref())?;
+        let evidence = with_evidence
+            .then(|| suggested_evidence(document, index, path, &id_owned))
+            .transpose()?;
+        let mut changes = vec![Change::SetCompleted {
+            task: index,
+            completed: true,
+        }];
+        for (token, _) in document.tasks[index]
+            .metadata
+            .iter()
+            .enumerate()
+            .filter(|(_, token)| {
+                matches!(token.kind, TokenKind::Progress(_) | TokenKind::Failure(_))
+            })
+        {
+            changes.push(Change::RemoveMetadata { task: index, token });
+        }
+        if let Some(note) = &note_owned {
+            changes.push(Change::SetNote {
+                task: index,
+                text: note.clone(),
+            });
+        } else if document.completion_policy() == CompletionPolicy::Normal {
+            changes.push(Change::RemoveNote { task: index });
+        }
+        if let Some((from, to)) = &evidence {
+            changes.push(Change::SetMetadata {
+                task: index,
+                kind: TokenKind::Evidence {
+                    from: from.clone(),
+                    to: to.clone(),
+                },
+                raw: format!("🔗{from}..{to}"),
+            });
+        }
+        Ok(changes)
+    })?;
+    emit_task(cli, &result, id)
+}
+
+fn suggested_evidence(
+    document: &todo_core::Document,
+    index: usize,
+    path: &Path,
+    id: &str,
+) -> Result<(String, String), Error> {
+    let repository = path
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+        .unwrap_or_else(|| Path::new("."));
+    let resolve_here = |value: &str| {
+        let output = std::process::Command::new("git")
+            .args(["rev-parse", "--verify", &format!("{value}^{{commit}}")])
+            .current_dir(repository)
+            .output()
+            .map_err(|error| {
+                Error::InvalidTaskLine(format!("evidence unavailable: git failed: {error}"))
+            })?;
+        if !output.status.success() {
+            return Err(Error::InvalidTaskLine(format!(
+                "evidence unavailable: could not resolve commit {value}"
+            )));
+        }
+        Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
+    };
+    let head = resolve_here("HEAD")?;
+    let from = if let Some((from, _)) = document.tasks[index].evidence() {
+        resolve_here(from)?
+    } else {
+        let output = std::process::Command::new("git")
+            .args([
+                "log",
+                "--reverse",
+                "--format=%H",
+                &format!("-S{id}"),
+                "--",
+                "TODO.md",
+            ])
+            .current_dir(repository)
+            .output()
+            .map_err(|error| {
+                Error::InvalidTaskLine(format!("evidence unavailable: git failed: {error}"))
+            })?;
+        String::from_utf8_lossy(&output.stdout)
+            .lines()
+            .next()
+            .map(str::to_string)
+            .ok_or_else(|| {
+                Error::InvalidTaskLine(format!(
+                    "evidence unavailable: stable ID {id} was not found in TODO.md git history"
+                ))
+            })?
+    };
+    if from == head {
+        return Err(Error::InvalidTaskLine(
+            "evidence unavailable: evidence would be an empty HEAD..HEAD range".into(),
+        ));
+    }
+    Ok((from, head))
+}
+
 fn toggle(cli: &Cli, path: &Path, id: &str, completed: bool) -> Result<u8, Error> {
     let writer = LockedWriter::new(path, Duration::from_millis(cli.lock_timeout_ms));
     let id_owned = id.to_string();
@@ -871,7 +1075,9 @@ fn toggle(cli: &Cli, path: &Path, id: &str, completed: bool) -> Result<u8, Error
             {
                 changes.push(Change::RemoveMetadata { task: index, token });
             }
-            changes.push(Change::RemoveNote { task: index });
+            if document.completion_policy() == CompletionPolicy::Normal {
+                changes.push(Change::RemoveNote { task: index });
+            }
         }
         Ok(changes)
     })?;
@@ -895,6 +1101,28 @@ fn index_of(document: &todo_core::Document, id: &str) -> Result<usize, Error> {
         .iter()
         .position(|task| task.id.as_deref() == Some(id))
         .ok_or_else(|| Error::TaskNotFound(id.into()))
+}
+
+fn require_note(
+    document: &todo_core::Document,
+    outcome: CompletionOutcome,
+    supplied: Option<&str>,
+) -> Result<(), Error> {
+    if !document.completion_policy().requires_note(outcome) {
+        return Ok(());
+    }
+    if supplied.is_some_and(|note| !note.trim().is_empty()) {
+        return Ok(());
+    }
+    Err(Error::InvalidTaskLine(format!(
+        "{} completion requires a note for {}",
+        document.completion_policy(),
+        match outcome {
+            CompletionOutcome::Done => "done",
+            CompletionOutcome::Partial => "partial progress",
+            CompletionOutcome::Failed => "failure",
+        }
+    )))
 }
 
 fn emit_task(cli: &Cli, document: &todo_core::Document, id: &str) -> Result<u8, Error> {
@@ -930,6 +1158,7 @@ fn progress(
     let note_owned = note.map(str::to_string);
     let result = writer.update_labeled("progress", |document| {
         let index = index_of(document, &id_owned)?;
+        require_note(document, CompletionOutcome::Partial, note_owned.as_deref())?;
         let mut changes = vec![Change::SetMetadata {
             task: index,
             kind: TokenKind::Progress(percent),
@@ -953,6 +1182,7 @@ fn fail(cli: &Cli, path: &Path, id: &str, note: Option<&str>) -> Result<u8, Erro
     let note_owned = note.map(str::to_string);
     let result = writer.update_labeled("fail", |document| {
         let index = index_of(document, &id_owned)?;
+        require_note(document, CompletionOutcome::Failed, note_owned.as_deref())?;
         // Recording a failure never unchecks the task: status only moves forward
         // (spec §6.5.4). A failure on a done task is a signal for reconciliation,
         // not a licence to rewrite the completion claim.
@@ -1424,7 +1654,13 @@ fn lint(cli: &Cli, path: &Path) -> Result<u8, Error> {
     Ok(code)
 }
 
-fn reconcile(cli: &Cli, path: &Path, apply: bool, semantic: bool) -> Result<u8, Error> {
+fn reconcile(
+    cli: &Cli,
+    path: &Path,
+    apply: bool,
+    semantic: bool,
+    opted_out: bool,
+) -> Result<u8, Error> {
     let document = load(path)?;
     let options = ReconcileOptions { semantic };
     let llm = if semantic {
@@ -1433,12 +1669,21 @@ fn reconcile(cli: &Cli, path: &Path, apply: bool, semantic: bool) -> Result<u8, 
         None
     };
     let reconciler = Reconciler::new(".");
-    let report = match llm.as_ref() {
+    let mut report = match llm.as_ref() {
         Some(llm) => reconciler
             .with_semantic(llm)
             .reconcile(&document, &options)?,
         None => reconciler.reconcile(&document, &options)?,
     };
+    // A configured provider that never runs is the dangerous case: the operator set
+    // TODO_LLM_* expecting semantic judgement, so a bare exit 0 would read as "the
+    // task text was checked against the code". Staying silent here only makes sense
+    // when the caller explicitly said --no-semantic and knows that layer is off.
+    if !semantic && !opted_out && LlmSemanticReconciler::is_configured() {
+        report.checks_skipped.push(
+            "semantic check skipped: a provider is configured but --semantic was not passed".into(),
+        );
+    }
     let applicable = report
         .confirmed
         .iter()
@@ -1525,6 +1770,25 @@ fn reconcile_human(data: &ReconcileData) -> String {
         report.checks_skipped.len()
     ));
     sections.join("\n")
+}
+
+fn policy(cli: &Cli, path: &Path, requested: Option<CompletionPolicy>) -> Result<u8, Error> {
+    let document = match requested {
+        Some(policy) => LockedWriter::new(path, Duration::from_millis(cli.lock_timeout_ms))
+            .update_labeled("policy", |_| {
+                Ok(vec![Change::SetCompletionPolicy { policy }])
+            })?,
+        None => load(path)?,
+    };
+    emit(
+        cli,
+        "todo.policy.v1",
+        PolicyData {
+            policy: document.completion_policy(),
+        },
+        |data| data.policy.to_string(),
+    );
+    Ok(0)
 }
 
 fn load(path: &Path) -> Result<todo_core::Document, Error> {
@@ -1686,12 +1950,21 @@ fn valid_date(value: &str) -> bool {
             .all(|(i, b)| i == 4 || i == 7 || b.is_ascii_digit())
 }
 fn adopt_source(source: &str) -> Result<String, Error> {
-    let mut out = String::from(
-        "---\ntodo-spec: 1\ncolumns:\n  - {id: todo, name: Todo}\n  - {id: doing, name: Doing}\n  - {id: done, name: Done, type: done}\n---\n\n## Todo\n",
-    );
+    let (frontmatter, body) = split_plain_frontmatter(source);
+    let mut out = match frontmatter {
+        Some(frontmatter) => {
+            let mut adopted = String::from("---\ntodo-spec: 1\ncolumns:\n  - {id: todo, name: Todo}\n  - {id: doing, name: Doing}\n  - {id: done, name: Done, type: done}\n");
+            adopted.push_str(frontmatter);
+            adopted.push_str("---\n\n## Todo\n");
+            adopted
+        }
+        None => String::from(
+            "---\ntodo-spec: 1\ncolumns:\n  - {id: todo, name: Todo}\n  - {id: doing, name: Doing}\n  - {id: done, name: Done, type: done}\n---\n\n## Todo\n",
+        ),
+    };
     let mut existing = HashSet::new();
     let mut fence: Option<(u8, usize)> = None;
-    for line in source.split_inclusive('\n') {
+    for line in body.split_inclusive('\n') {
         let content = line.trim_end_matches(['\r', '\n']);
         let trimmed = content.trim_start_matches([' ', '\t']);
         let fence_byte = trimmed
@@ -1723,6 +1996,14 @@ fn adopt_source(source: &str) -> Result<String, Error> {
             continue;
         }
 
+        if trimmed.starts_with("## ") {
+            // A single Todo section keeps every adopted task actionable without
+            // guessing workflow semantics from arbitrary heading names.
+            out.push_str("### ");
+            out.push_str(trimmed.trim_start_matches("## "));
+            out.push_str(&line[content.len()..]);
+            continue;
+        }
         if (trimmed.starts_with("- [ ]")
             || trimmed.starts_with("- [x]")
             || trimmed.starts_with("- [X]"))
@@ -1739,6 +2020,21 @@ fn adopt_source(source: &str) -> Result<String, Error> {
     }
     out.push_str("\n## Doing\n\n## Done\n");
     Ok(out)
+}
+
+fn split_plain_frontmatter(source: &str) -> (Option<&str>, &str) {
+    let Some(after_opening) = source.strip_prefix("---\n") else {
+        return (None, source);
+    };
+    let Some(closing) = after_opening.find("\n---\n") else {
+        return (None, source);
+    };
+    let frontmatter_end = closing + 1;
+    let body_start = closing + "\n---\n".len();
+    (
+        Some(&after_opening[..frontmatter_end]),
+        &after_opening[body_start..],
+    )
 }
 fn todo_io(path: &Path, source: std::io::Error) -> Error {
     Error::Io {

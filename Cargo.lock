@@ -4473,6 +4473,7 @@ dependencies = [
  "axum",
  "chrono",
  "clap",
+ "fs2",
  "pulldown-cmark",
  "serde",
  "serde_json",

@@ -118,6 +118,35 @@ async fn progress_rejects_zero_and_one_hundred_exactly_like_the_cli() {
 }
 
 #[tokio::test]
+async fn progress_and_failure_require_notes_and_share_the_desktop_mutation_contract() {
+    let dir = fixture();
+    let base = start(dir.path(), false).await;
+
+    let (missing_note, _) =
+        post(&format!("{base}/tasks/aaaaaa/progress"), "{\"percent\":60}").await;
+    assert_eq!(missing_note, 400);
+
+    let (progress, body) = post(
+        &format!("{base}/tasks/aaaaaa/progress"),
+        "{\"percent\":60,\"note\":\"core complete\"}",
+    )
+    .await;
+    assert_eq!(progress, 200);
+    assert_eq!(json(&body)["tasks"][0]["progress"], 60);
+
+    let (missing_note, _) = post(&format!("{base}/tasks/aaaaaa/fail"), "{}").await;
+    assert_eq!(missing_note, 400);
+
+    let (failed, body) = post(
+        &format!("{base}/tasks/aaaaaa/fail"),
+        "{\"note\":\"load test failed\"}",
+    )
+    .await;
+    assert_eq!(failed, 200);
+    assert_eq!(json(&body)["tasks"][0]["note"], "load test failed");
+}
+
+#[tokio::test]
 async fn an_import_preview_writes_nothing() {
     let dir = fixture();
     std::fs::write(dir.path().join("plan.md"), "- [ ] 写迁移脚本\n").unwrap();
@@ -198,8 +227,14 @@ async fn read_only_refuses_writes_but_still_serves_reads() {
             format!("{base}/tasks/aaaaaa/completed"),
             "{\"completed\":true}",
         ),
-        (format!("{base}/tasks/aaaaaa/progress"), "{\"percent\":50}"),
-        (format!("{base}/tasks/aaaaaa/fail"), "{}"),
+        (
+            format!("{base}/tasks/aaaaaa/progress"),
+            "{\"percent\":50,\"note\":\"still working\"}",
+        ),
+        (
+            format!("{base}/tasks/aaaaaa/fail"),
+            "{\"note\":\"attempt failed\"}",
+        ),
     ] {
         let (status, _) = post(&url, payload).await;
         assert_eq!(status, 403, "{url} must be refused in read-only mode");
@@ -218,7 +253,11 @@ async fn a_missing_task_is_a_404_not_a_server_error() {
     let dir = fixture();
     let base = start(dir.path(), false).await;
 
-    let (status, _) = post(&format!("{base}/tasks/zzzzzz/progress"), "{\"percent\":50}").await;
+    let (status, _) = post(
+        &format!("{base}/tasks/zzzzzz/progress"),
+        "{\"percent\":50,\"note\":\"still working\"}",
+    )
+    .await;
 
     assert_eq!(status, 404);
 }
@@ -228,8 +267,16 @@ async fn history_is_listed_newest_first_after_writes() {
     let dir = fixture();
     let base = start(dir.path(), false).await;
 
-    post(&format!("{base}/tasks/aaaaaa/progress"), "{\"percent\":40}").await;
-    post(&format!("{base}/tasks/aaaaaa/fail"), "{}").await;
+    post(
+        &format!("{base}/tasks/aaaaaa/progress"),
+        "{\"percent\":40,\"note\":\"in progress\"}",
+    )
+    .await;
+    post(
+        &format!("{base}/tasks/aaaaaa/fail"),
+        "{\"note\":\"attempt failed\"}",
+    )
+    .await;
 
     let (status, body) = get(&format!("{base}/history")).await;
 
@@ -241,7 +288,7 @@ async fn history_is_listed_newest_first_after_writes() {
         .iter()
         .map(|entry| entry["op"].as_str().unwrap())
         .collect();
-    assert_eq!(ops, vec!["fail", "progress"]);
+    assert_eq!(ops, vec!["board-fail", "board-partial"]);
 }
 
 #[tokio::test]

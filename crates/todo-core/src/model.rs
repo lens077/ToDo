@@ -14,6 +14,10 @@ pub struct Document {
 }
 
 impl Document {
+    pub fn completion_policy(&self) -> CompletionPolicy {
+        self.frontmatter.completion_policy
+    }
+
     pub fn duplicate_ids(&self) -> Vec<String> {
         let mut seen = std::collections::HashSet::new();
         let mut duplicates = std::collections::HashSet::new();
@@ -72,10 +76,47 @@ impl LineEnding {
 #[derive(Debug, Clone)]
 pub struct Frontmatter {
     pub range: Range<usize>,
+    pub body_range: Range<usize>,
     pub raw: String,
     pub todo_spec: u64,
     pub columns: Vec<ColumnDefinition>,
+    pub completion_policy: CompletionPolicy,
     pub value: serde_yaml::Value,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum CompletionPolicy {
+    #[default]
+    Normal,
+    Strict,
+}
+
+impl CompletionPolicy {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Normal => "normal",
+            Self::Strict => "strict",
+        }
+    }
+
+    /// Whether an explanation is mandatory for this terminal/partial outcome.
+    pub fn requires_note(self, outcome: CompletionOutcome) -> bool {
+        self == Self::Strict || outcome != CompletionOutcome::Done
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CompletionOutcome {
+    Done,
+    Partial,
+    Failed,
+}
+
+impl std::fmt::Display for CompletionPolicy {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(self.as_str())
+    }
 }
 
 #[derive(Debug, Clone, serde::Deserialize)]
@@ -141,6 +182,13 @@ impl Task {
     /// no percentage was recorded.
     pub fn partial(&self) -> bool {
         !self.completed && (self.progress().is_some() || self.failure().is_some())
+    }
+
+    pub fn evidence(&self) -> Option<(&str, &str)> {
+        self.metadata.iter().find_map(|token| match &token.kind {
+            TokenKind::Evidence { from, to } => Some((from.as_str(), to.as_str())),
+            _ => None,
+        })
     }
 }
 

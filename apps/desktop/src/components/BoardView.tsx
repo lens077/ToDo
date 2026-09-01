@@ -8,10 +8,11 @@ interface BoardViewProps {
   busyKeys: Set<string>;
   readOnly: boolean;
   onSetCompleted: (id: string, completed: boolean) => Promise<boolean>;
+  onRecordOutcome: (id: string, outcome: 'partial' | 'failed') => void;
   onMove: (id: string, column: string) => Promise<boolean>;
 }
 
-export function BoardView({ snapshot, busyKeys, readOnly, onSetCompleted, onMove }: BoardViewProps) {
+export function BoardView({ snapshot, busyKeys, readOnly, onSetCompleted, onRecordOutcome, onMove }: BoardViewProps) {
   const [draggedId, setDraggedId] = React.useState<string | null>(null);
   const [dropColumn, setDropColumn] = React.useState<string | null>(null);
   const [announcement, setAnnouncement] = React.useState('');
@@ -107,6 +108,7 @@ export function BoardView({ snapshot, busyKeys, readOnly, onSetCompleted, onMove
                             setDropColumn(null);
                           }}
                           onSetCompleted={(id, completed) => void onSetCompleted(id, completed)}
+                          onRecordOutcome={onRecordOutcome}
                           onMove={(id, destination) => void moveTask(id, destination)}
                         />
                       </div>

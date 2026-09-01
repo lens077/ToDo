@@ -10,8 +10,7 @@ use std::{
 use todo_core::{atomic_write, Error};
 
 pub const MARKER: &str = "TODO_HOOK_ID=todo-session-context";
-pub const COMMAND: &str =
-    "TODO_HOOK_ID=todo-session-context todo hooks context --agent claude 2>/dev/null || true";
+pub const COMMAND_PREFIX: &str = "TODO_HOOK_ID=todo-session-context";
 pub const BEGIN: &str = "<!-- todo:begin -->";
 pub const END: &str = "<!-- todo:end -->";
 
@@ -34,6 +33,97 @@ pub struct HookTarget {
     pub content: String,
     pub changed: bool,
     pub backup: Option<String>,
+}
+
+#[derive(Serialize)]
+pub struct DoctorResult {
+    pub command: String,
+    pub available: bool,
+    pub executable: Option<String>,
+    pub message: String,
+}
+
+pub fn doctor() -> DoctorResult {
+    let executable = current_executable();
+    let available = executable.is_some();
+    let message = if available {
+        "SessionStart uses the absolute path of the running todo CLI".into()
+    } else {
+        "could not resolve the running todo executable; installed hooks fall back to bare `todo` and require it on PATH".into()
+    };
+    DoctorResult {
+        command: hook_command(executable.as_deref()),
+        available,
+        executable: executable.map(|path| path.display().to_string()),
+        message,
+    }
+}
+
+fn current_executable() -> Option<PathBuf> {
+    std::env::current_exe().ok()
+}
+
+fn shell_quote(path: &Path) -> String {
+    format!("'{}'", path.to_string_lossy().replace('\'', "'\\''"))
+}
+
+fn hook_command(executable: Option<&Path>) -> String {
+    let executable = executable.map(shell_quote).unwrap_or_else(|| "todo".into());
+    format!("{COMMAND_PREFIX} {executable} hooks context --agent claude 2>/dev/null")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The `current_exe()` failure path cannot be reached from an integration test,
+    /// but it decides whether an install silently reverts to the PATH dependency
+    /// C6 exists to remove, so it is covered here at the seam instead.
+    #[test]
+    fn hook_command_falls_back_to_bare_todo_when_the_executable_is_unresolved() {
+        let command = hook_command(None);
+        assert!(
+            command.contains(" todo hooks context "),
+            "unresolved executable must fall back to bare todo: {command}"
+        );
+        assert!(command.starts_with(COMMAND_PREFIX));
+    }
+
+    #[test]
+    fn hook_command_quotes_absolute_paths_including_awkward_characters() {
+        let command = hook_command(Some(Path::new("/opt/my tools/todo")));
+        assert!(
+            command.contains("'/opt/my tools/todo'"),
+            "a path with spaces must stay one shell word: {command}"
+        );
+
+        // A single quote in the path would otherwise terminate the quoting early
+        // and turn the rest of the path into separate shell words.
+        let command = hook_command(Some(Path::new("/opt/it's/todo")));
+        assert!(
+            command.contains(r#"'/opt/it'\''s/todo'"#),
+            "embedded quote must be escaped: {command}"
+        );
+    }
+
+    #[test]
+    fn doctor_reports_unavailable_when_the_executable_cannot_be_resolved() {
+        // Mirrors the exit-1 branch in the Doctor dispatch arm: available=false is
+        // what makes the CLI exit non-zero instead of reporting a healthy hook.
+        let command = hook_command(None);
+        let invocation = command
+            .strip_prefix(COMMAND_PREFIX)
+            .expect("command must keep the marker prefix")
+            .trim_start();
+        assert!(
+            invocation.starts_with("todo "),
+            "fallback must invoke bare todo, not a fabricated path: {command}"
+        );
+        assert!(
+            !invocation.starts_with('\''),
+            "fallback must not emit a quoted path: {command}"
+        );
+    }
 }
 
 pub fn preview(home: &Path, agent: Agent) -> Result<HookResult, Error> {
@@ -141,7 +231,7 @@ fn settings_target(home: &Path, write: bool, action: Action) -> Result<HookTarge
     };
     strip_managed(array);
     if matches!(action, Action::Install) {
-        array.push(json!({"hooks":[{"type":"command","command":COMMAND}]}));
+        array.push(json!({"hooks":[{"type":"command","command":hook_command(current_executable().as_deref())}]}));
     }
     if array.is_empty() {
         hooks.as_object_mut().unwrap().remove("SessionStart");
@@ -293,7 +383,8 @@ fn run_capture(args: &[&str], deadline: Instant) -> String {
     if Instant::now() >= deadline {
         return String::new();
     }
-    let mut child = match Command::new("todo")
+    let executable = current_executable().unwrap_or_else(|| PathBuf::from("todo"));
+    let mut child = match Command::new(executable)
         .args(args)
         .stdout(Stdio::piped())
         .stderr(Stdio::null())

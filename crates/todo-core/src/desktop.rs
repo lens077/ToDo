@@ -1,6 +1,6 @@
 use crate::{
-    generate_task_id, parse_file, project_document, Change, Document, Error, InsertPosition,
-    LockedWriter, ProjectedTask, Result, TokenKind,
+    generate_task_id, parse_file, project_document, Change, CompletionOutcome, CompletionPolicy,
+    Document, Error, InsertPosition, LockedWriter, ProjectedTask, Result, TokenKind,
 };
 use chrono::{DateTime, Days, Local, NaiveDate, SecondsFormat, Utc};
 use serde::{Deserialize, Serialize};
@@ -35,6 +35,7 @@ impl Clock for SystemClock {
 pub struct DesktopSnapshot {
     pub project_path: String,
     pub revision: String,
+    pub completion_policy: CompletionPolicy,
     pub columns: Vec<DesktopColumn>,
     pub tasks: Vec<DesktopTask>,
     pub today: TodayView,
@@ -62,6 +63,15 @@ pub struct DesktopTask {
     pub failed_on: Option<String>,
     /// Text of the `↳` note line, when present.
     pub note: Option<String>,
+    pub evidence: Option<String>,
+    pub evidence_availability: EvidenceAvailability,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(tag = "status", rename_all = "snake_case")]
+pub enum EvidenceAvailability {
+    Available { from: String, to: String },
+    Unavailable { reason: String },
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
@@ -87,6 +97,12 @@ pub enum MoveTarget {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct EvidenceRange {
+    pub from: String,
+    pub to: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum DesktopIntent {
     AddTask {
@@ -96,6 +112,19 @@ pub enum DesktopIntent {
     SetCompleted {
         id: String,
         completed: bool,
+        #[serde(default)]
+        note: Option<String>,
+        #[serde(default)]
+        evidence: Option<EvidenceRange>,
+    },
+    SetPartial {
+        id: String,
+        percent: u8,
+        note: String,
+    },
+    SetFailed {
+        id: String,
+        note: String,
     },
     MoveTask {
         id: String,
@@ -113,6 +142,8 @@ impl DesktopIntent {
                 completed: true, ..
             } => "board-done",
             Self::SetCompleted { .. } => "board-undone",
+            Self::SetPartial { .. } => "board-partial",
+            Self::SetFailed { .. } => "board-fail",
             Self::MoveTask { .. } => "board-move",
         }
     }
@@ -181,13 +212,21 @@ impl DesktopBackend {
         // scanning history sees "board-move" rather than an anonymous "update".
         let label = intent.label();
         let document = writer.update_labeled(label, |document| {
-            intent_changes(document, &intent, &mut created_task_id)
+            intent_changes(
+                document,
+                &intent,
+                &mut created_task_id,
+                self.clock.local_today(),
+            )
         })?;
         Ok((document, created_task_id))
     }
 
     fn derive(&self, document: &Document) -> Result<DesktopSnapshot> {
         let path = self.project.as_ref().ok_or(Error::NotTaskFile)?;
+        let repository = path.parent().unwrap_or_else(|| Path::new("."));
+        let head = git_output(repository, &["rev-parse", "--verify", "HEAD^{commit}"]);
+        let introductions = git_introductions(repository, document);
         let mut projected: HashMap<_, _> = project_document(path, document)?
             .into_iter()
             .map(|task| (task.id.clone(), task))
@@ -199,7 +238,10 @@ impl DesktopBackend {
                 task.id
                     .as_ref()
                     .and_then(|id| projected.remove(id))
-                    .map_or_else(|| task_view(task), projected_task_view)
+                    .map_or_else(
+                        || task_view(head.as_ref(), &introductions, task),
+                        |projected| projected_task_view(head.as_ref(), &introductions, projected),
+                    )
             })
             .collect();
         let today = self.clock.local_today();
@@ -251,6 +293,7 @@ impl DesktopBackend {
         Ok(DesktopSnapshot {
             project_path: path.display().to_string(),
             revision: format!("{hash:016x}"),
+            completion_policy: document.completion_policy(),
             columns: document
                 .columns
                 .iter()
@@ -267,17 +310,19 @@ impl DesktopBackend {
 }
 
 fn resolve_project(path: &Path) -> PathBuf {
-    if path.is_dir() {
+    let todo = if path.is_dir() {
         path.join("TODO.md")
     } else {
         path.to_path_buf()
-    }
+    };
+    std::fs::canonicalize(&todo).unwrap_or(todo)
 }
 
 fn intent_changes(
     document: &Document,
     intent: &DesktopIntent,
     created_task_id: &mut Option<String>,
+    today: NaiveDate,
 ) -> Result<Vec<Change>> {
     match intent {
         DesktopIntent::AddTask { body, column } => {
@@ -297,10 +342,98 @@ fn intent_changes(
                 line: format!("- [ ] {body} <!--t:{id}-->"),
             }])
         }
-        DesktopIntent::SetCompleted { id, completed } => Ok(vec![Change::SetCompleted {
-            task: find_task(document, id)?,
-            completed: *completed,
-        }]),
+        DesktopIntent::SetCompleted {
+            id,
+            completed,
+            note,
+            evidence,
+        } => {
+            let task = find_task(document, id)?;
+            if *completed
+                && document
+                    .completion_policy()
+                    .requires_note(CompletionOutcome::Done)
+            {
+                let existing = document.tasks[task]
+                    .note
+                    .as_ref()
+                    .map(|note| note.text.as_str());
+                if note
+                    .as_deref()
+                    .or(existing)
+                    .is_none_or(|text| text.trim().is_empty())
+                {
+                    return Err(Error::InvalidTaskLine(
+                        "strict completion requires a note for done".into(),
+                    ));
+                }
+            }
+            let mut changes = vec![Change::SetCompleted {
+                task,
+                completed: *completed,
+            }];
+            if let Some(note) = note {
+                changes.push(Change::SetNote {
+                    task,
+                    text: note.clone(),
+                });
+            }
+            if let Some(evidence) = evidence {
+                changes.push(Change::SetMetadata {
+                    task,
+                    kind: TokenKind::Evidence {
+                        from: evidence.from.clone(),
+                        to: evidence.to.clone(),
+                    },
+                    raw: format!("🔗{}..{}", evidence.from, evidence.to),
+                });
+            }
+            Ok(changes)
+        }
+        DesktopIntent::SetPartial { id, percent, note } => {
+            if !(1..=99).contains(percent) {
+                return Err(Error::InvalidTaskLine(
+                    "progress must be between 1 and 99".into(),
+                ));
+            }
+            if note.trim().is_empty() {
+                return Err(Error::InvalidTaskLine(
+                    "partial completion requires a note".into(),
+                ));
+            }
+            let task = find_task(document, id)?;
+            Ok(vec![
+                Change::SetMetadata {
+                    task,
+                    kind: TokenKind::Progress(*percent),
+                    raw: format!("◐{percent}"),
+                },
+                Change::SetNote {
+                    task,
+                    text: note.clone(),
+                },
+            ])
+        }
+        DesktopIntent::SetFailed { id, note } => {
+            if note.trim().is_empty() {
+                return Err(Error::InvalidTaskLine(
+                    "failed attempt requires a note".into(),
+                ));
+            }
+            let task = find_task(document, id)?;
+            let today = today.to_string();
+            Ok(vec![
+                Change::SetMetadata {
+                    task,
+                    kind: TokenKind::Failure(today.clone()),
+                    raw: format!("⚠{today}"),
+                },
+                Change::SetNote {
+                    task,
+                    text: note.clone(),
+                },
+            ])
+        }
         DesktopIntent::MoveTask { id, column, target } => Ok(vec![Change::MoveTask {
             task: find_task(document, id)?,
             column: column.clone(),
@@ -353,7 +486,13 @@ fn find_task(document: &Document, id: &str) -> Result<usize> {
         .ok_or_else(|| Error::TaskNotFound(id.into()))
 }
 
-fn projected_task_view(task: ProjectedTask) -> DesktopTask {
+fn projected_task_view(
+    head: std::result::Result<&String, &String>,
+    introductions: &HashMap<String, String>,
+    task: ProjectedTask,
+) -> DesktopTask {
+    let evidence_availability =
+        evidence_availability(head, introductions, &task.id, task.evidence.first());
     DesktopTask {
         id: Some(task.id),
         body: task.body,
@@ -365,10 +504,16 @@ fn projected_task_view(task: ProjectedTask) -> DesktopTask {
         progress: task.progress,
         failed_on: task.failed_on,
         note: task.note,
+        evidence: task.evidence.into_iter().next(),
+        evidence_availability,
     }
 }
 
-fn task_view(task: &crate::Task) -> DesktopTask {
+fn task_view(
+    head: std::result::Result<&String, &String>,
+    introductions: &HashMap<String, String>,
+    task: &crate::Task,
+) -> DesktopTask {
     let mut due = None;
     let mut priority = None;
     let mut tags = Vec::new();
@@ -380,6 +525,13 @@ fn task_view(task: &crate::Task) -> DesktopTask {
             _ => {}
         }
     }
+    let evidence = task.evidence().map(|(from, to)| format!("{from}..{to}"));
+    let evidence_availability = task.id.as_deref().map_or_else(
+        || EvidenceAvailability::Unavailable {
+            reason: "task has no stable ID".into(),
+        },
+        |id| evidence_availability(head, introductions, id, evidence.as_ref()),
+    );
     DesktopTask {
         id: task.id.clone(),
         body: task.body.clone(),
@@ -391,6 +543,103 @@ fn task_view(task: &crate::Task) -> DesktopTask {
         progress: task.progress(),
         failed_on: task.failure().map(str::to_string),
         note: task.note.as_ref().map(|note| note.text.clone()),
+        evidence,
+        evidence_availability,
+    }
+}
+
+fn git_introductions(repository: &Path, document: &Document) -> HashMap<String, String> {
+    let wanted: HashSet<_> = document
+        .tasks
+        .iter()
+        .filter(|task| task.evidence().is_none())
+        .filter_map(|task| task.id.clone())
+        .collect();
+    if wanted.is_empty() {
+        return HashMap::new();
+    }
+    let Ok(history) = git_output(
+        repository,
+        &[
+            "log",
+            "--reverse",
+            "--format=commit:%H",
+            "-p",
+            "--",
+            "TODO.md",
+        ],
+    ) else {
+        return HashMap::new();
+    };
+    let mut introductions = HashMap::new();
+    let mut commit = None;
+    for line in history.lines() {
+        if let Some(hash) = line.strip_prefix("commit:") {
+            commit = Some(hash.to_string());
+        } else if let Some(added) = line.strip_prefix('+').filter(|_| !line.starts_with("+++")) {
+            for id in &wanted {
+                if !introductions.contains_key(id) && added.contains(id) {
+                    if let Some(hash) = &commit {
+                        introductions.insert(id.clone(), hash.clone());
+                    }
+                }
+            }
+        }
+    }
+    introductions
+}
+
+fn evidence_availability(
+    head: std::result::Result<&String, &String>,
+    introductions: &HashMap<String, String>,
+    id: &str,
+    existing: Option<&String>,
+) -> EvidenceAvailability {
+    let head = match head {
+        Ok(head) => head.clone(),
+        Err(reason) => {
+            return EvidenceAvailability::Unavailable {
+                reason: (*reason).clone(),
+            }
+        }
+    };
+    let from = if let Some(existing) = existing {
+        existing.split_once("..").map(|(from, _)| from.to_string())
+    } else {
+        introductions.get(id).cloned()
+    };
+    match from {
+        Some(from) if !from.is_empty() && from != head => {
+            EvidenceAvailability::Available { from, to: head }
+        }
+        Some(_) => EvidenceAvailability::Unavailable {
+            reason: "evidence would be an empty HEAD..HEAD range".into(),
+        },
+        None => EvidenceAvailability::Unavailable {
+            reason: format!("stable ID {id} was not found in TODO.md git history"),
+        },
+    }
+}
+
+fn git_output(repository: &Path, args: &[&str]) -> std::result::Result<String, String> {
+    let output = std::process::Command::new("git")
+        .args(args)
+        .current_dir(repository)
+        .output()
+        .map_err(|error| format!("git is unavailable: {error}"))?;
+    if !output.status.success() {
+        let detail = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        return Err(if detail.is_empty() {
+            format!("git {} failed", args.join(" "))
+        } else {
+            detail
+        });
+    }
+    let value = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    if value.is_empty() {
+        Err(format!("git {} returned no commit", args.join(" ")))
+    } else {
+        Ok(value)
     }
 }
 

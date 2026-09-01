@@ -3,8 +3,8 @@ use std::{collections::BTreeMap, fs};
 use proptest::prelude::*;
 use tempfile::tempdir;
 use todo_core::{
-    apply_changes, parse, parse_file, Change, Error, InsertPosition, LineEnding, OptimisticLock,
-    TokenKind,
+    apply_changes, parse, parse_file, Change, CompletionPolicy, Error, InsertPosition, LineEnding,
+    OptimisticLock, TokenKind,
 };
 
 const DIRTY: &str = include_str!("fixtures/dirty.md");
@@ -32,6 +32,55 @@ fn parses_complete_model_and_excludes_fake_tasks() {
             document.source[task.full_line_range.clone()].trim_end_matches(['\r', '\n'])
         );
     }
+}
+
+#[test]
+fn completion_policy_defaults_to_normal_and_rejects_unknown_values() {
+    let normal = parse("---\ntodo-spec: 1\ncolumns: []\n---\n").unwrap();
+    assert_eq!(normal.completion_policy(), CompletionPolicy::Normal);
+    let strict = parse("---\ntodo-spec: 1\ncompletion-policy: strict\ncolumns: []\n---\n").unwrap();
+    assert_eq!(strict.completion_policy(), CompletionPolicy::Strict);
+    assert!(matches!(
+        parse("---\ntodo-spec: 1\ncompletion-policy: surprise\n---\n"),
+        Err(Error::InvalidFrontmatter(_))
+    ));
+}
+
+#[test]
+fn completion_policy_write_is_surgical_and_preserves_unknown_frontmatter() {
+    let source = "\u{feff}---\r\ntodo-spec: 1\r\nunknown-key: {future: true}\r\ncompletion-policy: \"normal\" # keep policy context\r\ncolumns: []\r\n---\r\nfree text\r\n";
+    let document = parse(source).unwrap();
+    let changed = apply_changes(
+        &document,
+        &[Change::SetCompletionPolicy {
+            policy: CompletionPolicy::Strict,
+        }],
+    )
+    .unwrap();
+    assert_eq!(
+        changed,
+        source.replace(
+            "completion-policy: \"normal\" # keep policy context",
+            "completion-policy: strict # keep policy context",
+        )
+    );
+    let reparsed = parse(changed).unwrap();
+    assert_eq!(reparsed.completion_policy(), CompletionPolicy::Strict);
+    assert!(reparsed.frontmatter.value.get("unknown-key").is_some());
+
+    let without_policy = "---\ntodo-spec: 1\nunknown-key: keep me\ncolumns: []\n---\nbody\n";
+    let document = parse(without_policy).unwrap();
+    let changed = apply_changes(
+        &document,
+        &[Change::SetCompletionPolicy {
+            policy: CompletionPolicy::Strict,
+        }],
+    )
+    .unwrap();
+    assert_eq!(
+        changed,
+        "---\ntodo-spec: 1\nunknown-key: keep me\ncolumns: []\ncompletion-policy: strict\n---\nbody\n"
+    );
 }
 
 #[test]

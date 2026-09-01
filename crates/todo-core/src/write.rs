@@ -7,11 +7,15 @@ use std::{
 };
 
 use crate::{
-    error::io_error, parse::hash_bytes, parse::valid_id, Document, Error, Result, TokenKind,
+    error::io_error, parse::hash_bytes, parse::valid_id, CompletionPolicy, Document, Error, Result,
+    TokenKind,
 };
 
 #[derive(Debug, Clone)]
 pub enum Change {
+    SetCompletionPolicy {
+        policy: CompletionPolicy,
+    },
     SetCompleted {
         task: usize,
         completed: bool,
@@ -169,6 +173,9 @@ pub fn atomic_write(path: impl AsRef<Path>, bytes: &[u8]) -> Result<()> {
 
 fn change_to_edits(document: &Document, change: &Change) -> Result<Vec<Edit>> {
     match change {
+        Change::SetCompletionPolicy { policy } => {
+            Ok(vec![completion_policy_edit(document, *policy)?])
+        }
         Change::SetCompleted { task, completed } => {
             let task = task_at(document, *task)?;
             let replacement = if *completed { "[x]" } else { "[ ]" };
@@ -314,6 +321,73 @@ fn change_to_edits(document: &Document, change: &Change) -> Result<Vec<Edit>> {
                 None => Ok(Vec::new()),
             }
         }
+    }
+}
+
+fn completion_policy_edit(document: &Document, policy: CompletionPolicy) -> Result<Edit> {
+    let body = &document.source[document.frontmatter.body_range.clone()];
+    let mut offset = document.frontmatter.body_range.start;
+    for line in body.split_inclusive('\n') {
+        let content = line.trim_end_matches(['\r', '\n']);
+        if content.starts_with([' ', '\t']) {
+            offset += line.len();
+            continue;
+        }
+        let Some(colon) = content.find(':') else {
+            offset += line.len();
+            continue;
+        };
+        let key = content[..colon].trim().trim_matches(['\'', '"']);
+        if key != "completion-policy" {
+            offset += line.len();
+            continue;
+        }
+        let suffix = &content[colon + 1..];
+        let leading = suffix.len() - suffix.trim_start_matches([' ', '\t']).len();
+        let value = &suffix[leading..];
+        let value_len = yaml_scalar_len(value);
+        if value_len == 0 {
+            return Err(Error::InvalidFrontmatter(
+                "completion-policy must be strict or normal".into(),
+            ));
+        }
+        let start = offset + colon + 1 + leading;
+        return Ok(edit(
+            document,
+            start..start + value_len,
+            policy.as_str().into(),
+        ));
+    }
+
+    let offset = document.frontmatter.body_range.end;
+    let newline = local_newline(document, offset);
+    Ok(edit(
+        document,
+        offset..offset,
+        format!("completion-policy: {}{newline}", policy.as_str()),
+    ))
+}
+
+fn yaml_scalar_len(value: &str) -> usize {
+    match value.as_bytes().first().copied() {
+        Some(quote @ (b'\'' | b'"')) => value
+            .as_bytes()
+            .iter()
+            .enumerate()
+            .skip(1)
+            .find(|(_, byte)| **byte == quote)
+            .map_or(value.len(), |(index, _)| index + 1),
+        Some(_) => {
+            let end = value
+                .char_indices()
+                .find(|(index, character)| {
+                    *character == '#'
+                        && (*index == 0 || value.as_bytes()[*index - 1].is_ascii_whitespace())
+                })
+                .map_or(value.len(), |(index, _)| index);
+            value[..end].trim_end_matches([' ', '\t']).len()
+        }
+        None => 0,
     }
 }
 

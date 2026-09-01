@@ -6,6 +6,7 @@ interface TodayViewProps {
   busyKeys: Set<string>;
   readOnly: boolean;
   onSetCompleted: (id: string, completed: boolean) => Promise<boolean>;
+  onRecordOutcome: (id: string, outcome: 'partial' | 'failed') => void;
   onMove: (id: string, column: string) => Promise<boolean>;
 }
 
@@ -27,6 +28,7 @@ function TodayGroup({
   busyKeys,
   readOnly,
   onSetCompleted,
+  onRecordOutcome,
   onMove,
 }: TodayGroupProps) {
   return (
@@ -50,6 +52,7 @@ function TodayGroup({
               busy={Boolean(task.id && busyKeys.has(`task:${task.id}`))}
               readOnly={readOnly}
               onSetCompleted={(id, completed) => void onSetCompleted(id, completed)}
+              onRecordOutcome={onRecordOutcome}
               onMove={(id, column) => void onMove(id, column)}
             />
           ))

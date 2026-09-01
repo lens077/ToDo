@@ -174,6 +174,8 @@ fn mutations_are_written_through_to_markdown() {
         .mutate(DesktopIntent::SetCompleted {
             id: "aaa111".into(),
             completed: true,
+            note: None,
+            evidence: None,
         })
         .unwrap();
 

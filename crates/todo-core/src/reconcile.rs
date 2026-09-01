@@ -194,6 +194,7 @@ impl<'a> Reconciler<'a> {
                 .checks_skipped
                 .push("semantic check skipped: no semantic reconciler is configured".into());
         }
+
         if options.semantic {
             if let Some(semantic) = self.semantic {
                 let check = semantic.reconcile(document, &candidates);

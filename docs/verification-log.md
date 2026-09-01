@@ -226,3 +226,192 @@ T3 验收时记录的「`init/adopt` 未走 `LockedWriter`，存在 TOCTOU 窗�
 未重建 `.app` bundle，人工验收对象保持不变。
 
 遗留：前端交互层(Playwright)自动化尚未纳入 CI，Tauri IPC 的实际序列化由本测试的 `wire()` 以同一 serde 路径模拟，而非经过真实 webview。
+
+## MSRV 下限实测(对抗 3 C3)
+
+对抗 3 C3 判定:README 的 Rust 版本承诺不能只抄 `Cargo.toml` 的 `rust-version`,必须由锁定依赖图证明,否则严格照做的新用户会在第一条构建命令上失败。此处记录双向实测,使该字段不再是未经验证的愿望值。
+
+| 验证项 | 方法 | 结果 |
+|---|---|---|
+| 锁定图真实 MSRV | `cargo metadata --locked` 汇总各 package 的 `rust_version` 取最大值 | 1.88.0(`globset 0.4.20`、`icu_* 2.3.x`、`time 0.3.55`、`plist 1.10.0`、`darling 0.23.0`) |
+| 声明下限可构建 | `rustup run 1.88.0 cargo build --locked -p todo-cli` | ✅ 通过 |
+| 低一版必失败 | `rustup run 1.87.0 cargo build --locked -p todo-cli` | ✅ 如期失败(exit 101,`rustc 1.87.0 is not supported by the following packages`) |
+
+反向用例是这组验证的关键:它证明 1.88 是**精确下限**而非保守高报 —— 低于它会在依赖解析阶段直接失败,失败早于任何编译。
+
+CI 不硬编码版本号,而是由 `.github/workflows/ci.yml` 与 `release.yml` 用 `awk` 从 `Cargo.toml` 的 `rust-version` 读出并安装同一工具链,因此 README、manifest、CI 三者不会再各自漂移。日后抬升依赖导致 MSRV 变化时,只需改 `Cargo.toml` 一处,CI 自动跟随;但**必须重跑上表的双向实测并更新此节**,否则 C3 会以新版本号原样复发。
+
+## lint 重复 ID 复验(对抗 3 C14)
+
+对抗 3 C14 判定第 54 行「lint 有效性｜注入重复 ID｜正确检出」已与源码分叉,因为当时的 `lint` 不调用 `duplicate_ids()`。本轮重新核对:该结论**当前成立**,不是失真记录 —— `crates/todo-cli/src/main.rs` 的 `lint()` 已经遍历 `document.duplicate_ids()` 并产出 `duplicate-id` 问题。故保留第 54 行原状。
+
+| 验证项 | 方法 | 结果 |
+|---|---|---|
+| 重复 ID 检出 | captain 自造含重复 `t:aaa111` 与 `[/]` 非标准 checkbox 的文件,实跑 `todo lint` | ✅ 同时报 `duplicate-id`(error)与 `nonstandard-checkbox`(warning),exit 6 |
+| JSON 契约 | 消费 `todo lint --json` | ✅ `severity`/`code`/`line`/`message` 齐备;重复 ID 定位到**第二次出现**的行 |
+| 回归锁定 | 读 `crates/todo-cli/tests/cli.rs:313` `lint_reports_duplicate_stable_ids` | ✅ 断言 exit 6、`severity=error`、精确行号 9、message 含 ID,非占位测试 |
+
+仍需注意 C14 的另一半:lint 只覆盖**纯文档结构**(解析错误、重复 ID、非标准 checkbox)。依赖、死引用与 Git 物证问题由 `reconcile` 检出,跑 lint 绿色不等于这些层也干净。README 命令表已据此写明范围与分工,不再使用「检查格式问题」这一泛称。
+
+## 对抗 3 全条目复核与 C7/C1/C15 修复
+
+对 16 条逐条重新取证(每条独立核查 + captain 抽验 C7/C16/C6/C8)。结论:**C2、C3、C4、C10、C14、C16 已失效**(后续提交已修);**C1、C5、C12、C15 半修**;**C6、C7、C8、C9、C11、C13 仍成立**。本轮修掉其中三条无需产品决策的。
+
+### C7 — hooks 输出默认不再打印配置正文
+
+修复前实测:造含假密钥的 `settings.json` 后,`preview` / `install` / `uninstall` 三条命令**全部**原样打印密钥(各命中 1 次),而 README 只警告 `preview`。这个限定措辞比不警告更糟——它暗示写入类命令的输出是安全的。
+
+| 验证项 | 方法 | 结果 |
+|---|---|---|
+| 默认不泄漏 | 三条命令 × 人类/`--json` 两种输出 | ✅ 密钥命中 0;仍打印路径、`changed`、备份位置 |
+| opt-in 仍可见 | `--show-content` | ✅ 完整正文照常输出 |
+| 回归锁定 | `hook_commands_never_print_config_secrets_without_show_content`、`show_content_still_prints_the_full_config_when_asked` | ✅ 通过 |
+
+`--json` 的 `content` 字段同样替换为占位符 —— 只改人类输出会留下等价的泄漏面。原有三个断言正文的测试改为显式 `--show-content`,保留其覆盖而非削弱。
+
+### C1 — 已配置 provider 却静默跳过语义层
+
+修复前实测:`TODO_LLM_PROVIDER` 已配置时,不带 `--semantic` 的 `todo reconcile` 返回 **exit 0 且 `checks_skipped` 为空**,与 C2 刚建立的「7 才表示没查完」契约直接冲突。
+
+关键分寸在于**区分三种情况**,而不是一律报跳过:
+
+| 场景 | 期望 | 实测 |
+|---|---|---|
+| 配了 provider,未带 `--semantic` | 7 + 具名原因 | ✅ `semantic check skipped: a provider is configured but --semantic was not passed` |
+| 显式 `--no-semantic` | 0 | ✅ 0 |
+| 未配 provider,默认运行 | 0 | ✅ 0 |
+
+第一版改法把「只要没跑语义层就报 skipped」写进 core,结果 `reconcile_defaults_to_structural_only_in_a_complete_git_repository` 立刻变红。该测试是对的:`hooks.rs:235` 注入给 agent 的指令要求收工前跑 `todo reconcile --no-semantic`,若那条路径恒返回 7,退出码 7 会退化成永久噪声,反而摧毁 C2 建立的信号。故改为只在 CLI 层针对「配了却没用」这一真实危险情形报跳过。回归测试 `configured_semantic_provider_that_never_runs_is_reported_as_incomplete` 三种场景全覆盖。
+
+### C15 — `--help` 退出码文案
+
+`main.rs` 的 `after_help` 仍写「6 lint issues」且完全没有 7,而 `hooks.rs:235` 给 agent 的口径已是「6 findings, 7 checks incomplete」——同一仓库内自相矛盾。已统一为「6 findings (lint issues or reconcile findings); 7 checks incomplete (a check could not run — unverified, not clean)」。7 的缺失比 6 的措辞更危险:`--help` 读者根本看不到 7 的存在,容易把它当未知错误或误判为通过。
+
+### 门禁
+
+| 门禁 | 结果 |
+|---|---|
+| `cargo test --workspace` | ✅ 全绿,0 failed(新增 3 项回归测试) |
+| `cargo clippy --workspace --all-targets --locked -- -D warnings` | ✅ 干净 |
+| `cargo fmt --all -- --check` | ✅ 干净 |
+| `pnpm typecheck` | ✅ 通过 |
+
+未修的高危项与其阻塞原因:**C6**(hook 裸 `todo` + `|| true` 吞错,需改 `current_exe` 并加 `hooks doctor`)、**C8**(仍无 LICENSE,`DECISIONS.md:58-62` 四个选项未拍板,属产品决策)、**C5**(adopt 遇普通 frontmatter 报错、既有标题致真任务变 `column:null` 从默认视图消失)、**C9/C11/C13**(README 措辞层,可合并处理)。
+
+## C6 / C5 / C9+C11+C13 修复(三 agent 并行)
+
+由三个 openai/gpt-5.6-sol 成员并行处理,captain 对每项**独立复验**(实跑,不采信成员的自测报告)。
+
+### C6 — hook 不再吞错,且不再依赖 PATH
+
+两层缺陷。成员先修了「吞错」一层:去掉 `|| true`(保留 `2>/dev/null` 以免 SessionStart 输出 shell 噪音,但非零退出码得以传播),并新增 `todo hooks doctor`。captain 复验时发现**主因未修** —— 落盘的 hook 仍是裸 `todo`,`current_exe` 全仓零引用,`run_capture` 仍是 `Command::new("todo")`。
+
+关键区分:去掉 `|| true` 只是把失败从**静默地永远失败**变成**响亮地永远失败**,并未移除导致失败的 PATH 依赖。成员用受限 PATH 下 exit 127 作为修复证据,但那恰恰是**残留 bug 的复现**,不是修复的证明。据此开 t4 要求补齐。
+
+| 验证项 | 方法 | 结果 |
+|---|---|---|
+| 落盘命令含绝对路径 | 装入临时 HOME 后读 `settings.json` | ✅ `TODO_HOOK_ID=... '/Users/.../todo' hooks context --agent claude 2>/dev/null` |
+| 受限 PATH 下真能注入 | 真实项目内 `env -i PATH=/usr/bin:/bin sh -c "$CMD"` | ✅ exit 0,输出 `TODO next: [m38737] visible task` |
+| 旧 hook 不被孤儿化 | 预置裸 `todo` 旧 hook 后重装 | ✅ SessionStart 条目数 1(替换而非重复);卸载后残留 0 |
+| `run_capture` | 读 `hooks.rs` | ✅ 改用解析出的 executable |
+
+复验中一个自身失误值得记录:首次受限 PATH 实跑得到 exit 0 且**零输出**,形似静默失败;实为当时目录没有 `TODO.md`,空输出正确。改到真实项目内重跑才得到正确结论 —— 若采信首次结果,会误报一个不存在的 bug。
+
+**测试覆盖的一处倒退**:doctor 集成测试被改为新的健康契约(`available=true`、exit 0)是对的,但这样一来 exit 1 分支**完全失去覆盖**。该分支只有 `current_exe()` 失败才可达,集成测试无法触发,故 captain 在 `hook_command` 接缝处补了单元测试:未解析出可执行文件时回退裸 `todo`、含空格路径的 shell 引用、以及**路径内含单引号**的转义(否则引号提前闭合,路径会裂成多个 shell 词)。captain 自己最初写的一条断言也是错的(断言回退命令不含 `/`,但 `2>/dev/null` 就含 `/`),已改为剥掉 marker 前缀后再判断。
+
+### C5 — adopt 不再让真任务消失
+
+| 验证项 | 方法 | 结果 |
+|---|---|---|
+| 普通 frontmatter 可接管 | 含 `title:`/`author:` 的文件跑 `init --adopt` | ✅ exit 0(此前 exit 1 报 "already has frontmatter") |
+| 真任务保持可见 | 自定义 `## Backlog`/`## In Progress` 下各一条真任务,跑 `todo list` | ✅ 两条都在默认视图(此前默认列表为空,仅 `--all` 可见) |
+| frontmatter 无损合并 | 读接管后文件 | ✅ 注入 todo-spec/columns,用户 `title`/`author` 逐字保留 |
+| 围栏假任务不被插 ID | ```markdown 围栏内假任务 | ✅ 全文恰好 2 个 `<!--t:`(仅两条真任务) |
+
+列映射规则:既有 H2 标题保守降级到生成的 Todo 列之下(`## Backlog` → `### Backlog`),不猜测工作流语义。满足「真任务绝不从默认视图消失」这一硬性不变量,同时不发明工具无法验证的语义映射。
+
+### C9/C11/C13 — README 措辞
+
+C13 开头重写为「问题→方法→当前边界」,三要素护城河(Git 物证 / 字节区间无损回写 / 只报告不擅改)首次同时出现在首屏 —— 其中**无损回写此前在开头完全缺席**。C11 事实源限定到 per-repo Project Task,并写明 Capture 的 `~/.todo/inbox.md` 不进 Git、不受 `.todo/history/` 还原点保护、需单独备份。C9 新增实验性 MVP 与待验收项披露,以及首次使用前提交/备份并审查 diff 的建议。
+
+captain 复验:五处近期修好的段落(MSRV 1.88 行、lint 范围行、退出码 7、语义对账节、hooks 密钥警告)全部完好;零许可证声明;零不可核实断言。
+
+**成员的一处正确克制值得记录**:任务描述里提供了 dogfooding 起始日、两周基线、5 人试用等具体事实,成员**主动不写**,理由是这些只出现在调研/对抗материал中,无法从权威项目状态文件独立核实。这是对的 —— 把无法核实的具体数字写进成熟度披露,正是 C9 所指控的同一类缺陷。
+
+### 最终合并门禁
+
+成员各自的绿色门禁**不构成合并态证据**(两名工程师并发编辑同一 `main.rs`,期间确实出现过一次瞬时编译中断,由成员间直接沟通解决)。以下为 captain 在全部工作落地后运行的权威结果:
+
+| 门禁 | 结果 |
+|---|---|
+| `cargo test --workspace` | ✅ 0 failed |
+| `cargo clippy --workspace --all-targets --locked -- -D warnings` | ✅ 0 error |
+| `cargo fmt --all -- --check` | ✅ clean |
+| `pnpm typecheck` | ✅ pass |
+| `git diff --check` | ✅ clean |
+
+### 已知残留(记录而非扩大范围)
+
+`run_capture` 在 spawn 失败时仍返回 `String::new()`,而 `context() -> String` 没有位置区分「无内容可注入」与「子进程根本没启动」。要传播这一差异需改 `context()`/`context_with_deadline()` 的返回契约,超出 C6 范围。
+
+实际风险已显著下降:接入 `current_exe()` 后自调用不再依赖 PATH ——
+
+```
+$ env -i PATH=/nonexistent HOME=/tmp/spawn todo hooks context --agent claude
+TODO next: [gl7ocv] a task     (exit 0)
+```
+
+即 PATH 完全不可用时自调用仍成功,C6 场景已无法触达该分支。剩下的是真正罕见的情形(绝对路径已解析但 exec 仍失败:二进制被中途删除、权限变更、进程表耗尽),且 `todo hooks doctor` 已为运维方提供检查手段。若日后要闭合,应连同 `context()` 的错误契约一并设计。
+
+对抗 3 剩余未闭合项:**C8**(无 LICENSE)—— 属产品决策,`DECISIONS.md:58-62` 四个选项仍未拍板,不在工程范围内。
+
+## 证据门:已跑与不可跑
+
+证据门的权威定义在 `调研文档/dk/我的理解-调研方案与当前实现对照3.md:71`:「漂移报告能否让看板重新被信任、round-trip 无损率基线,都要等 2 周 dogfooding 与外部试用数据」。本节把其中**当下可测的部分**跑出实测数字,并明确区分**结构上无法补的部分**。
+
+### 一、无法补的部分(先说清楚,避免伪造成熟度)
+
+| 门项 | 现状 | 为何补不了 |
+|---|---|---|
+| 2 周 dogfooding 基线 | ❌ 不可得 | 仓库首个 commit 为 2026-08-31,最新为 2026-09-01,**全部生命周期 2 天**。任何「两周基线」都是伪造。 |
+| 5 名外部开发者试用 | ❌ 不可得 | 无外部用户;本机无法产生他人试用数据。 |
+
+`TODO.md` 的真实自举足迹:`git log --follow -- TODO.md` 共 **6 个 commit,全部集中在 2026-08-31**。当前 13 条任务、1 条完成、2 个真实 `🔗` 物证区间。这是「自举已启动」的证据,**不是**「已持续运行两周」的证据。
+
+因此 README 的成熟度披露继续**不写**具体天数与试用人数(见前节 readme-writer 的克制),只写可核实的状态。
+
+### 二、round-trip 无损率基线(可测,已跑)
+
+样本为含中文、emoji、制表符、变体选择符、代码围栏假任务、行内代码假任务、非标准 checkbox `[-]`、tag/priority/order_key 的文件。
+
+| 验证项 | 方法 | 结果 |
+|---|---|---|
+| 反复 mutate/undo 后逐字节还原 | `done`/`undone` 循环 **100 次**,每次与原文 diff | ✅ **drifted 0 / 100**,末态逐字节相同(441 → 441 bytes) |
+| 围栏假任务不被动 | 同上样本 | ✅ 围栏内容原样,全文 ID 数恰为 2(仅两条真任务) |
+| 非标准 checkbox 不被吞 | `[-]` 行 | ✅ 保留,由 lint 以 warning 暴露 |
+
+**基线结论**:在上述样本与 100 次循环下,round-trip 无损率 **100%**。这是本轮能给出的最强 round-trip 数字,但**样本由我构造**,不等于真实用户文件分布。
+
+### 三、漂移报告是否可信(可测,已跑)
+
+「看板能否重新被信任」的可测代理是:reconcile 在**健康**与**被破坏**两种输入下是否给出不同且正确的判断。
+
+| 场景 | 结果 |
+|---|---|
+| 本仓库真实历史 | ✅ `no reconciliation findings (all checks ran)`,exit 0,**0 check did not run** |
+| 构造仓库:物证区间有效 | ✅ 同上,exit 0 |
+| 构造仓库:注入死 commit 引用 | ✅ `confirmed: evidence-missing`,exit 6 |
+
+反向用例是关键:仅有「健康时为绿」不能证明报告有判别力,必须证明**被破坏时会变红**。两者齐备,该门项在结构层成立。语义层仍未接真实 provider(见 C1),故不能声称「任务正文与代码已核对」。
+
+### 四、本轮暴露的真实缺陷:progress 标记无法清除
+
+跑 round-trip 时首次得到 **DRIFTED**,根因不是回写失真,而是一条缺失的 CLI 能力:
+
+- `todo progress <id> 50 --note "..."` 写入 `◐50`;
+- `todo note <id> --clear` 只清 `↳` 说明行,**`◐50` 残留**;
+- `todo progress <id> 0` 被拒:`progress must be 1-99; got 0. Use 'todo done' for complete, or leave progress unset for not started`;
+- 但 `percent` 是**必填位置参数**,「leave progress unset」在 CLI 上**根本无法表达**;
+- 目前唯一清除路径是 `done` 再 `undone`,即「先谎报完成再撤回」。
+
+即帮助文本承诺了一条不存在的操作。改用 `done`/`undone` 清除后,100 次循环 drifted 0 —— 故**无损回写本身没问题**,缺的是清除 progress 的正当入口。已记入 `TODO.md` 待办,不在本轮扩范围修复。

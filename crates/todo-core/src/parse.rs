@@ -5,8 +5,8 @@ use serde::Deserialize;
 
 use crate::{
     error::{io_error, Error, Result},
-    Column, ColumnDefinition, Document, FileSnapshot, Frontmatter, LineEnding, MetadataToken, Task,
-    TaskNote, TokenKind, UnrecognizedTaskLikeLine,
+    Column, ColumnDefinition, CompletionPolicy, Document, FileSnapshot, Frontmatter, LineEnding,
+    MetadataToken, Task, TaskNote, TokenKind, UnrecognizedTaskLikeLine,
 };
 
 #[derive(Deserialize)]
@@ -15,6 +15,8 @@ struct FrontmatterData {
     todo_spec: serde_yaml::Value,
     #[serde(default)]
     columns: Vec<ColumnDefinition>,
+    #[serde(rename = "completion-policy", default)]
+    completion_policy: CompletionPolicy,
 }
 
 #[derive(Debug)]
@@ -221,9 +223,11 @@ fn parse_frontmatter(source: &str, lines: &[Line], bom: bool) -> Result<Frontmat
     };
     Ok(Frontmatter {
         range: 0..closing.end,
+        body_range: body_start..body_end,
         raw,
         todo_spec: version,
         columns: data.columns,
+        completion_policy: data.completion_policy,
         value,
     })
 }

@@ -27,9 +27,31 @@ git init -q .
 git config user.email e2e@example.com
 git config user.name "e2e"
 "$TODO_BIN" init >/dev/null
+"$TODO_BIN" policy strict >/dev/null
+git add TODO.md
+git commit -qm "initialize project"
 "$TODO_BIN" add "给登录接口加限流" --priority 1 >/dev/null
+git add TODO.md
+git commit -qm "seed project task"
+# The desktop history scanner follows TODO.md specifically; advance that history
+# while preserving the task's introduction commit as the evidence start.
+printf '\n' >> TODO.md
+git add TODO.md
+git commit -qm "advance task ledger"
+# Evidence starts at the commit that introduced the task and ends at the current
+# HEAD, so commit an unrelated implementation file without rewriting TODO.md.
+printf 'export const rateLimit = true;\n' > rate-limit.ts
+git add rate-limit.ts
+git commit -qm "implement rate limiting"
 mkdir -p docs
 printf '# Plan\n\n- [ ] 写迁移脚本\n' > docs/plan.md
+git add docs/plan.md
+git commit -qm "add implementation plan"
+# Keep the working tree clean: evidence availability intentionally refuses to
+# suggest a range while TODO.md has uncommitted changes.
+
+rm -f .TODO.md.lock
+git status --porcelain | grep -q . && { git status --short; exit 1; }
 
 echo "==> serving on :$PORT"
 "$TODO_BIN" serve --port "$PORT" --web-root "$ROOT/apps/desktop/dist" >"$WORKDIR/serve.log" 2>&1 &

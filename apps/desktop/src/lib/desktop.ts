@@ -19,6 +19,17 @@ export interface DesktopColumn {
   done: boolean;
 }
 
+export type CompletionPolicy = 'normal' | 'strict';
+
+export interface EvidenceRange {
+  from: string;
+  to: string;
+}
+
+export type EvidenceAvailability =
+  | ({ status: 'available' } & EvidenceRange)
+  | { status: 'unavailable'; reason: string };
+
 export interface DesktopTask {
   id: string | null;
   body: string;
@@ -33,6 +44,10 @@ export interface DesktopTask {
   failed_on: string | null;
   /** Text of the `↳` note line. */
   note: string | null;
+  /** Persisted `from..to` evidence text, when present. */
+  evidence: string | null;
+  /** Git range offered when confirming strict completion. */
+  evidence_availability: EvidenceAvailability;
 }
 
 export type DiffKind = 'context' | 'added' | 'removed';
@@ -111,6 +126,7 @@ export interface TodayView {
 export interface DesktopSnapshot {
   project_path: string;
   revision: string;
+  completion_policy: CompletionPolicy;
   columns: DesktopColumn[];
   tasks: DesktopTask[];
   today: TodayView;
@@ -139,7 +155,9 @@ export interface CaptureAppendResult {
 
 export type DesktopMutation =
   | { type: 'add_task'; body: string; column: string | null }
-  | { type: 'set_completed'; id: string; completed: boolean }
+  | { type: 'set_completed'; id: string; completed: boolean; note?: string; evidence?: EvidenceRange }
+  | { type: 'set_partial'; id: string; percent: number; note: string }
+  | { type: 'set_failed'; id: string; note: string }
   | {
       type: 'move_task';
       id: string;
@@ -202,6 +220,8 @@ const mockInitialTasks: DesktopTask[] = [
     progress: null,
     failed_on: null,
     note: null,
+    evidence: null,
+    evidence_availability: { status: 'available', from: 'abc1234', to: 'def5678' },
   },
   {
     id: 'k9p4dr',
@@ -214,6 +234,8 @@ const mockInitialTasks: DesktopTask[] = [
     progress: null,
     failed_on: null,
     note: null,
+    evidence: null,
+    evidence_availability: { status: 'unavailable', reason: 'Mock 任务没有 Git 物证。' },
   },
   {
     id: 'm2v7qx',
@@ -226,6 +248,8 @@ const mockInitialTasks: DesktopTask[] = [
     progress: null,
     failed_on: null,
     note: null,
+    evidence: null,
+    evidence_availability: { status: 'unavailable', reason: 'Mock 任务没有 Git 物证。' },
   },
   {
     id: 'a4n8sj',
@@ -238,6 +262,8 @@ const mockInitialTasks: DesktopTask[] = [
     progress: null,
     failed_on: null,
     note: null,
+    evidence: null,
+    evidence_availability: { status: 'unavailable', reason: 'Mock 任务没有 Git 物证。' },
   },
   {
     id: 'w6h0bp',
@@ -250,6 +276,8 @@ const mockInitialTasks: DesktopTask[] = [
     progress: null,
     failed_on: null,
     note: null,
+    evidence: null,
+    evidence_availability: { status: 'unavailable', reason: 'Mock 任务没有 Git 物证。' },
   },
   {
     id: 'd8q3mf',
@@ -262,6 +290,8 @@ const mockInitialTasks: DesktopTask[] = [
     progress: null,
     failed_on: null,
     note: null,
+    evidence: null,
+    evidence_availability: { status: 'unavailable', reason: 'Mock 任务没有 Git 物证。' },
   },
 ];
 
@@ -361,6 +391,24 @@ function normalizeTask(raw: unknown): DesktopTask {
         : null,
     failed_on: typeof task.failed_on === 'string' ? task.failed_on : null,
     note: typeof task.note === 'string' && task.note.length > 0 ? task.note : null,
+    evidence: typeof task.evidence === 'string' && task.evidence.length > 0 ? task.evidence : null,
+    evidence_availability:
+      task.evidence_availability?.status === 'available'
+      && typeof task.evidence_availability.from === 'string'
+      && typeof task.evidence_availability.to === 'string'
+        ? {
+            status: 'available',
+            from: task.evidence_availability.from,
+            to: task.evidence_availability.to,
+          }
+        : {
+            status: 'unavailable',
+            reason:
+              task.evidence_availability?.status === 'unavailable'
+              && typeof task.evidence_availability.reason === 'string'
+                ? task.evidence_availability.reason
+                : '当前任务没有可用的 Git 物证区间。',
+          },
   };
 }
 
@@ -378,6 +426,7 @@ function normalizeSnapshot(raw: unknown): DesktopSnapshot {
   return {
     project_path: value.project_path,
     revision: value.revision,
+    completion_policy: value.completion_policy === 'strict' ? 'strict' : 'normal',
     columns: Array.isArray(value.columns)
       ? value.columns.map((column) => {
           const item = column as Partial<DesktopColumn>;
@@ -428,6 +477,10 @@ function mockSnapshot(): DesktopSnapshot {
   return {
     project_path: '/Users/demo/field-notes/TODO.md',
     revision: `mock-${String(mockRevision).padStart(4, '0')}`,
+    completion_policy:
+      typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('policy') === 'strict'
+        ? 'strict'
+        : 'normal',
     columns: mockColumns.map((column) => ({ ...column })),
     tasks,
     today: deriveMockToday(tasks),
@@ -506,11 +559,23 @@ async function mockMutate(intent: DesktopMutation): Promise<DesktopSnapshot> {
       progress: null,
       failed_on: null,
       note: null,
+      evidence: null,
+      evidence_availability: { status: 'unavailable', reason: 'Mock 任务没有 Git 物证。' },
     });
   } else if (intent.type === 'set_completed') {
     mockTasks = mockTasks.map((task) =>
-      task.id === intent.id ? { ...task, completed: intent.completed } : task,
+      task.id === intent.id
+        ? { ...task, completed: intent.completed, note: intent.note?.trim() || task.note }
+        : task,
     );
+  } else if (intent.type === 'set_partial') {
+    mockTasks = mockTasks.map((task) => task.id === intent.id
+      ? { ...task, progress: intent.percent, note: intent.note.trim() }
+      : task);
+  } else if (intent.type === 'set_failed') {
+    mockTasks = mockTasks.map((task) => task.id === intent.id
+      ? { ...task, failed_on: MOCK_TODAY, note: intent.note.trim() }
+      : task);
   } else {
     mockTasks = mockTasks.map((task) =>
       task.id === intent.id
@@ -697,8 +762,19 @@ export const desktop = {
         intent.type === 'add_task'
           ? { path: '/tasks', payload: { body: intent.body, column: intent.column } }
           : intent.type === 'set_completed'
-            ? { path: `/tasks/${intent.id}/completed`, payload: { completed: intent.completed } }
-            : { path: `/tasks/${intent.id}/move`, payload: { column: intent.column } };
+            ? {
+                path: `/tasks/${intent.id}/completed`,
+                payload: {
+                  completed: intent.completed,
+                  ...(intent.note === undefined ? {} : { note: intent.note }),
+                  ...(intent.evidence === undefined ? {} : { evidence: intent.evidence }),
+                },
+              }
+            : intent.type === 'set_partial'
+              ? { path: `/tasks/${intent.id}/progress`, payload: { percent: intent.percent, note: intent.note } }
+              : intent.type === 'set_failed'
+                ? { path: `/tasks/${intent.id}/fail`, payload: { note: intent.note } }
+                : { path: `/tasks/${intent.id}/move`, payload: { column: intent.column } };
       return normalizeSnapshot(
         await api<unknown>(route.path, { method: 'POST', body: route.payload }),
       );
@@ -761,6 +837,8 @@ export const desktop = {
         progress: null,
         failed_on: null,
         note: null,
+        evidence: null,
+        evidence_availability: { status: 'unavailable', reason: 'Mock 任务没有 Git 物证。' },
       });
       mockRevision += 1;
       const partial = id === 'cap-b7k2';

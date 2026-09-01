@@ -64,6 +64,74 @@ fn init_add_list_done_next_and_json_are_scriptable() {
 }
 
 #[test]
+fn completion_policy_enforces_the_note_matrix() {
+    for (policy, command, succeeds) in [
+        ("normal", vec!["done", "abc123"], true),
+        ("normal", vec!["progress", "abc123", "50"], false),
+        ("normal", vec!["fail", "abc123"], false),
+        ("strict", vec!["done", "abc123"], false),
+        ("strict", vec!["progress", "abc123", "50"], false),
+        ("strict", vec!["fail", "abc123"], false),
+    ] {
+        let dir = tempdir().unwrap();
+        fs::write(
+            dir.path().join("TODO.md"),
+            format!("---\ntodo-spec: 1\ncompletion-policy: {policy}\ncolumns:\n  - {{id: todo, name: Todo}}\n---\n\n## Todo\n- [ ] work <!--t:abc123-->\n"),
+        )
+        .unwrap();
+        let output = todo(dir.path(), &command);
+        assert_eq!(output.status.success(), succeeds, "{policy} {command:?}");
+        if !succeeds {
+            assert!(String::from_utf8_lossy(&output.stderr).contains("requires a note"));
+        }
+    }
+
+    for (policy, command) in [
+        (
+            "normal",
+            vec!["progress", "abc123", "50", "--note", "half done"],
+        ),
+        ("normal", vec!["fail", "abc123", "--note", "attempt failed"]),
+        (
+            "strict",
+            vec!["done", "abc123", "--note", "verified complete"],
+        ),
+        (
+            "strict",
+            vec!["progress", "abc123", "50", "--note", "half done"],
+        ),
+        ("strict", vec!["fail", "abc123", "--note", "attempt failed"]),
+    ] {
+        let dir = tempdir().unwrap();
+        fs::write(
+            dir.path().join("TODO.md"),
+            format!("---\ntodo-spec: 1\ncompletion-policy: {policy}\ncolumns:\n  - {{id: todo, name: Todo}}\n---\n\n## Todo\n- [ ] work <!--t:abc123-->\n"),
+        )
+        .unwrap();
+        let output = todo(dir.path(), &command);
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+}
+
+#[test]
+fn strict_done_requires_the_current_command_to_supply_a_note() {
+    let dir = tempdir().unwrap();
+    let path = dir.path().join("TODO.md");
+    let original = "---\ntodo-spec: 1\ncompletion-policy: strict\ncolumns:\n  - {id: todo, name: Todo}\n---\n\n## Todo\n- [ ] work <!--t:abc123-->\n      ↳ stale progress context <!--n:abc123-->\n";
+    fs::write(&path, original).unwrap();
+
+    let output = todo(dir.path(), &["done", "abc123"]);
+
+    assert_eq!(output.status.code(), Some(1));
+    assert!(String::from_utf8_lossy(&output.stderr).contains("requires a note"));
+    assert_eq!(fs::read_to_string(path).unwrap(), original);
+}
+
+#[test]
 fn done_removes_stale_partial_note_but_preserves_evidence_and_dependencies() {
     let dir = tempdir().unwrap();
     let path = dir.path().join("TODO.md");
@@ -151,6 +219,51 @@ fn init_never_overwrites_without_explicit_adopt() {
     let adopted = fs::read_to_string(path).unwrap();
     assert!(adopted.contains("todo-spec: 1"));
     assert!(adopted.contains("<!--t:"));
+}
+
+#[test]
+fn adopt_maps_custom_headings_to_todo_so_tasks_remain_visible() {
+    let dir = tempdir().unwrap();
+    let path = dir.path().join("TODO.md");
+    fs::write(
+        &path,
+        "# Project\n\n## Backlog\n- [ ] visible after adoption\n\n## Someday\n- [x] completed item\n",
+    )
+    .unwrap();
+
+    assert!(todo(dir.path(), &["init", "--adopt"]).status.success());
+    let listed = todo(dir.path(), &["list"]);
+    assert!(listed.status.success());
+    assert!(String::from_utf8_lossy(&listed.stdout).contains("visible after adoption"));
+
+    let adopted = fs::read_to_string(path).unwrap();
+    assert!(adopted.contains("### Backlog"));
+    assert!(adopted.contains("### Someday"));
+    assert_eq!(adopted.matches("<!--t:").count(), 2);
+}
+
+#[test]
+fn adopt_merges_plain_frontmatter_without_losing_custom_bytes() {
+    let dir = tempdir().unwrap();
+    let path = dir.path().join("TODO.md");
+    let custom = "title: Project board\nowner: alice\n# keep this comment\n";
+    fs::write(
+        &path,
+        format!("---\n{custom}---\n\n## Backlog\n- [ ] existing\n"),
+    )
+    .unwrap();
+
+    let output = todo(dir.path(), &["init", "--adopt"]);
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let adopted = fs::read_to_string(path).unwrap();
+    assert!(adopted.contains(custom));
+    assert!(adopted.contains("todo-spec: 1"));
+    assert_eq!(adopted.matches("---\n").count(), 2);
+    assert!(String::from_utf8_lossy(&todo(dir.path(), &["list"]).stdout).contains("existing"));
 }
 
 #[test]
@@ -332,6 +445,57 @@ fn reconcile_defaults_to_structural_only_in_a_complete_git_repository() {
         .is_empty());
 }
 
+/// A configured provider that never runs must not report a clean check. The
+/// operator set TODO_LLM_* expecting semantic judgement, so a bare exit 0 would
+/// read as "the task text was compared against the code".
+#[test]
+fn configured_semantic_provider_that_never_runs_is_reported_as_incomplete() {
+    let dir = tempdir().unwrap();
+    git(dir.path(), &["init", "-q"]);
+    git(dir.path(), &["config", "user.email", "test@example.com"]);
+    git(dir.path(), &["config", "user.name", "Test"]);
+    assert!(todo(dir.path(), &["init"]).status.success());
+    git(dir.path(), &["add", "TODO.md"]);
+    git(dir.path(), &["commit", "-qm", "add task file"]);
+
+    let configured = |args: &[&str]| {
+        std::process::Command::new(env!("CARGO_BIN_EXE_todo"))
+            .current_dir(dir.path())
+            .env("TODO_LLM_PROVIDER", "anthropic")
+            .env("TODO_LLM_API_KEY", "test-key")
+            .args(args)
+            .output()
+            .unwrap()
+    };
+
+    // Provider configured but --semantic not passed: the layer silently did not run.
+    let output = configured(&["reconcile", "--json"]);
+    assert_eq!(output.status.code(), Some(7));
+    let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    let skipped = value["data"]["report"]["checks_skipped"]
+        .as_array()
+        .unwrap();
+    assert!(
+        skipped
+            .iter()
+            .any(|reason| reason.as_str().unwrap_or_default().contains("semantic")),
+        "must name the semantic layer: {skipped:?}"
+    );
+
+    // Explicitly opting out is an informed choice, and agents are told to run it
+    // this way, so it must stay a clean exit rather than become permanent noise.
+    assert_eq!(
+        configured(&["reconcile", "--no-semantic"]).status.code(),
+        Some(0)
+    );
+
+    // With no provider configured at all the layer is simply off, not skipped.
+    assert_eq!(
+        todo(dir.path(), &["reconcile", "--json"]).status.code(),
+        Some(0)
+    );
+}
+
 #[test]
 fn reconcile_human_output_never_says_clean_when_a_check_was_skipped() {
     let dir = tempdir().unwrap();
@@ -486,7 +650,18 @@ fn history_records_the_operation_behind_each_restore_point() {
         .as_str()
         .unwrap()
         .to_string();
-    assert!(todo(dir.path(), &["progress", &id, "60"]).status.success());
+    assert!(todo(
+        dir.path(),
+        &[
+            "progress",
+            &id,
+            "60",
+            "--note",
+            "implementation remains incomplete",
+        ],
+    )
+    .status
+    .success());
 
     let output = todo(dir.path(), &["history", "--json"]);
     let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();

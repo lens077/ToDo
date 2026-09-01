@@ -12,6 +12,7 @@ interface TaskCardProps {
   onDragStart?: (taskId: string) => void;
   onDragEnd?: () => void;
   onSetCompleted: (taskId: string, completed: boolean) => void;
+  onRecordOutcome: (taskId: string, outcome: 'partial' | 'failed') => void;
   onMove: (taskId: string, columnId: string) => void;
 }
 
@@ -30,6 +31,7 @@ export function TaskCard({
   onDragStart,
   onDragEnd,
   onSetCompleted,
+  onRecordOutcome,
   onMove,
 }: TaskCardProps) {
   const movable = Boolean(task.id && columns.length > 1 && !busy && !readOnly);
@@ -64,6 +66,24 @@ export function TaskCard({
           {task.completed && <Icon name="check" />}
         </button>
         <span className="task-id">{shortId(task.id)}</span>
+        {!readOnly && task.id && (
+          <details className="outcome-menu">
+            <summary aria-label={`记录“${task.body}”的任务结局`} title="记录任务结局">
+              <span aria-hidden="true">···</span>
+            </summary>
+            <div className="move-menu__popover" role="menu" aria-label="记录任务结局">
+              <span className="move-menu__label">记录结局</span>
+              <button type="button" role="menuitem" disabled={busy} onClick={(event) => {
+                event.currentTarget.closest('details')?.removeAttribute('open');
+                onRecordOutcome(task.id!, 'partial');
+              }}>记录部分完成</button>
+              <button type="button" role="menuitem" disabled={busy} onClick={(event) => {
+                event.currentTarget.closest('details')?.removeAttribute('open');
+                onRecordOutcome(task.id!, 'failed');
+              }}>记录失败</button>
+            </div>
+          </details>
+        )}
         {!compact && !readOnly && (
           <details className="move-menu">
             <summary aria-label={`移动“${task.body}”到其他列`} title="移动到列">

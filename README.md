@@ -1,18 +1,21 @@
 # ToDo
 
-面向开发者的本地优先任务工具。仓库里的 `TODO.md` 是唯一事实源，CLI 是标准接口，桌面端只是视图和安全编辑入口。
+给 AI 协作开发者的本地任务对账器。任务状态与代码现实发生漂移时，人和 agent 可能被过期任务误导，重复已经完成的工作。
+
+ToDo 把每个仓库的 Project Task 保存在该仓库的 `TODO.md` 中，以可审计的 Git 物证辅助对账；回写只修改工具识别的字节区间，未识别内容逐字节保留；对账结论只报告，不擅自改写完成状态。CLI 是标准接口，桌面看板是同一事实源的视图和编辑入口。
+
+当前是实验性 MVP。Project Task 随仓库管理；个人 Capture 另以 `~/.todo/inbox.md` 为事实源，不进入 Git，也不受项目 `.todo/history/` 还原点保护，需要单独备份。语义对账默认关闭，需自备 LLM provider 并显式启用；当前仍有桌面原生路径的人工验收和 Playwright CI 接入待完成。首次用于真实项目之前，先提交或备份现有任务文件，并审查每次写入的 diff。
 
 - 本地模式不需要登录，也不需要网络。
 - SQLite 只是派生投影，可随时从 Markdown 重建。
-- 对账引擎用 Git 物证核对任务与代码的实际状态，只报告，不擅自改写完成状态。
 
-术语定义见 `CONTEXT.md`；格式规范见 `docs/format-spec-v1.md`。
+术语定义见 `CONTEXT.md`；格式规范见 `docs/format-spec-v1.md`；已完成验证与待验收项见 `docs/verification-log.md`。
 
 ## 环境要求
 
 | 工具 | 版本 | 说明 |
 |---|---|---|
-| Rust | 1.88 或更高 | 与 `Cargo.toml` 的 `rust-version` 一致；锁定依赖的实测下限，CI 从该字段读取，勿单独修改此处 |
+| Rust | 1.88 或更高 | 与 `Cargo.toml` 的 `rust-version` 一致；锁定依赖的**实测精确下限**（1.88 通过、1.87 失败，见 `docs/verification-log.md`）。CI 从该字段读取，勿单独修改此处 |
 | Node.js | `^20.19.0` 或 `>=22.12.0` | Vite 7 的要求；本仓库在 24.20.0 上验证 |
 | pnpm | 10.17.1 | 见 `package.json` 的 `packageManager` |
 
@@ -69,15 +72,15 @@ pnpm build
 | `todo init [--adopt]` | 创建 `TODO.md`，或接管已有清单 |
 | `todo list [--column <id>] [--all]` | 列出任务；`--all` 包含已完成与游离任务 |
 | `todo add <正文> [--column <id>] [--tag <值>] [--due <日期>] [--priority <1-4>]` | 新增任务 |
-| `todo done <id>` / `todo undone <id>` | 切换完成状态；`done` 会清除 `◐`、`⚠` 与 `↳` 说明行 |
+| `todo done <id> [--note <文本>] [--evidence]` / `todo undone <id>` | 切换完成状态；`--evidence` 附带建议的 Git 区间，严格模式下 `done` 必须提供说明 |
 | `todo archive` | 把已完成的顶层任务子树移入 `TODO.archive.md` |
 | `todo progress <id> <1-99> [--note <文本>]` | 记录部分完成 |
 | `todo fail <id> [--note <文本>]` | 记录一次失败的尝试；不改变完成状态 |
 | `todo note <id> <文本>` / `todo note <id> --clear` | 写入或清除 `↳` 说明行 |
 | `todo next` | 给出下一个可执行任务 |
-| `todo lint` | 检查格式问题，发现问题时退出码为 6 |
+| `todo lint` | 检查纯文档结构：解析错误、重复稳定 ID（error）、非标准 checkbox（warning）。发现问题时退出码为 6；依赖与 Git 物证问题要跑 `todo reconcile` |
 | `todo evidence <id> --from <sha> [--to <sha>]` | 写入 Git 物证，`--to` 默认 `HEAD` |
-| `todo reconcile [--apply] [--no-semantic]` | 对账；默认只报告 |
+| `todo reconcile [--apply] [--semantic]` | 对账；默认只报告。结构层与 Git 物证层默认运行；**语义层默认关闭**，需 `--semantic` 并自备 provider |
 | `todo hooks preview\|install\|uninstall\|instructions [--agent claude\|codex\|deepseek-harness\|all]` | 管理 agent 接入 |
 | `todo align [--review <文件\|->]` | 打印全仓对齐提示词，或校验 agent 的回复 |
 | `todo serve [--port <n>] [--host <ip>] [--read-only] [--web-root <目录>]` | 启动 HTTP API 与 Web 端 |
@@ -86,11 +89,20 @@ pnpm build
 | `todo diff <版本>` | 还原点与当前文件的左右对比 |
 | `todo restore <版本> [--yes]` | 恢复到某个版本；不带 `--yes` 只预览 |
 
-### 完成状态与说明行
+### 完成策略、结局与物证
 
-`↳` 说明行记录任务进行中还缺什么或为什么失败。任务完成后继续保留这些说明会误导后续阅读的人和 agent，因此 `todo done` 会同时清除 `◐`、`⚠` 与 `↳` 说明行。写入前的原文保存在 `.todo/history/`，可用 `todo history` 找到版本，再用 `todo diff <版本>` 查看；清理说明行不会抹掉历史记录。
+项目 frontmatter 的 `completion-policy` 决定结局说明是否必填，缺省为 `normal`。可用 `todo policy` 查看，用 `todo policy normal|strict` 修改。
 
-部分完成与部分失败的语法见 `docs/format-spec-v1.md` §3.1。
+| 策略 | 完成 `done` | 部分完成 `progress` | 失败 `fail` |
+|---|---|---|---|
+| `normal` | 说明可选；未传 `--note` 时清除旧说明 | `--note` 必填 | `--note` 必填 |
+| `strict` | `--note` 必填 | `--note` 必填 | `--note` 必填 |
+
+`↳` 说明行记录三个结局的结果、剩余工作或失败原因。`done` 总会清除互相冲突的 `◐`、`⚠`；普通模式未给新说明时也清除旧 `↳`，严格模式则把本次必填说明写回。部分完成与失败的语法见 `docs/format-spec-v1.md` §3.1。
+
+`todo done <id> --note "验收通过" --evidence` 会尝试附带建议物证区间：已有 `🔗from..to` 时沿用其 `from`，否则从 Git 历史中查找稳定 ID 首次出现的 commit，并以当前 `HEAD` 为 `to`。Git 不可用、稳定 ID 尚未进入历史、commit 无法解析或区间会成为空的 `HEAD..HEAD` 时，命令明确报告 `evidence unavailable` 并拒绝写入；绝不会生成 `HEAD..HEAD`。不需要物证时省略 `--evidence`。
+
+完成状态、说明与物证是一次复合写入：同一个 `LockedWriter` 持锁校验并原子替换，只建立一个 restore point，不会出现任务已完成但说明或物证未写入的中间状态。写入前的原文保存在 `.todo/history/`，可用 `todo history` 找到版本，再用 `todo diff <版本>` 查看。
 
 ### 归档已完成任务
 
@@ -106,6 +118,8 @@ todo serve --web-root apps/desktop/dist
 ```
 
 同一份 React 构建同时跑在三处：Tauri 桌面壳、浏览器（对接 `todo serve`）、以及无后端的 mock（e2e 用）。选择在 `src/lib/transport.ts` 里一次性完成，不在每个调用点分叉——否则很快会出现第二份逐渐走样的界面。
+
+严格模式下，Web/桌面端勾选完成不会直接写盘，而是打开三结局确认对话框。完成、部分完成与失败都要求说明；部分完成还要求 `1–99` 的完成比例。Git 物证只适用于完成结局：可用时默认勾选，不可用时展示具体原因并禁用。每个结局都通过一次请求和一次 `LockedWriter` 事务写入，成功后才关闭对话框。
 
 **默认只绑定回环地址。** 任务文件是仓库的工作状态，不该因为疏忽就暴露在所有网卡上；要对外提供必须显式 `--host`。
 
@@ -164,9 +178,23 @@ todo align --review reply.json  # 校验它的回复
 
 **退出码 `7` 的含义是「没查完」，不是「没问题」。** 浅克隆、非 git 目录或未配置语义对账器时，对应检查整层跳过；此时 `reconcile` 不会返回 `0`，人类输出会打印 `NOT CHECKED:` 行，JSON 的 `report.checks_skipped` 列出原因。不要把 `7` 当作通过。
 
+### 语义对账（可选，默认关闭）
+
+结构层与 Git 物证层只判断「稳定 ID、依赖、commit 区间是否有效」，**不判断任务正文是否已由代码实现**。后者属于语义层，需要自备 LLM provider 并显式 `--semantic`：
+
+```bash
+export TODO_LLM_PROVIDER=anthropic   # 或 openai
+export TODO_LLM_API_KEY=<your-key>
+todo reconcile --semantic
+```
+
+可选 `TODO_LLM_MODEL` 与 `TODO_LLM_BASE_URL`。语义结论一律进 `suspected`，只报告、绝不自动改写完成状态。
+
+已配置 provider 却没带 `--semantic` 时，`reconcile` 会把「语义层未运行」计入 `checks_skipped` 并返回 `7`——避免把一次只跑了结构层的运行误读成「任务与代码已核对」。明确不需要语义层时用 `--no-semantic`，它是一次知情的选择，仍返回 `0`。
+
 `todo reconcile --apply` 只执行确定且无外部引用的清理，绝不删除 `🔗`、`⛔`、`→` 等物证 token，也不改写完成状态。规则见 `docs/format-spec-v1.md` §6.5。
 
-`todo hooks preview` 会打印本地 agent 配置文件的完整内容，其中可能包含 API 密钥。不要把该输出贴到公开渠道。
+`todo hooks preview|install|uninstall` 读写的是本地 agent 配置文件（如 `~/.claude/settings.json`），其中可能包含 API 密钥。这三条命令默认只打印目标路径、`changed` 与备份位置，**不输出文件正文**（`--json` 的 `content` 字段同样被替换为占位符）。确需查看完整内容时显式加 `--show-content`，并注意该输出不可贴到 issue、CI 日志或聊天中。
 
 ## 桌面端
 
@@ -199,7 +227,7 @@ pnpm --filter @todo/desktop tauri build --debug
 
 桌面端提供看板、今日视图和随记账本，行为与边界见 `docs/desktop-mvp-spec.md`。全局速记快捷键在 macOS 上是 `Cmd+Shift+Space`，其他平台是 `Ctrl+Shift+Space`；速记窗口中 `Cmd/Ctrl+Enter` 保存，`Esc` 隐藏。
 
-Capture 是个人收件箱，存放在 `~/.todo/inbox.md`，不属于任何项目，也没有完成状态。分拣后才会成为当前项目的 Project Task。
+Capture 是个人收件箱，存放在 `~/.todo/inbox.md`，不属于任何项目，也没有完成状态。分拣后才会成为当前项目的 Project Task。该文件不进入项目 Git，也不受项目 `.todo/history/` 还原点保护，需要单独备份。
 
 ## 测试
 
@@ -224,7 +252,7 @@ cargo run --release -p todo-core --example benchmark_projection
 
 ## 设计约束
 
-- Markdown 是唯一事实源，工具只修改自己认识的行，其余字节原样保留。
+- 每个仓库的 Project Task 以该仓库的 Markdown 为唯一事实源；个人 Capture 另以 `~/.todo/inbox.md` 为事实源。工具只修改自己认识的字节区间，其余字节原样保留。
 - 稳定 ID 使用随机 base36，写在 HTML 注释中，不影响渲染。
 - 写入走文件锁与原子替换；检测到外部修改时放弃本次写入并要求重试。
 - 桌面端直接复用 `todo-core`，不启动 CLI 子进程。

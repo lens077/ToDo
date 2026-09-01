@@ -6,6 +6,7 @@ import {
   type Capture,
   type DesktopMutation,
   type DesktopSnapshot,
+  type EvidenceRange,
   type TriageResult,
 } from '../lib/desktop';
 
@@ -346,8 +347,12 @@ export function useDesktop() {
     clearBanner: () => setBanner(null),
     addTask: (body: string, column: string | null) =>
       runMutation('task:new', { type: 'add_task', body, column }),
-    setCompleted: (id: string, completed: boolean) =>
-      runMutation(`task:${id}`, { type: 'set_completed', id, completed }),
+    setCompleted: (id: string, completed: boolean, note?: string, evidence?: EvidenceRange) =>
+      runMutation(`task:${id}`, { type: 'set_completed', id, completed, note, evidence }),
+    setPartial: (id: string, percent: number, note: string) =>
+      runMutation(`task:${id}`, { type: 'set_partial', id, percent, note }),
+    setFailed: (id: string, note: string) =>
+      runMutation(`task:${id}`, { type: 'set_failed', id, note }),
     moveTask: (id: string, column: string) =>
       runMutation(`task:${id}`, { type: 'move_task', id, column, target: { type: 'column_end' } }),
     appendCapture,

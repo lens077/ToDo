@@ -14,6 +14,9 @@ const webUrl = process.env.E2E_WEB_URL;
 
 test.describe('web transport', () => {
   test.skip(!webUrl, 'set E2E_WEB_URL to a running `todo serve` to enable');
+  // Every test exercises one live Git-backed repository, so concurrent writes
+  // would make restore points and evidence ranges nondeterministic.
+  test.describe.configure({ mode: 'serial' });
 
   test.use({ baseURL: webUrl });
 
@@ -23,6 +26,32 @@ test.describe('web transport', () => {
     // The fixture project has a task the mock data does not, so seeing it proves
     // the data came from the server rather than the built-in fixtures.
     await expect(page.getByText('给登录接口加限流')).toBeVisible();
+  });
+
+  test('strict done persists its note and Git evidence across reload', async ({ page }) => {
+    const note = '真实服务验收通过';
+
+    await page.goto('/');
+    await page.getByRole('button', { name: /看板/ }).click();
+    await page.getByRole('button', { name: /完成“给登录接口加限流/ }).click();
+
+    const dialog = page.getByRole('dialog', { name: '确认任务结局' });
+    await expect(dialog.getByRole('checkbox')).toBeChecked();
+    const evidence = await dialog.locator('code').textContent();
+    expect(evidence).toMatch(/^[0-9a-f]+\.\.[0-9a-f]+$/);
+    await dialog.getByRole('textbox', { name: '完成说明' }).fill(note);
+    await dialog.getByRole('button', { name: '确认完成' }).click();
+
+    await expect(page.getByText(note)).toBeVisible();
+    await expect(page.getByText(evidence!)).toBeVisible();
+
+    await page.reload();
+    await page.getByRole('button', { name: /看板/ }).click();
+    await expect(page.getByText(note)).toBeVisible();
+    const snapshot = await page.request.get('/api/v1/snapshot');
+    expect(snapshot.ok()).toBeTruthy();
+    const persisted = (await snapshot.json()).tasks.find((task: { body: string }) => task.body === '给登录接口加限流');
+    expect(persisted.evidence).toBe(evidence);
   });
 
   test('writes reach the file through the API', async ({ page }) => {

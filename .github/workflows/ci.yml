@@ -108,3 +108,6 @@ jobs:
 
       - name: Run Playwright tests against todo serve
         run: ./scripts/e2e-web.sh
+
+      - name: Reject whitespace errors
+        run: git diff --check
