@@ -89,3 +89,38 @@ test('the alignment prompt is available for handing to an agent', async ({ page 
   await expect(page.getByRole('heading', { name: '对齐提示词' })).toBeVisible();
   await expect(page.locator('.review-prompt')).toContainText('核对 TODO 与代码现实');
 });
+
+test('provider settings persist locally without logging the API key', async ({ page }) => {
+  const apiKey = 'test-key-never-log';
+  const consoleMessages: string[] = [];
+  page.on('console', (message) => consoleMessages.push(message.text()));
+
+  await page.getByRole('button', { name: '模型设置' }).click();
+  const dialog = page.getByRole('dialog', { name: '模型提供方设置' });
+  await expect(dialog).toBeVisible();
+
+  const keyInput = dialog.getByLabel('API 密钥');
+  await expect(keyInput).toHaveAttribute('type', 'password');
+  await dialog.getByLabel('提供方').selectOption('openai');
+  await keyInput.fill(apiKey);
+  await dialog.getByText('自定义设置', { exact: true }).click();
+  await dialog.getByLabel('API 地址').fill('https://models.example.test/v1');
+  await dialog.getByLabel('当前模型').fill('outside-catalog-model');
+  await dialog.getByRole('button', { name: '添加模型' }).click();
+  await dialog.getByRole('button', { name: '保存', exact: true }).click();
+
+  await expect(dialog).toHaveCount(0);
+  const stored = await page.evaluate(() => localStorage.getItem('todo.provider-settings.v1'));
+  expect(JSON.parse(stored ?? '{}')).toMatchObject({
+    provider: 'openai',
+    api_key: apiKey,
+    base_url: 'https://models.example.test/v1',
+    model: 'outside-catalog-model',
+    custom_models: ['outside-catalog-model'],
+  });
+
+  await page.reload();
+  await page.getByRole('button', { name: '模型设置' }).click();
+  await expect(page.getByRole('dialog').getByLabel('API 密钥')).toHaveValue(apiKey);
+  expect(consoleMessages.join('\n')).not.toContain(apiKey);
+});

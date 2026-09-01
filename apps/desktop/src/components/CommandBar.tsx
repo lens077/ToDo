@@ -10,6 +10,7 @@ interface CommandBarProps {
   readOnly: boolean;
   onChooseProject: () => void;
   onRefresh: () => void;
+  onOpenProviderSettings: () => void;
   onAddTask: (body: string, column: string | null) => Promise<boolean>;
 }
 
@@ -20,6 +21,7 @@ export function CommandBar({
   readOnly,
   onChooseProject,
   onRefresh,
+  onOpenProviderSettings,
   onAddTask,
 }: CommandBarProps) {
   const [body, setBody] = React.useState('');
@@ -97,9 +99,14 @@ export function CommandBar({
         <span>REV</span>
         <code>{snapshot ? revisionCode(snapshot.revision) : '—'}</code>
       </div>
-      <button className="icon-action command-refresh" type="button" disabled={!snapshot} onClick={onRefresh} aria-label="重新载入 Snapshot" title="重新载入">
-        <Icon name="refresh" />
-      </button>
+      <div className="command-actions">
+        <button className="text-action command-settings" type="button" onClick={onOpenProviderSettings} aria-label="模型设置" title="模型提供方设置">
+          模型
+        </button>
+        <button className="icon-action command-refresh" type="button" disabled={!snapshot} onClick={onRefresh} aria-label="重新载入 Snapshot" title="重新载入">
+          <Icon name="refresh" />
+        </button>
+      </div>
     </header>
   );
 }

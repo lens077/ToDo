@@ -3,6 +3,7 @@ import { BoardView } from './components/BoardView';
 import { CaptureView } from './components/CaptureView';
 import { CommandBar } from './components/CommandBar';
 import { EmptyState } from './components/EmptyState';
+import { ProviderSettings } from './components/ProviderSettings';
 import { ReviewView } from './components/ReviewView';
 import { Sidebar, type MainView } from './components/Sidebar';
 import { StatusBanner } from './components/StatusBanner';
@@ -13,6 +14,7 @@ import { transportCapabilities } from './lib/desktop';
 export function App() {
   // The homepage answers "what should I do now"; the board is one click away.
   const [activeView, setActiveView] = React.useState<MainView>('today');
+  const [providerSettingsOpen, setProviderSettingsOpen] = React.useState(false);
   const model = useDesktop();
   const readOnly = transportCapabilities()?.writable === false;
   const todayCount = model.snapshot
@@ -39,6 +41,7 @@ export function App() {
           readOnly={readOnly}
           onChooseProject={() => void model.chooseProject()}
           onRefresh={() => void model.refreshSnapshot()}
+          onOpenProviderSettings={() => setProviderSettingsOpen(true)}
           onAddTask={model.addTask}
         />
 
@@ -100,6 +103,8 @@ export function App() {
           )}
         </main>
       </div>
+
+      {providerSettingsOpen && <ProviderSettings onClose={() => setProviderSettingsOpen(false)} />}
     </div>
   );
 }
