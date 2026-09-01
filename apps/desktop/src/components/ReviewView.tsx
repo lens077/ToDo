@@ -25,12 +25,13 @@ interface PendingRewrite {
 
 interface ReviewViewProps {
   snapshot: DesktopSnapshot | null;
+  readOnly: boolean;
   onApplied: (snapshot: DesktopSnapshot) => void;
 }
 
 type Busy = 'scan' | 'import' | 'history' | 'apply' | null;
 
-export function ReviewView({ snapshot, onApplied }: ReviewViewProps) {
+export function ReviewView({ snapshot, readOnly, onApplied }: ReviewViewProps) {
   const [markdown, setMarkdown] = React.useState(true);
   const [comments, setComments] = React.useState(true);
   const [scan, setScan] = React.useState<ScanPreview | null>(null);
@@ -60,8 +61,9 @@ export function ReviewView({ snapshot, onApplied }: ReviewViewProps) {
       setScan(await desktop.scanRepository(markdown, comments, null));
     });
 
-  const previewImport = () =>
-    guard('import', async () => {
+  const previewImport = () => {
+    if (readOnly) return Promise.resolve();
+    return guard('import', async () => {
       const preview = await desktop.scanRepository(markdown, comments, column);
       setScan(preview);
       if (!preview.rewrite) return;
@@ -73,14 +75,16 @@ export function ReviewView({ snapshot, onApplied }: ReviewViewProps) {
         rightLabel: '导入后',
       });
     });
+  };
 
   const loadHistory = () =>
     guard('history', async () => {
       setHistory(await desktop.historyList());
     });
 
-  const previewRestore = (version: number) =>
-    guard('history', async () => {
+  const previewRestore = (version: number) => {
+    if (readOnly) return Promise.resolve();
+    return guard('history', async () => {
       const rewrite = await desktop.historyPreview(version);
       setPending({
         rewrite,
@@ -90,9 +94,10 @@ export function ReviewView({ snapshot, onApplied }: ReviewViewProps) {
         rightLabel: '当前 TODO.md',
       });
     });
+  };
 
   const confirm = () => {
-    if (!pending) return;
+    if (readOnly || !pending) return;
     void guard('apply', async () => {
       const next = await desktop.applyRewrite(pending.rewrite, pending.op);
       onApplied(next);
@@ -141,7 +146,7 @@ export function ReviewView({ snapshot, onApplied }: ReviewViewProps) {
               type="button"
               className="text-action text-action--primary"
               onClick={confirm}
-              disabled={busy === 'apply'}
+              disabled={readOnly || busy === 'apply'}
             >
               {busy === 'apply' ? '写入中…' : '确认并写入'}
             </button>
@@ -185,8 +190,8 @@ export function ReviewView({ snapshot, onApplied }: ReviewViewProps) {
                 type="button"
                 className="text-action"
                 onClick={previewImport}
-                disabled={busy !== null || found === 0}
-                title={found === 0 ? '先扫描出结果才能导入' : undefined}
+                disabled={readOnly || busy !== null || found === 0}
+                title={readOnly ? '只读模式下不能导入' : found === 0 ? '先扫描出结果才能导入' : undefined}
               >
                 预览导入
               </button>
@@ -256,7 +261,8 @@ export function ReviewView({ snapshot, onApplied }: ReviewViewProps) {
                       type="button"
                       className="text-action"
                       onClick={() => previewRestore(entry.version)}
-                      disabled={busy !== null}
+                      disabled={readOnly || busy !== null}
+                      title={readOnly ? '只读模式下不能恢复' : undefined}
                     >
                       预览恢复
                     </button>

@@ -10,6 +10,7 @@ interface CaptureViewProps {
   capturesLoading: boolean;
   busyKeys: Set<string>;
   partialTriages: Record<string, PartialTriageState>;
+  readOnly: boolean;
   onAppend: (text: string) => Promise<boolean>;
   onDelete: (id: string) => Promise<boolean>;
   onTriage: (id: string, column: string) => Promise<TriageResult | null>;
@@ -19,12 +20,13 @@ interface CaptureItemProps {
   capture: Capture;
   columns: DesktopColumn[];
   busy: boolean;
+  readOnly: boolean;
   partial?: PartialTriageState;
   onDelete: (id: string) => Promise<boolean>;
   onTriage: (id: string, column: string) => Promise<TriageResult | null>;
 }
 
-function CaptureItem({ capture, columns, busy, partial, onDelete, onTriage }: CaptureItemProps) {
+function CaptureItem({ capture, columns, busy, readOnly, partial, onDelete, onTriage }: CaptureItemProps) {
   const [column, setColumn] = React.useState(columns.find((item) => !item.done)?.id ?? columns[0]?.id ?? '');
 
   React.useEffect(() => {
@@ -56,7 +58,7 @@ function CaptureItem({ capture, columns, busy, partial, onDelete, onTriage }: Ca
         <div className="capture-item__triage">
           <label>
             <span className="sr-only">选择目标列</span>
-            <select value={column} onChange={(event) => setColumn(event.target.value)} disabled={!columns.length || busy}>
+            <select value={column} onChange={(event) => setColumn(event.target.value)} disabled={readOnly || !columns.length || busy}>
               {columns.map((item) => (
                 <option key={item.id} value={item.id}>
                   {item.name}
@@ -67,7 +69,7 @@ function CaptureItem({ capture, columns, busy, partial, onDelete, onTriage }: Ca
           <button
             className="text-action text-action--primary"
             type="button"
-            disabled={!column || busy}
+            disabled={readOnly || !column || busy}
             onClick={() => void onTriage(capture.id, column)}
           >
             分拣为任务 <Icon name="arrow" />
@@ -78,7 +80,7 @@ function CaptureItem({ capture, columns, busy, partial, onDelete, onTriage }: Ca
       <button
         className="icon-action capture-item__delete"
         type="button"
-        disabled={busy}
+        disabled={readOnly || busy}
         aria-label={`删除 Capture：${capture.text}`}
         title="删除 Capture"
         onClick={() => void onDelete(capture.id)}
@@ -96,13 +98,14 @@ export function CaptureView({
   capturesLoading,
   busyKeys,
   partialTriages,
+  readOnly,
   onAppend,
   onDelete,
   onTriage,
 }: CaptureViewProps) {
   const [draft, setDraft] = React.useState('');
   const submit = async () => {
-    if (!draft.trim() || busyKeys.has('capture:new')) return;
+    if (readOnly || !draft.trim() || busyKeys.has('capture:new')) return;
     const value = draft;
     if (await onAppend(value)) setDraft('');
   };
@@ -136,15 +139,16 @@ export function CaptureView({
               void submit();
             }
           }}
-          placeholder="先记原话，稍后再分拣……"
+          placeholder={readOnly ? '只读模式下不能新增随记' : '先记原话，稍后再分拣……'}
+          disabled={readOnly}
           rows={2}
         />
         <div className="inline-capture__footer">
           <span>
             <kbd>⌘</kbd>/<kbd>Ctrl</kbd> + <kbd>Enter</kbd>
           </span>
-          <button className="solid-action" type="submit" disabled={!draft.trim() || busyKeys.has('capture:new')}>
-            {busyKeys.has('capture:new') ? '保存中' : '存入随记'}
+          <button className="solid-action" type="submit" disabled={readOnly || !draft.trim() || busyKeys.has('capture:new')}>
+            {readOnly ? '只读' : busyKeys.has('capture:new') ? '保存中' : '存入随记'}
           </button>
         </div>
       </form>
@@ -168,6 +172,7 @@ export function CaptureView({
                   capture={capture}
                   columns={snapshot?.columns ?? []}
                   busy={busyKeys.has(`capture:${capture.id}`)}
+                  readOnly={readOnly}
                   partial={partialTriages[capture.id]}
                   onDelete={onDelete}
                   onTriage={onTriage}

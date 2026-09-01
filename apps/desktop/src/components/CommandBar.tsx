@@ -7,6 +7,7 @@ interface CommandBarProps {
   snapshot: DesktopSnapshot | null;
   projectBusy: boolean;
   addBusy: boolean;
+  readOnly: boolean;
   onChooseProject: () => void;
   onRefresh: () => void;
   onAddTask: (body: string, column: string | null) => Promise<boolean>;
@@ -16,6 +17,7 @@ export function CommandBar({
   snapshot,
   projectBusy,
   addBusy,
+  readOnly,
   onChooseProject,
   onRefresh,
   onAddTask,
@@ -31,17 +33,17 @@ export function CommandBar({
 
   React.useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
-      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
+      if (!readOnly && (event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
         event.preventDefault();
         inputRef.current?.focus();
       }
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, []);
+  }, [readOnly]);
 
   const submit = async () => {
-    if (!snapshot || !body.trim() || addBusy) return;
+    if (readOnly || !snapshot || !body.trim() || addBusy) return;
     const value = body;
     if (await onAddTask(value, column || null)) setBody('');
   };
@@ -51,9 +53,9 @@ export function CommandBar({
       <button
         className="command-project"
         type="button"
-        disabled={projectBusy}
+        disabled={projectBusy || readOnly}
         onClick={onChooseProject}
-        title="切换项目"
+        title={readOnly ? '只读 Web 模式使用服务端当前项目' : '切换项目'}
       >
         <Icon name="folder" />
         <span>{snapshot ? shortProjectName(snapshot.project_path) : '选择项目'}</span>
@@ -74,20 +76,20 @@ export function CommandBar({
           id="quick-add-body"
           value={body}
           onChange={(event) => setBody(event.target.value)}
-          placeholder={snapshot ? '快速新增 Project Task…' : '先选择一个项目'}
-          disabled={!snapshot || addBusy}
+          placeholder={readOnly ? '只读模式下不能新增任务' : snapshot ? '快速新增 Project Task…' : '先选择一个项目'}
+          disabled={readOnly || !snapshot || addBusy}
           autoComplete="off"
         />
         {snapshot && (
-          <select aria-label="新增到列" value={column} onChange={(event) => setColumn(event.target.value)} disabled={addBusy}>
+          <select aria-label="新增到列" value={column} onChange={(event) => setColumn(event.target.value)} disabled={readOnly || addBusy}>
             {snapshot.columns.map((item) => (
               <option value={item.id} key={item.id}>{item.name}</option>
             ))}
           </select>
         )}
         <kbd>⌘K</kbd>
-        <button type="submit" disabled={!snapshot || !body.trim() || addBusy}>
-          {addBusy ? '写入中' : '添加'}
+        <button type="submit" disabled={readOnly || !snapshot || !body.trim() || addBusy}>
+          {readOnly ? '只读' : addBusy ? '写入中' : '添加'}
         </button>
       </form>
 

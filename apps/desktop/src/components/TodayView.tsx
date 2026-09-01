@@ -4,6 +4,7 @@ import { TaskCard } from './TaskCard';
 interface TodayViewProps {
   snapshot: DesktopSnapshot;
   busyKeys: Set<string>;
+  readOnly: boolean;
   onSetCompleted: (id: string, completed: boolean) => Promise<boolean>;
   onMove: (id: string, column: string) => Promise<boolean>;
 }
@@ -24,6 +25,7 @@ function TodayGroup({
   tone,
   snapshot,
   busyKeys,
+  readOnly,
   onSetCompleted,
   onMove,
 }: TodayGroupProps) {
@@ -46,6 +48,7 @@ function TodayGroup({
               task={task}
               columns={snapshot.columns}
               busy={Boolean(task.id && busyKeys.has(`task:${task.id}`))}
+              readOnly={readOnly}
               onSetCompleted={(id, completed) => void onSetCompleted(id, completed)}
               onMove={(id, column) => void onMove(id, column)}
             />

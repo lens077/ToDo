@@ -9,6 +9,7 @@ interface SidebarProps {
   status: WorkspaceStatus;
   todayCount: number;
   captureCount: number;
+  readOnly: boolean;
   onChangeView: (view: MainView) => void;
   onChooseProject: () => void;
 }
@@ -26,6 +27,7 @@ export function Sidebar({
   status,
   todayCount,
   captureCount,
+  readOnly,
   onChangeView,
   onChooseProject,
 }: SidebarProps) {
@@ -42,7 +44,13 @@ export function Sidebar({
         </div>
       </div>
 
-      <button className="project-switcher" type="button" onClick={onChooseProject} title="切换当前项目">
+      <button
+        className="project-switcher"
+        type="button"
+        onClick={onChooseProject}
+        disabled={readOnly}
+        title={readOnly ? '只读 Web 模式使用服务端当前项目' : '切换当前项目'}
+      >
         <span className="project-switcher__icon"><Icon name="folder" /></span>
         <span className="project-switcher__copy">
           <small>当前项目</small>

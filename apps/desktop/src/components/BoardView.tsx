@@ -6,11 +6,12 @@ import { TaskCard } from './TaskCard';
 interface BoardViewProps {
   snapshot: DesktopSnapshot;
   busyKeys: Set<string>;
+  readOnly: boolean;
   onSetCompleted: (id: string, completed: boolean) => Promise<boolean>;
   onMove: (id: string, column: string) => Promise<boolean>;
 }
 
-export function BoardView({ snapshot, busyKeys, onSetCompleted, onMove }: BoardViewProps) {
+export function BoardView({ snapshot, busyKeys, readOnly, onSetCompleted, onMove }: BoardViewProps) {
   const [draggedId, setDraggedId] = React.useState<string | null>(null);
   const [dropColumn, setDropColumn] = React.useState<string | null>(null);
   const [announcement, setAnnouncement] = React.useState('');
@@ -27,6 +28,7 @@ export function BoardView({ snapshot, busyKeys, onSetCompleted, onMove }: BoardV
   }
 
   const moveTask = async (taskId: string, columnId: string) => {
+    if (readOnly) return;
     const task = snapshot.tasks.find((item) => item.id === taskId);
     if (!task || task.column === columnId) return;
     const destination = snapshot.columns.find((column) => column.id === columnId);
@@ -46,7 +48,9 @@ export function BoardView({ snapshot, busyKeys, onSetCompleted, onMove }: BoardV
           <p className="eyebrow">PROJECT TASKS / {snapshot.tasks.length}</p>
           <h1 id="board-title">工作台</h1>
         </div>
-        <p className="view-heading__note">拖动只发送意图；文件写入成功后才会落位。</p>
+        <p className="view-heading__note">
+          {readOnly ? '只读浏览中；完成、移动与拖拽均已停用。' : '拖动只发送意图；文件写入成功后才会落位。'}
+        </p>
       </header>
 
       <div className="board-scroll" tabIndex={0} aria-label="看板列，可横向滚动">
@@ -96,6 +100,7 @@ export function BoardView({ snapshot, busyKeys, onSetCompleted, onMove }: BoardV
                           task={task}
                           columns={snapshot.columns}
                           busy={Boolean(task.id && busyKeys.has(`task:${task.id}`))}
+                          readOnly={readOnly}
                           onDragStart={(id) => setDraggedId(id)}
                           onDragEnd={() => {
                             setDraggedId(null);

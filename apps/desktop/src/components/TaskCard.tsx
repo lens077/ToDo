@@ -7,6 +7,7 @@ interface TaskCardProps {
   task: DesktopTask;
   columns: DesktopColumn[];
   busy: boolean;
+  readOnly: boolean;
   compact?: boolean;
   onDragStart?: (taskId: string) => void;
   onDragEnd?: () => void;
@@ -24,13 +25,14 @@ export function TaskCard({
   task,
   columns,
   busy,
+  readOnly,
   compact = false,
   onDragStart,
   onDragEnd,
   onSetCompleted,
   onMove,
 }: TaskCardProps) {
-  const movable = Boolean(task.id && columns.length > 1 && !busy);
+  const movable = Boolean(task.id && columns.length > 1 && !busy && !readOnly);
   const dueTone = task.due && !task.completed && task.due < localDateKey() ? 'overdue' : 'normal';
 
   const startDrag = (event: DragEvent<HTMLElement>) => {
@@ -42,8 +44,9 @@ export function TaskCard({
 
   return (
     <article
-      className={`task-card${task.completed ? ' is-complete' : ''}${busy ? ' is-busy' : ''}${compact ? ' task-card--compact' : ''}`}
+      className={`task-card${task.completed ? ' is-complete' : ''}${busy ? ' is-busy' : ''}${readOnly ? ' is-read-only' : ''}${compact ? ' task-card--compact' : ''}`}
       draggable={movable && !compact}
+      aria-disabled={readOnly || undefined}
       onDragStart={startDrag}
       onDragEnd={onDragEnd}
       tabIndex={0}
@@ -55,13 +58,13 @@ export function TaskCard({
           type="button"
           aria-label={task.completed ? `将“${task.body}”标为未完成` : `完成“${task.body}”`}
           aria-pressed={task.completed}
-          disabled={!task.id || busy}
+          disabled={readOnly || !task.id || busy}
           onClick={() => task.id && onSetCompleted(task.id, !task.completed)}
         >
           {task.completed && <Icon name="check" />}
         </button>
         <span className="task-id">{shortId(task.id)}</span>
-        {!compact && (
+        {!compact && !readOnly && (
           <details className="move-menu">
             <summary aria-label={`移动“${task.body}”到其他列`} title="移动到列">
               <Icon name="move" />
