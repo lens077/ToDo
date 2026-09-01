@@ -18,7 +18,18 @@ export default defineConfig({
     baseURL: 'http://127.0.0.1:4173',
     trace: 'on-first-retry',
   },
-  projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
+  projects: [
+    {
+      name: 'chromium',
+      testIgnore: /mobile\.spec\.ts/,
+      use: { ...devices['Desktop Chrome'] },
+    },
+    {
+      name: 'mobile',
+      testMatch: /mobile\.spec\.ts/,
+      use: { ...devices['iPhone 13'], browserName: 'chromium' },
+    },
+  ],
   webServer: {
     // Bind explicitly: vite preview listens on ::1 only by default, so a
     // 127.0.0.1 health check never resolves and the server looks dead.
