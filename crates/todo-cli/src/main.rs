@@ -848,6 +848,7 @@ fn toggle(cli: &Cli, path: &Path, id: &str, completed: bool) -> Result<u8, Error
             {
                 changes.push(Change::RemoveMetadata { task: index, token });
             }
+            changes.push(Change::RemoveNote { task: index });
         }
         Ok(changes)
     })?;

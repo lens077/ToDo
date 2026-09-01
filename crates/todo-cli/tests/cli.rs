@@ -50,6 +50,31 @@ fn init_add_list_done_next_and_json_are_scriptable() {
 }
 
 #[test]
+fn done_removes_stale_partial_note_but_preserves_evidence_and_dependencies() {
+    let dir = tempdir().unwrap();
+    let path = dir.path().join("TODO.md");
+    fs::write(
+        &path,
+        "---\ntodo-spec: 1\ncolumns:\n  - {id: todo, name: Todo}\n---\n\n## Todo\n- [ ] ship <!--t:abc123--> 🔗abc1234..def5678 ⛔dep123 ◐80 ⚠2026-09-01\n      ↳ load test still failing <!--n:abc123-->\n",
+    )
+    .unwrap();
+
+    let output = todo(dir.path(), &["done", "abc123"]);
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let updated = fs::read_to_string(path).unwrap();
+
+    assert!(updated.contains("- [x] ship <!--t:abc123--> 🔗abc1234..def5678 ⛔dep123"));
+    assert!(!updated.contains("◐80"));
+    assert!(!updated.contains("⚠2026-09-01"));
+    assert!(!updated.contains("load test still failing"));
+    assert!(!updated.contains("<!--n:abc123-->"));
+}
+
+#[test]
 fn init_never_overwrites_without_explicit_adopt() {
     let dir = tempdir().unwrap();
     let path = dir.path().join("TODO.md");
