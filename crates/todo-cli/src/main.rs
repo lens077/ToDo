@@ -14,7 +14,7 @@ use clap::{Parser, Subcommand};
 use serde::Serialize;
 use todo_core::{
     atomic_write, generate_task_id, parse_file, Change, Error, History, InsertPosition,
-    LockedWriter, ReconcileOptions, ReconcileReport, Reconciler, TokenKind,
+    LlmSemanticReconciler, LockedWriter, ReconcileOptions, ReconcileReport, Reconciler, TokenKind,
 };
 
 const TODO_TEMPLATE: &str = "---\ntodo-spec: 1\ncolumns:\n  - {id: todo, name: Todo}\n  - {id: doing, name: Doing}\n  - {id: done, name: Done, type: done}\n---\n\n# Project tasks\n\n## Todo\n\n## Doing\n\n## Done\n";
@@ -100,7 +100,11 @@ enum Command {
     Reconcile {
         #[arg(long)]
         apply: bool,
-        #[arg(long)]
+        /// Run the configured Anthropic or OpenAI semantic layer.
+        #[arg(long, conflicts_with = "no_semantic")]
+        semantic: bool,
+        /// Backward-compatible explicit structural-only mode.
+        #[arg(long, hide = true)]
         no_semantic: bool,
     },
     Hooks {
@@ -320,7 +324,11 @@ fn run(cli: &Cli) -> Result<u8, Error> {
         Command::Next => next(cli, &path),
         Command::Lint => lint(cli, &path),
         Command::Archive => archive(cli, &path),
-        Command::Reconcile { apply, no_semantic } => reconcile(cli, &path, *apply, *no_semantic),
+        Command::Reconcile {
+            apply,
+            semantic,
+            no_semantic,
+        } => reconcile(cli, &path, *apply, *semantic && !*no_semantic),
         Command::Hooks { command } => run_hooks(cli, command),
         Command::History { limit, prune_to } => history_list(cli, &path, *limit, *prune_to),
         Command::Diff { version } => show_diff(cli, &path, *version),
@@ -1416,12 +1424,21 @@ fn lint(cli: &Cli, path: &Path) -> Result<u8, Error> {
     Ok(code)
 }
 
-fn reconcile(cli: &Cli, path: &Path, apply: bool, no_semantic: bool) -> Result<u8, Error> {
+fn reconcile(cli: &Cli, path: &Path, apply: bool, semantic: bool) -> Result<u8, Error> {
     let document = load(path)?;
-    let options = ReconcileOptions {
-        semantic: !no_semantic,
+    let options = ReconcileOptions { semantic };
+    let llm = if semantic {
+        LlmSemanticReconciler::from_env()?
+    } else {
+        None
     };
-    let report = Reconciler::new(".").reconcile(&document, &options)?;
+    let reconciler = Reconciler::new(".");
+    let report = match llm.as_ref() {
+        Some(llm) => reconciler
+            .with_semantic(llm)
+            .reconcile(&document, &options)?,
+        None => reconciler.reconcile(&document, &options)?,
+    };
     let applicable = report
         .confirmed
         .iter()
@@ -1433,7 +1450,10 @@ fn reconcile(cli: &Cli, path: &Path, apply: bool, no_semantic: bool) -> Result<u
     if apply && applicable > 0 {
         let writer = LockedWriter::new(path, Duration::from_millis(cli.lock_timeout_ms));
         writer.update_labeled("reconcile-apply", |current| {
-            let fresh = Reconciler::new(".").reconcile(current, &options)?;
+            // Semantic findings are always suspected and never auto-applied. Re-run
+            // only structural checks while holding the file lock.
+            let fresh =
+                Reconciler::new(".").reconcile(current, &ReconcileOptions::structural_only())?;
             let changes: Vec<_> = fresh
                 .confirmed
                 .into_iter()

@@ -5,6 +5,7 @@ mod desktop;
 mod error;
 mod history;
 mod id;
+mod llm;
 mod lock;
 mod model;
 mod parse;
@@ -21,6 +22,7 @@ pub use history::{
     STATE_DIR,
 };
 pub use id::{generate_task_id, DEFAULT_ID_LENGTH};
+pub use llm::{LlmConfig, LlmProvider, LlmSemanticReconciler};
 pub use lock::{FileLockGuard, LockedWriter};
 pub use model::*;
 pub use parse::{parse, parse_file};

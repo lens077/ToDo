@@ -9,6 +9,20 @@ fn todo(dir: &std::path::Path, args: &[&str]) -> std::process::Output {
         .unwrap()
 }
 
+fn git(dir: &std::path::Path, args: &[&str]) -> String {
+    let output = Command::new("git")
+        .current_dir(dir)
+        .args(args)
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "git {args:?}: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    String::from_utf8(output.stdout).unwrap().trim().to_string()
+}
+
 #[test]
 fn init_add_list_done_next_and_json_are_scriptable() {
     let dir = tempdir().unwrap();
@@ -299,6 +313,26 @@ fn reconcile_reports_a_skipped_evidence_layer_instead_of_claiming_success() {
 }
 
 #[test]
+fn reconcile_defaults_to_structural_only_in_a_complete_git_repository() {
+    let dir = tempdir().unwrap();
+    git(dir.path(), &["init", "-q"]);
+    git(dir.path(), &["config", "user.email", "test@example.com"]);
+    git(dir.path(), &["config", "user.name", "Test"]);
+    assert!(todo(dir.path(), &["init"]).status.success());
+    git(dir.path(), &["add", "TODO.md"]);
+    git(dir.path(), &["commit", "-qm", "add task file"]);
+
+    let output = todo(dir.path(), &["reconcile", "--json"]);
+
+    assert_eq!(output.status.code(), Some(0));
+    let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert!(value["data"]["report"]["checks_skipped"]
+        .as_array()
+        .unwrap()
+        .is_empty());
+}
+
+#[test]
 fn reconcile_human_output_never_says_clean_when_a_check_was_skipped() {
     let dir = tempdir().unwrap();
     assert!(todo(dir.path(), &["init"]).status.success());
@@ -311,6 +345,55 @@ fn reconcile_human_output_never_says_clean_when_a_check_was_skipped() {
         !text.contains("no reconciliation findings (all checks ran)"),
         "must not claim a complete run: {text}"
     );
+}
+
+#[test]
+fn semantic_authentication_failure_exits_incomplete_instead_of_clean() {
+    let dir = tempdir().unwrap();
+    git(dir.path(), &["init", "-q"]);
+    git(dir.path(), &["config", "user.email", "test@example.com"]);
+    git(dir.path(), &["config", "user.name", "Test"]);
+    fs::write(dir.path().join("base.txt"), "base\n").unwrap();
+    git(dir.path(), &["add", "."]);
+    git(dir.path(), &["commit", "-qm", "base"]);
+    fs::write(dir.path().join("feature.rs"), "fn feature() {}\n").unwrap();
+    git(dir.path(), &["add", "."]);
+    git(dir.path(), &["commit", "-qm", "feature"]);
+    let from = git(dir.path(), &["rev-parse", "HEAD"]);
+    fs::write(
+        dir.path().join("feature.rs"),
+        "fn feature() { println!(\"wired\"); }\n",
+    )
+    .unwrap();
+    git(dir.path(), &["add", "."]);
+    git(dir.path(), &["commit", "-qm", "wire feature"]);
+    let to = git(dir.path(), &["rev-parse", "HEAD"]);
+    fs::write(
+        dir.path().join("TODO.md"),
+        format!(
+            "---\ntodo-spec: 1\ncolumns:\n  - {{id: todo, name: Todo}}\n---\n\n## Todo\n- [ ] feature <!--t:aaaaaa--> 🔗{from}..{to}\n"
+        ),
+    )
+    .unwrap();
+
+    let output = Command::new(env!("CARGO_BIN_EXE_todo"))
+        .current_dir(dir.path())
+        .args(["reconcile", "--semantic", "--json"])
+        .env("TODO_LLM_PROVIDER", "openai")
+        .env("TODO_LLM_MODEL", "test-model")
+        .env_remove("TODO_LLM_API_KEY")
+        .env_remove("OPENAI_API_KEY")
+        .output()
+        .unwrap();
+
+    assert_eq!(output.status.code(), Some(7));
+    let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    let skipped = value["data"]["report"]["checks_skipped"]
+        .as_array()
+        .unwrap();
+    assert!(skipped
+        .iter()
+        .any(|reason| reason.as_str().unwrap().contains("authentication")));
 }
 
 #[test]

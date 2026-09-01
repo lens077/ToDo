@@ -55,7 +55,7 @@ pub enum SuggestedAction {
     ReplaceDuplicateId { new_id: String },
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize)]
 pub struct SemanticCandidate {
     pub task_id: String,
     pub body: String,
@@ -85,8 +85,30 @@ impl SemanticProposal {
     }
 }
 
+#[derive(Debug, Clone, Default)]
+pub struct SemanticCheck {
+    pub proposals: Vec<SemanticProposal>,
+    pub checks_skipped: Vec<String>,
+}
+
+impl SemanticCheck {
+    pub fn completed(proposals: Vec<SemanticProposal>) -> Self {
+        Self {
+            proposals,
+            checks_skipped: Vec::new(),
+        }
+    }
+
+    pub fn skipped(reason: impl Into<String>) -> Self {
+        Self {
+            proposals: Vec::new(),
+            checks_skipped: vec![reason.into()],
+        }
+    }
+}
+
 pub trait SemanticReconciler {
-    fn reconcile(&self, candidates: &[SemanticCandidate]) -> Result<Vec<SemanticProposal>>;
+    fn reconcile(&self, document: &Document, candidates: &[SemanticCandidate]) -> SemanticCheck;
 }
 
 #[derive(Default)]
@@ -106,9 +128,9 @@ impl MockSemanticReconciler {
     }
 }
 impl SemanticReconciler for MockSemanticReconciler {
-    fn reconcile(&self, candidates: &[SemanticCandidate]) -> Result<Vec<SemanticProposal>> {
+    fn reconcile(&self, _document: &Document, candidates: &[SemanticCandidate]) -> SemanticCheck {
         *self.received.borrow_mut() = candidates.to_vec();
-        Ok(self.proposals.clone())
+        SemanticCheck::completed(self.proposals.clone())
     }
 }
 
@@ -174,7 +196,14 @@ impl<'a> Reconciler<'a> {
         }
         if options.semantic {
             if let Some(semantic) = self.semantic {
-                for proposal in semantic.reconcile(&candidates)? {
+                let check = semantic.reconcile(document, &candidates);
+                report.checks_skipped.extend(
+                    check
+                        .checks_skipped
+                        .into_iter()
+                        .map(|reason| format!("semantic check skipped: {reason}")),
+                );
+                for proposal in check.proposals {
                     let completed = document
                         .task(&proposal.task_id)
                         .is_some_and(|task| task.completed);

@@ -63,6 +63,8 @@ pub enum Error {
     HistoryEncode(String),
     #[error("invalid alignment response: {0}")]
     InvalidAlignment(String),
+    #[error("invalid LLM configuration: {0}")]
+    InvalidLlmConfiguration(String),
 }
 
 impl Error {
