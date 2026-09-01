@@ -1080,6 +1080,26 @@ fn lint(cli: &Cli, path: &Path) -> Result<u8, Error> {
     let raw = fs::read_to_string(path).map_err(|source| todo_io(path, source))?;
     match todo_core::parse(raw) {
         Ok(document) => {
+            for id in document.duplicate_ids() {
+                let line = document
+                    .tasks
+                    .iter()
+                    .filter(|task| task.id.as_deref() == Some(id.as_str()))
+                    .nth(1)
+                    .map(|task| {
+                        document.source.as_bytes()[..task.line_range.start]
+                            .iter()
+                            .filter(|byte| **byte == b'\n')
+                            .count()
+                            + 1
+                    });
+                issues.push(LintIssue {
+                    severity: "error",
+                    code: "duplicate-id",
+                    line,
+                    message: format!("duplicate task ID `{id}` violates global uniqueness"),
+                });
+            }
             for item in document.unrecognized_task_like_lines {
                 issues.push(LintIssue {
                     severity: "warning",

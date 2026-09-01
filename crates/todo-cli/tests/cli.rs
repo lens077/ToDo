@@ -166,6 +166,29 @@ fn lint_has_stable_exit_six_and_json_issues() {
 }
 
 #[test]
+fn lint_reports_duplicate_stable_ids() {
+    let dir = tempdir().unwrap();
+    fs::write(
+        dir.path().join("TODO.md"),
+        "---\ntodo-spec: 1\ncolumns:\n  - {id: todo, name: Todo}\n---\n\n## Todo\n- [ ] first <!--t:abc123-->\n- [ ] second <!--t:abc123-->\n",
+    )
+    .unwrap();
+
+    let output = todo(dir.path(), &["lint", "--json"]);
+    assert_eq!(output.status.code(), Some(6));
+    let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    let issue = value["data"]["issues"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|issue| issue["code"] == "duplicate-id")
+        .expect("duplicate ID must be a lint issue");
+    assert_eq!(issue["severity"], "error");
+    assert_eq!(issue["line"], 9);
+    assert!(issue["message"].as_str().unwrap().contains("abc123"));
+}
+
+#[test]
 fn reconcile_reports_a_skipped_evidence_layer_instead_of_claiming_success() {
     // Outside a git repository the evidence layer cannot run. Exiting 0 here would
     // tell CI the repository was checked and clean, which is the one thing this run
