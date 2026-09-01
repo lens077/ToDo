@@ -31,24 +31,34 @@ research/             选型调研与决策依据
 
 ## 快速开始
 
-安装依赖并构建：
+从仓库源码安装 CLI：
 
 ```bash
-pnpm install
-cargo build
+cargo install --path crates/todo-cli --locked
+todo --version
 ```
+
+`cargo install` 会以 release 模式构建，并把 `todo` 安装到 Cargo 的二进制目录（默认是 `~/.cargo/bin`）。
 
 在任意项目目录中初始化并使用 CLI：
 
 ```bash
 cd /path/to/your/project
-/path/to/ToDo/target/debug/todo init
-/path/to/ToDo/target/debug/todo add "实现解析器" --column todo --tag core --due 2026-09-10 --priority 1
-/path/to/ToDo/target/debug/todo list
-/path/to/ToDo/target/debug/todo next
+todo init
+todo add "实现解析器" --column todo --tag core --due 2026-09-10 --priority 1
+todo list
+todo next
 ```
 
-CLI 在当前工作目录查找 `TODO.md`，不会向上级目录搜索。把 `target/debug` 加入 `PATH` 后可直接使用 `todo`。
+CLI 在当前工作目录查找 `TODO.md`，不会向上级目录搜索。
+
+开发 Web 端或桌面端时，再安装前端依赖并构建工作区：
+
+```bash
+pnpm install
+cargo build
+pnpm build
+```
 
 已有普通 GFM 清单时，用 `todo init --adopt` 接管现有文件并补齐稳定 ID。不带 `--adopt` 时遇到已存在的文件会拒绝写入。
 
