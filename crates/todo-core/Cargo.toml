@@ -3,6 +3,8 @@ name = "todo-core"
 version = "0.1.0"
 edition.workspace = true
 rust-version.workspace = true
+# 许可未定（见 NOTICE.md）。选定许可证前禁止发布到 crates.io。
+publish = false
 
 [dependencies]
 pulldown-cmark.workspace = true

@@ -3,6 +3,8 @@ name = "todo-cli"
 version = "0.1.0"
 edition.workspace = true
 rust-version.workspace = true
+# 许可未定（见 NOTICE.md）。选定许可证前禁止发布到 crates.io。
+publish = false
 
 [lib]
 name = "todo_cli"
@@ -24,4 +26,5 @@ tokio.workspace = true
 tower-http.workspace = true
 
 [dev-dependencies]
+fs2.workspace = true
 tempfile.workspace = true
