@@ -174,13 +174,15 @@ pnpm typecheck
 pnpm build
 ```
 
-构建 macOS 开发包：
+构建 macOS 本地验收包：
 
 ```bash
-pnpm --filter @todo/desktop tauri build --debug --bundles app
+pnpm --filter @todo/desktop tauri build --debug
 ```
 
-产物为 `target/debug/bundle/macos/Todo.app`。`tauri.conf.json` 中 `bundle.active` 为 `false`，因此需要显式传入 `--bundles app`。该包只有本地 ad-hoc 签名，适合本机验收；对外分发仍需 Developer ID 签名与公证。
+产物为 `target/debug/bundle/macos/Todo.app`。本地构建没有 Developer ID 签名或 Apple 公证，只适合本机验收，不得作为正式发布产物。
+
+正式发布由 `.github/workflows/release.yml` 构建、签名、公证并上传 release 产物。证书配置、失败条件与下载后验证步骤见 `docs/macos-release.md`。
 
 桌面端首页是**今日视图**，分逾期、今天、未来 7 天、后续可做四段。最后一段是没有截止日期的活，按优先级排——否则一个 P1 但没写日期的任务会在首页上完全消失。每段内部按优先级、截止日期、是否已开工排序——同等紧急时，把做到一半的排在没动过的前面。看板、随记、扫描与历史各占一个一级视图，行为与边界见 `docs/desktop-mvp-spec.md`。
 
