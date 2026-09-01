@@ -17,7 +17,7 @@ cleanup() {
 trap cleanup EXIT
 
 echo "==> building"
-cargo build -p todo-cli --quiet
+cargo build -p todo-cli --locked --quiet
 pnpm --filter @todo/desktop build >/dev/null
 
 echo "==> preparing fixture project"
