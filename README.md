@@ -12,7 +12,7 @@
 
 | 工具 | 版本 | 说明 |
 |---|---|---|
-| Rust | 1.74 或更高 | `Cargo.toml` 中的 `rust-version` |
+| Rust | 1.88 或更高 | 与 `Cargo.toml` 的 `rust-version` 一致；锁定依赖的实测下限，CI 从该字段读取，勿单独修改此处 |
 | Node.js | `^20.19.0` 或 `>=22.12.0` | Vite 7 的要求；本仓库在 24.20.0 上验证 |
 | pnpm | 10.17.1 | 见 `package.json` 的 `packageManager` |
 
@@ -68,8 +68,9 @@ pnpm build
 |---|---|
 | `todo init [--adopt]` | 创建 `TODO.md`，或接管已有清单 |
 | `todo list [--column <id>] [--all]` | 列出任务；`--all` 包含已完成与游离任务 |
-| `todo add <正文> [--column <id>] [--tag <值>] [--due <日期>] [--priority <1-3>]` | 新增任务 |
-| `todo done <id>` / `todo undone <id>` | 切换完成状态；`done` 会清除 `◐`、`⚠` |
+| `todo add <正文> [--column <id>] [--tag <值>] [--due <日期>] [--priority <1-4>]` | 新增任务 |
+| `todo done <id>` / `todo undone <id>` | 切换完成状态；`done` 会清除 `◐`、`⚠` 与 `↳` 说明行 |
+| `todo archive` | 把已完成的顶层任务子树移入 `TODO.archive.md` |
 | `todo progress <id> <1-99> [--note <文本>]` | 记录部分完成 |
 | `todo fail <id> [--note <文本>]` | 记录一次失败的尝试；不改变完成状态 |
 | `todo note <id> <文本>` / `todo note <id> --clear` | 写入或清除 `↳` 说明行 |
@@ -85,7 +86,15 @@ pnpm build
 | `todo diff <版本>` | 还原点与当前文件的左右对比 |
 | `todo restore <版本> [--yes]` | 恢复到某个版本；不带 `--yes` 只预览 |
 
+### 完成状态与说明行
+
+`↳` 说明行记录任务进行中还缺什么或为什么失败。任务完成后继续保留这些说明会误导后续阅读的人和 agent，因此 `todo done` 会同时清除 `◐`、`⚠` 与 `↳` 说明行。写入前的原文保存在 `.todo/history/`，可用 `todo history` 找到版本，再用 `todo diff <版本>` 查看；清理说明行不会抹掉历史记录。
+
 部分完成与部分失败的语法见 `docs/format-spec-v1.md` §3.1。
+
+### 归档已完成任务
+
+运行 `todo archive` 会把已完成的顶层任务子树移到同目录的 `TODO.archive.md`。归档沿用文件锁和版本历史；任务的 `🔗`、`⛔`、`→` 等物证 token 会随整个子树一起搬走，不会在归档时删除。实现先复制到归档文件，再从 `TODO.md` 删除；遇到崩溃或并发冲突时，宁可留下可检查的重复副本，也不会丢失唯一副本。
 
 ## Web 端与 HTTP API
 
