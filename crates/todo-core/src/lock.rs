@@ -70,13 +70,25 @@ impl LockedWriter {
     /// Used by bulk operations whose result is computed as text (repository scan,
     /// history restore) rather than as a list of [`Change`] values.
     pub fn replace_all(&self, op: &str, content: &str) -> Result<Document> {
+        self.transform_labeled(op, |_| Ok(content.to_string()))
+    }
+
+    /// Locks and derives a whole-file replacement from the current parsed document.
+    ///
+    /// Unlike [`LockedWriter::replace_all`], the replacement cannot be based on a
+    /// snapshot taken before the advisory lock was acquired.
+    pub fn transform_labeled<F>(&self, op: &str, derive: F) -> Result<Document>
+    where
+        F: FnOnce(&Document) -> Result<String>,
+    {
         let _guard = self.lock()?;
         let current = parse_file(&self.path)?;
+        let content = derive(&current)?;
         if current.source == content {
             return Ok(current);
         }
         // Reject a replacement that would not parse, before it reaches disk.
-        crate::parse(content.to_string())?;
+        crate::parse(content.clone())?;
         let optimistic = OptimisticLock::new(&current);
         optimistic.validate()?;
         History::for_file(&self.path).record(&self.path, op)?;

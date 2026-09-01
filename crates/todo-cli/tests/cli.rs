@@ -75,6 +75,57 @@ fn done_removes_stale_partial_note_but_preserves_evidence_and_dependencies() {
 }
 
 #[test]
+fn archive_moves_completed_tasks_with_evidence_and_records_history() {
+    let dir = tempdir().unwrap();
+    let path = dir.path().join("TODO.md");
+    let archived_block = "- [x] shipped <!--t:done01--> 🔗abc1234..def5678 ⛔dep123 ✅2026-09-01\n      ↳ keep this audit context <!--n:done01-->\n";
+    fs::write(
+        &path,
+        format!(
+            "---\ntodo-spec: 1\ncolumns:\n  - {{id: todo, name: Todo}}\n  - {{id: done, name: Done, type: done}}\n---\n\n## Todo\n- [ ] active <!--t:open01-->\n\n## Done\n{archived_block}"
+        ),
+    )
+    .unwrap();
+
+    let output = todo(dir.path(), &["archive", "--json"]);
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(value["schema"], "todo.archive.v1");
+    assert_eq!(value["data"]["archived"], 1);
+
+    let active = fs::read_to_string(&path).unwrap();
+    assert!(active.contains("active <!--t:open01-->"));
+    assert!(!active.contains("done01"));
+    assert!(!active.contains("🔗abc1234..def5678"));
+
+    let archive_path = dir.path().join("TODO.archive.md");
+    let archive = fs::read_to_string(&archive_path).unwrap();
+    assert!(archive.contains(archived_block));
+    assert!(archive.contains("🔗abc1234..def5678"));
+    assert!(archive.contains("⛔dep123"));
+
+    let history: serde_json::Value =
+        serde_json::from_slice(&todo(dir.path(), &["history", "--json"]).stdout).unwrap();
+    let entries = history["data"]["entries"].as_array().unwrap();
+    assert!(entries
+        .iter()
+        .any(|entry| entry["op"] == "archive" && entry["file"] == "TODO.md"));
+    assert!(entries
+        .iter()
+        .any(|entry| entry["op"] == "archive" && entry["file"] == "TODO.archive.md"));
+
+    let repeated = todo(dir.path(), &["archive", "--json"]);
+    assert!(repeated.status.success());
+    let repeated_value: serde_json::Value = serde_json::from_slice(&repeated.stdout).unwrap();
+    assert_eq!(repeated_value["data"]["archived"], 0);
+    assert_eq!(fs::read_to_string(archive_path).unwrap(), archive);
+}
+
+#[test]
 fn init_never_overwrites_without_explicit_adopt() {
     let dir = tempdir().unwrap();
     let path = dir.path().join("TODO.md");

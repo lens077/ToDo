@@ -18,6 +18,7 @@ use todo_core::{
 };
 
 const TODO_TEMPLATE: &str = "---\ntodo-spec: 1\ncolumns:\n  - {id: todo, name: Todo}\n  - {id: doing, name: Doing}\n  - {id: done, name: Done, type: done}\n---\n\n# Project tasks\n\n## Todo\n\n## Doing\n\n## Done\n";
+const ARCHIVE_TEMPLATE: &str = "---\ntodo-spec: 1\ncolumns:\n  - {id: archived, name: Archived, type: done}\n---\n\n# Archived project tasks\n\n## Archived\n";
 
 #[derive(Parser)]
 #[command(
@@ -94,6 +95,8 @@ enum Command {
     },
     Next,
     Lint,
+    /// Move completed top-level task subtrees to TODO.archive.md.
+    Archive,
     Reconcile {
         #[arg(long)]
         apply: bool,
@@ -245,6 +248,17 @@ struct LintData {
     issues: Vec<LintIssue>,
 }
 #[derive(Serialize)]
+struct ArchiveData {
+    archived: usize,
+    path: String,
+}
+#[derive(Clone)]
+struct ArchiveBlock {
+    root_id: String,
+    ids: Vec<String>,
+    raw: String,
+}
+#[derive(Serialize)]
 struct LintIssue {
     severity: &'static str,
     code: &'static str,
@@ -305,6 +319,7 @@ fn run(cli: &Cli) -> Result<u8, Error> {
         Command::Evidence { id, from, to } => evidence(cli, &path, id, from, to),
         Command::Next => next(cli, &path),
         Command::Lint => lint(cli, &path),
+        Command::Archive => archive(cli, &path),
         Command::Reconcile { apply, no_semantic } => reconcile(cli, &path, *apply, *no_semantic),
         Command::Hooks { command } => run_hooks(cli, command),
         Command::History { limit, prune_to } => history_list(cli, &path, *limit, *prune_to),
@@ -1071,6 +1086,272 @@ fn next(cli: &Cli, path: &Path) -> Result<u8, Error> {
             .unwrap_or_else(|| "no actionable task".into())
     });
     Ok(0)
+}
+
+fn archive(cli: &Cli, path: &Path) -> Result<u8, Error> {
+    let mut document = load(path)?;
+    let mut roots = archivable_roots(&document);
+    if roots.is_empty() {
+        return emit_archive(cli, 0, &archive_path(path));
+    }
+
+    let needs_ids = roots
+        .iter()
+        .flat_map(|(_, tasks)| tasks.clone())
+        .any(|index| document.tasks[index].id.is_none());
+    if needs_ids {
+        let writer = LockedWriter::new(path, Duration::from_millis(cli.lock_timeout_ms));
+        document = writer.update_labeled("archive", |current| {
+            let mut existing: HashSet<String> = current
+                .tasks
+                .iter()
+                .filter_map(|task| task.id.clone())
+                .collect();
+            let mut changes = Vec::new();
+            for (_, tasks) in archivable_roots(current) {
+                for index in tasks {
+                    if current.tasks[index].id.is_none() {
+                        let id = generate_task_id(&existing)?;
+                        existing.insert(id.clone());
+                        changes.push(Change::SetMetadata {
+                            task: index,
+                            kind: TokenKind::StableId(id.clone()),
+                            raw: format!("<!--t:{id}-->"),
+                        });
+                    }
+                }
+            }
+            Ok(changes)
+        })?;
+        roots = archivable_roots(&document);
+    }
+
+    let blocks = archive_blocks(&document, &roots)?;
+    let archive_path = archive_path(path);
+    ensure_archive_file(&archive_path)?;
+    let archive_writer =
+        LockedWriter::new(&archive_path, Duration::from_millis(cli.lock_timeout_ms));
+    archive_writer.transform_labeled("archive", |current| merge_archive(current, &blocks))?;
+
+    // Copy first, then delete only if the source bytes still match the copied blocks.
+    // A crash or conflict may leave a duplicate, but can never lose the sole copy.
+    let source_writer = LockedWriter::new(path, Duration::from_millis(cli.lock_timeout_ms));
+    source_writer.update_labeled("archive", |current| {
+        if let Some(id) = current.duplicate_ids().into_iter().next() {
+            return Err(Error::DuplicateTaskId(id));
+        }
+        let mut changes = Vec::new();
+        for block in &blocks {
+            let index = current
+                .tasks
+                .iter()
+                .position(|task| task.id.as_deref() == Some(block.root_id.as_str()))
+                .ok_or(Error::ConcurrentModification)?;
+            let tasks = task_subtree(current, index);
+            if current.tasks[index].indent_level != 0
+                || current.tasks[tasks.clone()]
+                    .iter()
+                    .any(|task| !task.completed)
+                || current.source[subtree_bytes(current, tasks)].as_bytes() != block.raw.as_bytes()
+            {
+                return Err(Error::ConcurrentModification);
+            }
+            changes.push(Change::DeleteSubtree { task: index });
+        }
+        Ok(changes)
+    })?;
+
+    emit_archive(cli, blocks.len(), &archive_path)
+}
+
+fn emit_archive(cli: &Cli, archived: usize, path: &Path) -> Result<u8, Error> {
+    let path = path.display().to_string();
+    emit(
+        cli,
+        "todo.archive.v1",
+        ArchiveData { archived, path },
+        |data| {
+            format!(
+                "archived {} completed task(s) to {}",
+                data.archived, data.path
+            )
+        },
+    );
+    Ok(0)
+}
+
+fn archive_path(path: &Path) -> PathBuf {
+    path.parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+        .unwrap_or_else(|| Path::new("."))
+        .join("TODO.archive.md")
+}
+
+fn ensure_archive_file(path: &Path) -> Result<(), Error> {
+    match fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(path)
+    {
+        Ok(mut file) => {
+            use std::io::Write;
+            file.write_all(ARCHIVE_TEMPLATE.as_bytes())
+                .map_err(|source| todo_io(path, source))?;
+            file.sync_all().map_err(|source| todo_io(path, source))?;
+            Ok(())
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => Ok(()),
+        Err(source) => Err(todo_io(path, source)),
+    }
+}
+
+fn archivable_roots(document: &todo_core::Document) -> Vec<(usize, std::ops::Range<usize>)> {
+    document
+        .tasks
+        .iter()
+        .enumerate()
+        .filter(|(_, task)| task.indent_level == 0 && task.completed)
+        .filter_map(|(index, _)| {
+            let tasks = task_subtree(document, index);
+            document.tasks[tasks.clone()]
+                .iter()
+                .all(|task| task.completed)
+                .then_some((index, tasks))
+        })
+        .collect()
+}
+
+fn task_subtree(document: &todo_core::Document, root: usize) -> std::ops::Range<usize> {
+    let level = document.tasks[root].indent_level;
+    let end = document
+        .tasks
+        .iter()
+        .enumerate()
+        .skip(root + 1)
+        .find(|(_, task)| task.indent_level <= level)
+        .map_or(document.tasks.len(), |(index, _)| index);
+    root..end
+}
+
+fn subtree_bytes(
+    document: &todo_core::Document,
+    tasks: std::ops::Range<usize>,
+) -> std::ops::Range<usize> {
+    let first = &document.tasks[tasks.start];
+    let last = &document.tasks[tasks.end - 1];
+    let end = last
+        .note
+        .as_ref()
+        .map_or(last.full_line_range.end, |note| note.full_line_range.end);
+    first.full_line_range.start..end
+}
+
+fn archive_blocks(
+    document: &todo_core::Document,
+    roots: &[(usize, std::ops::Range<usize>)],
+) -> Result<Vec<ArchiveBlock>, Error> {
+    if let Some(id) = document.duplicate_ids().into_iter().next() {
+        return Err(Error::DuplicateTaskId(id));
+    }
+    roots
+        .iter()
+        .map(|(root, tasks)| {
+            let root_id = document.tasks[*root]
+                .id
+                .clone()
+                .ok_or(Error::MissingTaskId)?;
+            let ids = document.tasks[tasks.clone()]
+                .iter()
+                .map(|task| task.id.clone().ok_or(Error::MissingTaskId))
+                .collect::<Result<Vec<_>, _>>()?;
+            let raw = document.source[subtree_bytes(document, tasks.clone())].to_string();
+            Ok(ArchiveBlock { root_id, ids, raw })
+        })
+        .collect()
+}
+
+fn merge_archive(document: &todo_core::Document, blocks: &[ArchiveBlock]) -> Result<String, Error> {
+    if let Some(id) = document.duplicate_ids().into_iter().next() {
+        return Err(Error::DuplicateTaskId(id));
+    }
+    let insertion = document
+        .columns
+        .iter()
+        .find(|column| column.id == "archived")
+        .map(|column| column.content_range.end)
+        .ok_or_else(|| Error::ColumnNotFound("archived".into()))?;
+    let mut splices: Vec<(std::ops::Range<usize>, String)> = Vec::new();
+    let mut appended = String::new();
+
+    for block in blocks {
+        let existing_root = document.tasks.iter().position(|task| {
+            task.indent_level == 0 && task.id.as_deref() == Some(block.root_id.as_str())
+        });
+        let existing_tasks = existing_root.map(|root| task_subtree(document, root));
+        for id in &block.ids {
+            if let Some(index) = document
+                .tasks
+                .iter()
+                .position(|task| task.id.as_deref() == Some(id.as_str()))
+            {
+                if existing_tasks
+                    .as_ref()
+                    .is_none_or(|tasks| !tasks.contains(&index))
+                {
+                    return Err(Error::DuplicateTaskId(id.clone()));
+                }
+            }
+        }
+
+        if let Some(tasks) = existing_tasks {
+            let range = subtree_bytes(document, tasks);
+            let replacement = rendered_archive_block(&block.raw, document.line_ending.as_str());
+            if document.source[range.clone()].as_bytes() != replacement.as_bytes() {
+                splices.push((range, replacement));
+            }
+        } else {
+            push_archive_block(&mut appended, &block.raw, document.line_ending.as_str());
+        }
+    }
+
+    if !appended.is_empty() {
+        let prefix = if insertion > 0 && !document.source[..insertion].ends_with('\n') {
+            document.line_ending.as_str()
+        } else {
+            ""
+        };
+        splices.push((insertion..insertion, format!("{prefix}{appended}")));
+    }
+    if splices.is_empty() {
+        return Ok(document.source.clone());
+    }
+
+    splices.sort_by_key(|(range, _)| range.start);
+    let mut output = document.source.clone();
+    for (range, replacement) in splices.into_iter().rev() {
+        output.replace_range(range, &replacement);
+    }
+    let parsed = todo_core::parse(output.clone())?;
+    if let Some(id) = parsed.duplicate_ids().into_iter().next() {
+        return Err(Error::DuplicateTaskId(id));
+    }
+    Ok(output)
+}
+
+fn rendered_archive_block(raw: &str, newline: &str) -> String {
+    let mut output = String::new();
+    push_archive_block(&mut output, raw, newline);
+    output
+}
+
+fn push_archive_block(output: &mut String, raw: &str, newline: &str) {
+    if !output.is_empty() && !output.ends_with('\n') {
+        output.push_str(newline);
+    }
+    output.push_str(raw);
+    if !output.ends_with('\n') {
+        output.push_str(newline);
+    }
 }
 
 fn lint(cli: &Cli, path: &Path) -> Result<u8, Error> {

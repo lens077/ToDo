@@ -37,6 +37,9 @@ pub enum Change {
     DeleteTask {
         task: usize,
     },
+    DeleteSubtree {
+        task: usize,
+    },
     MoveTask {
         task: usize,
         column: String,
@@ -246,6 +249,26 @@ fn change_to_edits(document: &Document, change: &Change) -> Result<Vec<Edit>> {
             Ok(vec![edit(
                 document,
                 task.full_line_range.start..end,
+                String::new(),
+            )])
+        }
+        Change::DeleteSubtree { task } => {
+            let root = task_at(document, *task)?;
+            let subtree_end = document
+                .tasks
+                .iter()
+                .enumerate()
+                .skip(*task + 1)
+                .find(|(_, candidate)| candidate.indent_level <= root.indent_level)
+                .map_or(document.tasks.len(), |(index, _)| index);
+            let last = &document.tasks[subtree_end - 1];
+            let end = last
+                .note
+                .as_ref()
+                .map_or(last.full_line_range.end, |note| note.full_line_range.end);
+            Ok(vec![edit(
+                document,
+                root.full_line_range.start..end,
                 String::new(),
             )])
         }
