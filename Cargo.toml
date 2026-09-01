@@ -4,7 +4,7 @@ resolver = "2"
 
 [workspace.package]
 edition = "2021"
-rust-version = "1.74"
+rust-version = "1.88"
 
 [workspace.dependencies]
 pulldown-cmark = "0.13.0"

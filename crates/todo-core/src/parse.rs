@@ -632,7 +632,7 @@ fn indent_level(indent: &str, existing: &[Task]) -> usize {
         .find(|task| !task.indent.is_empty())
         .map(|task| task.indent.as_str())
         .unwrap_or(indent);
-    if !unit.is_empty() && indent.len() % unit.len() == 0 {
+    if !unit.is_empty() && indent.len().is_multiple_of(unit.len()) {
         indent.len() / unit.len()
     } else {
         existing

@@ -275,7 +275,7 @@ fn run(cli: &Cli) -> Result<u8, Error> {
                 .filter(|task| {
                     column
                         .as_ref()
-                        .map_or(true, |column| task.column.as_ref() == Some(column))
+                        .is_none_or(|column| task.column.as_ref() == Some(column))
                 })
                 .collect();
             tasks.sort_by_key(|task| task.line);

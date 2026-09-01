@@ -430,7 +430,7 @@ impl GitEvidence {
             .args(["rev-parse", "--is-inside-work-tree"])
             .output()
             .ok()
-            .map_or(true, |o| !o.status.success())
+            .is_none_or(|output| !output.status.success())
         {
             return None;
         }

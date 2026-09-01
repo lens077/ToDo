@@ -211,7 +211,7 @@ fn strip_managed(groups: &mut Vec<Value>) {
         group
             .get("hooks")
             .and_then(Value::as_array)
-            .map_or(true, |hooks| !hooks.is_empty())
+            .is_none_or(|hooks| !hooks.is_empty())
     });
 }
 
