@@ -25,6 +25,8 @@ columns:
 - [ ] 评估 list 接入 SQLite 投影的触发条件 <!--t:b6r1vy--> #cli #perf !3 ^8000
 - [ ] 产出可分发的桌面端 release 构建 <!--t:d3l8hn--> #desktop #release !3 ^9000
 - [ ] 补前端 Playwright 交互层回归并纳入 CI <!--t:3zvv9u--> #desktop #test !2
+- [ ] 拍板商业模型三选项（见 docs/business-model-options.md） <!--t:aiw1hs--> #product #decision !1
+- [ ] 拍板首次运行 onboarding 方案（见 docs/onboarding-spec.md） <!--t:jrnlos--> #product #onboarding !2
 - [ ] progress 标记无法清除：--note --clear 不清 ◐，progress 0 被拒，帮助文本承诺的 unset 无法表达 <!--t:krr4qq--> #cli #bug !2
 
 ## Doing
