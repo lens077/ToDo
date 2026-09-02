@@ -9,7 +9,7 @@ use std::{
     fmt::Debug,
     fs,
     path::{Path, PathBuf},
-    sync::Arc,
+    sync::{Arc, Mutex},
     time::Duration,
 };
 
@@ -155,6 +155,9 @@ pub struct DesktopBackend {
     lock_timeout: Duration,
     clock: Arc<dyn Clock>,
     ranker: Arc<dyn TaskRanker + Send + Sync>,
+    /// Shared between clones so one long-lived server process pays for a
+    /// history scan once per HEAD, not once per request.
+    evidence: Arc<Mutex<EvidenceCache>>,
 }
 
 impl Default for DesktopBackend {
@@ -174,6 +177,7 @@ impl DesktopBackend {
             lock_timeout,
             clock,
             ranker: Arc::new(DefaultRanker),
+            evidence: Arc::new(Mutex::new(EvidenceCache::default())),
         }
     }
 
@@ -225,9 +229,17 @@ impl DesktopBackend {
 
     fn derive(&self, document: &Document) -> Result<DesktopSnapshot> {
         let path = self.project.as_ref().ok_or(Error::NotTaskFile)?;
-        let repository = path.parent().unwrap_or_else(|| Path::new("."));
-        let head = git_output(repository, &["rev-parse", "--verify", "HEAD^{commit}"]);
-        let introductions = git_introductions(repository, document);
+        let head = git_output(
+            repository_of(path),
+            &["rev-parse", "--verify", "HEAD^{commit}"],
+        );
+        let lookup = {
+            let mut cache = self
+                .evidence
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            cache.refresh(path, head.as_deref().ok(), document)
+        };
         let mut projected: HashMap<_, _> = project_document(path, document)?
             .into_iter()
             .map(|task| (task.id.clone(), task))
@@ -240,8 +252,8 @@ impl DesktopBackend {
                     .as_ref()
                     .and_then(|id| projected.remove(id))
                     .map_or_else(
-                        || task_view(head.as_ref(), &introductions, task),
-                        |projected| projected_task_view(head.as_ref(), &introductions, projected),
+                        || task_view(head.as_ref(), &lookup, task),
+                        |projected| projected_task_view(head.as_ref(), &lookup, projected),
                     )
             })
             .collect();
@@ -520,7 +532,7 @@ fn find_task(document: &Document, id: &str) -> Result<usize> {
 
 fn projected_task_view(
     head: std::result::Result<&String, &String>,
-    introductions: &HashMap<String, String>,
+    introductions: &EvidenceLookup,
     task: ProjectedTask,
 ) -> DesktopTask {
     let evidence_availability =
@@ -543,7 +555,7 @@ fn projected_task_view(
 
 fn task_view(
     head: std::result::Result<&String, &String>,
-    introductions: &HashMap<String, String>,
+    introductions: &EvidenceLookup,
     task: &crate::Task,
 ) -> DesktopTask {
     let mut due = None;
@@ -580,53 +592,182 @@ fn task_view(
     }
 }
 
-fn git_introductions(repository: &Path, document: &Document) -> HashMap<String, String> {
-    // Match the stable-ID anchor, not the bare ID: a six-character base36 ID is
-    // short enough to occur inside prose, a commit hash, or another anchor.
-    let wanted: HashSet<_> = document
-        .tasks
-        .iter()
-        .filter(|task| task.evidence().is_none())
-        .filter_map(|task| task.id.as_ref())
-        .map(|id| (id.clone(), format!("<!--t:{id}-->")))
-        .collect();
-    if wanted.is_empty() {
-        return HashMap::new();
+/// What one snapshot needs from git, resolved against the cache.
+#[derive(Debug, Default)]
+struct EvidenceLookup {
+    /// Stable ID → commit that first added its `<!--t:ID-->` anchor.
+    introductions: HashMap<String, String>,
+    /// Raw `from` of an existing `🔗from..to` → full commit hash, or `None`
+    /// when the repository has no such commit.
+    resolved: HashMap<String, Option<String>>,
+}
+
+/// Cross-snapshot memory of the task file's git history.
+///
+/// The first scan reads the whole history of the task file; later scans read
+/// only `scanned_head..HEAD`, so a busy server pays per commit rather than per
+/// request. An evidence start is resolved once and remembered by its raw text.
+#[derive(Debug, Default)]
+struct EvidenceCache {
+    file: Option<PathBuf>,
+    scanned_head: Option<String>,
+    introductions: HashMap<String, String>,
+    resolved: HashMap<String, Option<String>>,
+}
+
+impl EvidenceCache {
+    fn refresh(&mut self, path: &Path, head: Option<&str>, document: &Document) -> EvidenceLookup {
+        if self.file.as_deref() != Some(path) {
+            *self = Self {
+                file: Some(path.to_path_buf()),
+                ..Self::default()
+            };
+        }
+        let Some(head) = head else {
+            return EvidenceLookup::default();
+        };
+        let repository = repository_of(path);
+        let file_name = path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or("TODO.md");
+
+        let needs_scan = self.scanned_head.as_deref() != Some(head)
+            && document
+                .tasks
+                .iter()
+                .filter(|task| task.evidence().is_none())
+                .filter_map(|task| task.id.as_deref())
+                .any(|id| !self.introductions.contains_key(id));
+        if needs_scan {
+            let range = self
+                .scanned_head
+                .as_ref()
+                .map(|old| format!("{old}..{head}"));
+            let history = match scan_history(repository, file_name, range.as_deref()) {
+                Ok(history) => Some(history),
+                // The previous HEAD may have been rewritten away; the history
+                // we remembered is then suspect, so start over from the root.
+                Err(_) if range.is_some() => {
+                    self.introductions.clear();
+                    scan_history(repository, file_name, None).ok()
+                }
+                Err(_) => None,
+            };
+            if let Some(history) = history {
+                for (id, commit) in history {
+                    self.introductions.entry(id).or_insert(commit);
+                }
+                self.scanned_head = Some(head.to_string());
+            }
+        }
+
+        let unresolved: Vec<String> = document
+            .tasks
+            .iter()
+            .filter_map(|task| task.evidence())
+            .map(|(from, _)| from.to_string())
+            .filter(|from| !self.resolved.contains_key(from))
+            .collect::<HashSet<_>>()
+            .into_iter()
+            .collect();
+        if !unresolved.is_empty() {
+            for (from, commit) in resolve_commits(repository, &unresolved) {
+                self.resolved.insert(from, commit);
+            }
+        }
+
+        EvidenceLookup {
+            introductions: self.introductions.clone(),
+            resolved: self.resolved.clone(),
+        }
     }
-    let Ok(history) = git_output(
-        repository,
-        &[
-            "log",
-            "--reverse",
-            "--format=commit:%H",
-            "-p",
-            "--",
-            "TODO.md",
-        ],
-    ) else {
-        return HashMap::new();
-    };
-    let mut introductions = HashMap::new();
-    let mut commit = None;
+}
+
+/// Reads the task file's history once (or only `range` when given) and maps
+/// every `<!--t:ID-->` anchor to the commit whose diff first added it.
+///
+/// Anchors are matched whole: a six-character base36 ID is short enough to
+/// occur inside prose or a commit hash, which would misattribute the task.
+fn scan_history(
+    repository: &Path,
+    file_name: &str,
+    range: Option<&str>,
+) -> std::result::Result<Vec<(String, String)>, String> {
+    let mut args = vec!["log", "--reverse", "--format=commit:%H", "-p"];
+    if let Some(range) = range {
+        args.push(range);
+    }
+    args.extend(["--", file_name]);
+    let history = git_output(repository, &args)?;
+    let mut found = Vec::new();
+    let mut seen = HashSet::new();
+    let mut commit: Option<String> = None;
     for line in history.lines() {
         if let Some(hash) = line.strip_prefix("commit:") {
             commit = Some(hash.to_string());
-        } else if let Some(added) = line.strip_prefix('+').filter(|_| !line.starts_with("+++")) {
-            for (id, anchor) in &wanted {
-                if !introductions.contains_key(id) && added.contains(anchor) {
-                    if let Some(hash) = &commit {
-                        introductions.insert(id.clone(), hash.clone());
-                    }
-                }
+            continue;
+        }
+        let Some(added) = line.strip_prefix('+').filter(|_| !line.starts_with("+++")) else {
+            continue;
+        };
+        let Some(hash) = &commit else { continue };
+        let mut rest = added;
+        while let Some(start) = rest.find("<!--t:") {
+            let after = &rest[start + "<!--t:".len()..];
+            let Some(end) = after.find("-->") else { break };
+            let id = &after[..end];
+            if !id.is_empty() && seen.insert(id.to_string()) {
+                found.push((id.to_string(), hash.clone()));
             }
+            rest = &after[end + "-->".len()..];
         }
     }
-    introductions
+    Ok(found)
+}
+
+/// Resolves every candidate to a full commit hash in one `git cat-file`
+/// process, so a board full of linked tasks still costs one subprocess.
+fn resolve_commits(repository: &Path, candidates: &[String]) -> Vec<(String, Option<String>)> {
+    use std::io::Write;
+    let input: String = candidates
+        .iter()
+        .map(|candidate| format!("{candidate}^{{commit}}\n"))
+        .collect();
+    let output = std::process::Command::new("git")
+        .args(["cat-file", "--batch-check"])
+        .current_dir(repository)
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .and_then(|mut child| {
+            if let Some(mut stdin) = child.stdin.take() {
+                stdin.write_all(input.as_bytes())?;
+            }
+            child.wait_with_output()
+        });
+    let Ok(output) = output else {
+        return candidates.iter().map(|c| (c.clone(), None)).collect();
+    };
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    candidates
+        .iter()
+        .zip(stdout.lines())
+        .map(|(candidate, line)| {
+            let mut fields = line.split_whitespace();
+            let resolved = match (fields.next(), fields.next()) {
+                (Some(hash), Some("commit")) => Some(hash.to_string()),
+                _ => None,
+            };
+            (candidate.clone(), resolved)
+        })
+        .collect()
 }
 
 fn evidence_availability(
     head: std::result::Result<&String, &String>,
-    introductions: &HashMap<String, String>,
+    lookup: &EvidenceLookup,
     id: &str,
     existing: Option<&String>,
 ) -> EvidenceAvailability {
@@ -638,10 +779,18 @@ fn evidence_availability(
             }
         }
     };
-    let from = if let Some(existing) = existing {
-        existing.split_once("..").map(|(from, _)| from.to_string())
-    } else {
-        introductions.get(id).cloned()
+    let from = match existing.and_then(|existing| existing.split_once("..")) {
+        Some((from, _)) => match lookup.resolved.get(from) {
+            Some(Some(resolved)) => Some(resolved.clone()),
+            _ => {
+                return EvidenceAvailability::Unavailable {
+                    reason: format!(
+                        "existing evidence start {from} is not a commit in this repository"
+                    ),
+                }
+            }
+        },
+        None => lookup.introductions.get(id).cloned(),
     };
     match from {
         Some(from) if !from.is_empty() && from != head => {
@@ -651,13 +800,19 @@ fn evidence_availability(
             reason: "evidence would be an empty HEAD..HEAD range".into(),
         },
         None => EvidenceAvailability::Unavailable {
-            reason: format!("stable ID {id} was not found in TODO.md git history"),
+            reason: format!("stable ID {id} was not found in the task file's git history"),
         },
     }
 }
 
+fn repository_of(path: &Path) -> &Path {
+    path.parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+        .unwrap_or_else(|| Path::new("."))
+}
+
 fn validate_evidence(path: &Path, evidence: &EvidenceRange) -> Result<()> {
-    let repository = path.parent().unwrap_or_else(|| Path::new("."));
+    let repository = repository_of(path);
     let head = git_output(repository, &["rev-parse", "--verify", "HEAD^{commit}"])
         .map_err(Error::InvalidTaskLine)?;
     let resolve = |value: &str| {

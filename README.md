@@ -106,6 +106,8 @@ pnpm build
 
 `todo done <id> --note "验收通过" --evidence` 会尝试附带建议物证区间：已有 `🔗from..to` 时沿用其 `from`，否则从 Git 历史中查找稳定 ID 首次出现的 commit，并以当前 `HEAD` 为 `to`。Git 不可用、稳定 ID 尚未进入历史、commit 无法解析或区间会成为空的 `HEAD..HEAD` 时，命令明确报告 `evidence unavailable` 并拒绝写入；绝不会生成 `HEAD..HEAD`。不需要物证时省略 `--evidence`。
 
+桌面端与 `todo serve` 为每个任务展示同样的建议区间，但不会每次刷新都重读历史：进程内缓存「稳定 ID → 首次出现的 commit」，只在 `HEAD` 前进时增量扫描新 commit；任务文件名沿用打开的文件，不限于 `TODO.md`。已有 `🔗from` 会在同一次 `git cat-file` 里批量解析成完整 commit；解析不到的 `from` 直接报告不可用，而不是等到写入时才失败。
+
 完成状态、说明与物证是一次复合写入：同一个 `LockedWriter` 持锁校验并原子替换，只建立一个 restore point，不会出现任务已完成但说明或物证未写入的中间状态。写入前的原文保存在 `.todo/history/`，可用 `todo history` 找到版本，再用 `todo diff <版本>` 查看。
 
 ### 归档已完成任务

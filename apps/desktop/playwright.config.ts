@@ -8,6 +8,13 @@ import { defineConfig, devices } from '@playwright/test';
  * diff rendering — without needing a webview or a real project on disk. The Rust
  * side has its own contract tests; this is deliberately the other half.
  */
+// 4173 is vite's default preview port, so a preview left running by another
+// project on this machine would be picked up through reuseExistingServer and
+// every spec would run against the wrong app. Use a port of our own, and let
+// PLAYWRIGHT_PORT move it when even that collides.
+const port = Number(process.env.PLAYWRIGHT_PORT ?? 4187);
+const origin = `http://127.0.0.1:${port}`;
+
 export default defineConfig({
   testDir: './e2e',
   fullyParallel: true,
@@ -15,7 +22,7 @@ export default defineConfig({
   retries: process.env.CI ? 2 : 0,
   reporter: process.env.CI ? [['github'], ['list']] : 'list',
   use: {
-    baseURL: 'http://127.0.0.1:4173',
+    baseURL: origin,
     trace: 'on-first-retry',
   },
   projects: [
@@ -33,8 +40,8 @@ export default defineConfig({
   webServer: {
     // Bind explicitly: vite preview listens on ::1 only by default, so a
     // 127.0.0.1 health check never resolves and the server looks dead.
-    command: 'pnpm vite preview --port 4173 --strictPort --host 127.0.0.1',
-    url: 'http://127.0.0.1:4173',
+    command: `pnpm vite preview --port ${port} --strictPort --host 127.0.0.1`,
+    url: origin,
     reuseExistingServer: !process.env.CI,
     timeout: 60_000,
   },

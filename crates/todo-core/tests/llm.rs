@@ -251,7 +251,15 @@ fn connection_failure_is_reported_as_a_skipped_check() {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let base_url = format!("http://{}", listener.local_addr().unwrap());
     drop(listener);
-    let semantic = LlmSemanticReconciler::new(config(LlmProvider::OpenAi, base_url)).unwrap();
+    // A developer shell often exports http_proxy. A loopback endpoint (a local
+    // model, or this closed port) must be contacted directly regardless, or the
+    // refused connection turns into a slow proxy error and is classified wrongly.
+    // The client reads the proxy environment when it is built, so the variable
+    // only needs to exist for that call.
+    std::env::set_var("http_proxy", "http://192.0.2.1:9");
+    let semantic = LlmSemanticReconciler::new(config(LlmProvider::OpenAi, base_url));
+    std::env::remove_var("http_proxy");
+    let semantic = semantic.unwrap();
     let (directory, document) = evidence_project();
 
     let report = Reconciler::new(directory.path())

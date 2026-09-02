@@ -42,11 +42,15 @@ struct ServeState {
     /// expected to run against this, so "view on the phone" cannot become
     /// "accidentally rewrite the repository from the phone".
     read_only: bool,
+    /// One backend for the process: its evidence cache is shared by every
+    /// clone, so the task file's git history is scanned per commit, not per
+    /// request.
+    backend: DesktopBackend,
 }
 
 impl ServeState {
     fn backend(&self) -> Result<DesktopBackend, ApiError> {
-        let mut backend = DesktopBackend::new(self.lock_timeout);
+        let mut backend = self.backend.clone();
         backend
             .open_project(self.path.to_string_lossy().as_ref())
             .map_err(ApiError::from)?;
@@ -111,6 +115,7 @@ pub fn router(
     web_root: Option<PathBuf>,
 ) -> Router {
     let state = ServeState {
+        backend: DesktopBackend::new(lock_timeout),
         path,
         lock_timeout,
         read_only,

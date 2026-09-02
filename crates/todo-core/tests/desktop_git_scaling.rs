@@ -20,12 +20,13 @@ use std::{
 };
 use tempfile::TempDir;
 
-/// Serialises the tests that swap `PATH`.
+/// Serialises every test in this file.
 ///
-/// `PATH` is process-global, and `cargo test` runs the tests in this file on
-/// parallel threads, so two concurrent recordings would both see each other's
-/// git calls and the counts would be nondeterministic. Taking this lock makes
-/// each recording observe only its own subprocesses.
+/// `PATH` and `GIT_SPY_LOG` are process-global, and `cargo test` runs the
+/// tests in this file on parallel threads, so a snapshot taken by one test
+/// would be recorded by another's spy and the counts would be nondeterministic.
+/// Spies take this lock for their lifetime; tests without a spy take it too, so
+/// none of their git calls can land inside a recording window.
 fn path_lock() -> MutexGuard<'static, ()> {
     static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
     LOCK.get_or_init(|| Mutex::new(()))
@@ -34,9 +35,14 @@ fn path_lock() -> MutexGuard<'static, ()> {
 }
 
 /// Runs a real git command and asserts it succeeded.
+///
+/// Fixture calls must never be counted as snapshot cost, even when another
+/// test's spy currently owns `PATH`: the shim only records when `GIT_SPY_LOG`
+/// is set, and this helper strips it.
 fn git(dir: &Path, args: &[&str]) -> String {
     let output = Command::new("git")
         .current_dir(dir)
+        .env_remove("GIT_SPY_LOG")
         .args(args)
         .output()
         .unwrap();
@@ -143,8 +149,7 @@ impl GitSpy {
         fs::write(
             &shim,
             format!(
-                "#!/bin/sh\nprintf '%s\\n' \"$*\" >> {log}\nexec {real} \"$@\"\n",
-                log = shell_quote(&log),
+                "#!/bin/sh\n[ -n \"$GIT_SPY_LOG\" ] && printf '%s\\n' \"$*\" >> \"$GIT_SPY_LOG\"\nexec {real} \"$@\"\n",
                 real = shell_quote(Path::new(&real)),
             ),
         )
@@ -182,7 +187,9 @@ impl GitSpy {
         // `#[test]` bodies below, which never spawn threads), so no other thread
         // observes the environment mid-swap.
         std::env::set_var("PATH", &patched);
+        std::env::set_var("GIT_SPY_LOG", &self.log);
         let value = body();
+        std::env::remove_var("GIT_SPY_LOG");
         match previous {
             Some(previous) => std::env::set_var("PATH", previous),
             None => std::env::remove_var("PATH"),
@@ -259,6 +266,7 @@ fn snapshot_git_cost_is_constant_in_the_number_of_tasks() {
 /// returning a single shared answer for every task.
 #[test]
 fn one_history_read_still_attributes_each_task_to_its_own_commit() {
+    let _serial = path_lock();
     let repository = repository_with_history(5);
     let root = repository.path();
     let commits: Vec<String> = git(root, &["log", "--reverse", "--format=%H", "--", "TODO.md"])
@@ -293,6 +301,172 @@ fn one_history_read_still_attributes_each_task_to_its_own_commit() {
             }
         }
     }
+}
+
+fn commit_task(root: &Path, file: &str, count: usize) {
+    fs::write(root.join(file), todo_document(count)).unwrap();
+    git(root, &["add", file]);
+    git(
+        root,
+        &[
+            "-c",
+            "user.name=Test",
+            "-c",
+            "user.email=test@example.com",
+            "commit",
+            "-q",
+            "-m",
+            &format!("add task {count}"),
+        ],
+    );
+}
+
+fn from_of(task: &todo_core::DesktopTask) -> Option<&str> {
+    match &task.evidence_availability {
+        todo_core::EvidenceAvailability::Available { from, .. } => Some(from.as_str()),
+        todo_core::EvidenceAvailability::Unavailable { .. } => None,
+    }
+}
+
+/// Every refresh of the board asks for a snapshot; the history must not be
+/// re-read while HEAD has not moved.
+#[test]
+fn snapshot_reuses_cached_introductions_while_head_is_unchanged() {
+    let spy = GitSpy::install();
+    let repository = repository_with_history(4);
+    let mut backend = todo_core::DesktopBackend::new(std::time::Duration::from_secs(2));
+
+    let (first, _) = spy.record(|| backend.open_project(repository.path()).unwrap());
+    let (second, calls) = spy.record(|| backend.snapshot().unwrap());
+
+    assert!(
+        !calls.iter().any(|call| call.contains("log")),
+        "HEAD did not move, so history must come from the cache: {calls:?}"
+    );
+    assert_eq!(
+        calls.len(),
+        1,
+        "only the HEAD lookup may run on a repeat snapshot: {calls:?}"
+    );
+    for (before, after) in first.tasks.iter().zip(&second.tasks) {
+        assert_eq!(from_of(before), from_of(after), "{:?}", before.id);
+    }
+}
+
+/// When HEAD moves, only the commits since the last scan are read, and the
+/// answers for tasks introduced earlier are kept.
+#[test]
+fn snapshot_scans_only_the_new_commits_after_head_moves() {
+    let spy = GitSpy::install();
+    let repository = repository_with_history(3);
+    let root = repository.path();
+    let mut backend = todo_core::DesktopBackend::new(std::time::Duration::from_secs(2));
+    let first = backend.open_project(root).unwrap();
+    let old_head = git(root, &["rev-parse", "HEAD"]);
+    commit_task(root, "TODO.md", 4);
+    let new_head = git(root, &["rev-parse", "HEAD"]);
+
+    let (second, calls) = spy.record(|| backend.snapshot().unwrap());
+
+    let logs: Vec<_> = calls.iter().filter(|call| call.contains("log")).collect();
+    assert_eq!(
+        logs.len(),
+        1,
+        "exactly one incremental history read: {calls:?}"
+    );
+    assert!(
+        logs[0].contains(&format!("{old_head}..")),
+        "the read must start where the previous scan stopped: {calls:?}"
+    );
+    // Tasks 0..2 keep their original commits; task 2 moved from "introduced by
+    // HEAD" (unavailable) to a real range now that HEAD advanced past it.
+    assert_eq!(from_of(&second.tasks[0]), from_of(&first.tasks[0]));
+    assert_eq!(from_of(&second.tasks[1]), from_of(&first.tasks[1]));
+    assert_eq!(from_of(&second.tasks[2]), Some(old_head.as_str()));
+    assert_eq!(
+        from_of(&second.tasks[3]),
+        None,
+        "task 3 is introduced by HEAD"
+    );
+    match &second.tasks[3].evidence_availability {
+        todo_core::EvidenceAvailability::Unavailable { reason } => {
+            assert!(reason.contains("HEAD..HEAD"), "{reason}")
+        }
+        other => panic!("{other:?}"),
+    }
+    assert_eq!(new_head, git(root, &["rev-parse", "HEAD"]));
+}
+
+/// The task file is whatever the project opened, not a hard-coded `TODO.md`.
+#[test]
+fn evidence_follows_the_opened_task_file_name() {
+    let _serial = path_lock();
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    git(root, &["init", "-q", "-b", "main"]);
+    git(root, &["config", "user.email", "test@example.com"]);
+    git(root, &["config", "user.name", "Test"]);
+    for count in 1..=3 {
+        commit_task(root, "tasks.md", count);
+    }
+    let commits: Vec<String> = git(root, &["log", "--reverse", "--format=%H", "--", "tasks.md"])
+        .lines()
+        .map(str::to_string)
+        .collect();
+
+    let mut backend = todo_core::DesktopBackend::new(std::time::Duration::from_secs(2));
+    let snapshot = backend.open_project(root.join("tasks.md")).unwrap();
+
+    assert_eq!(from_of(&snapshot.tasks[0]), Some(commits[0].as_str()));
+    assert_eq!(from_of(&snapshot.tasks[1]), Some(commits[1].as_str()));
+}
+
+/// An existing `🔗from..to` is only offered as a suggestion when `from` is a
+/// commit in this repository, and all such starts are checked in one process.
+#[test]
+fn existing_evidence_starts_are_verified_in_one_batch_and_cached() {
+    let repository = repository_with_history(3);
+    let root = repository.path();
+    let commits: Vec<String> = git(root, &["log", "--reverse", "--format=%H", "--", "TODO.md"])
+        .lines()
+        .map(str::to_string)
+        .collect();
+    let short = &commits[0][..10];
+    let mut text =
+        String::from("---\ntodo-spec: 1\ncolumns:\n  - {id: todo, name: Todo}\n---\n\n## Todo\n");
+    text.push_str(&format!(
+        "- [ ] linked <!--t:aaaaaa--> 🔗{short}..{}\n",
+        commits[1]
+    ));
+    text.push_str(&format!(
+        "- [ ] linked too <!--t:bbbbbb--> 🔗{}..{}\n",
+        commits[1], commits[2]
+    ));
+    text.push_str("- [ ] broken <!--t:cccccc--> 🔗deadbeefdead..HEAD\n");
+    fs::write(root.join("TODO.md"), text).unwrap();
+
+    let spy = GitSpy::install();
+    let mut backend = todo_core::DesktopBackend::new(std::time::Duration::from_secs(2));
+    let (snapshot, calls) = spy.record(|| backend.open_project(root).unwrap());
+
+    assert!(!calls.iter().any(|call| call.contains("log")), "{calls:?}");
+    assert_eq!(
+        calls.len(),
+        2,
+        "one HEAD lookup plus one batched commit check, got {calls:?}"
+    );
+    // The abbreviated start is offered in its full form so the write validates.
+    assert_eq!(from_of(&snapshot.tasks[0]), Some(commits[0].as_str()));
+    assert_eq!(from_of(&snapshot.tasks[1]), Some(commits[1].as_str()));
+    match &snapshot.tasks[2].evidence_availability {
+        todo_core::EvidenceAvailability::Unavailable { reason } => {
+            assert!(reason.contains("deadbeefdead"), "{reason}")
+        }
+        other => panic!("{other:?}"),
+    }
+
+    let (_, again) = spy.record(|| backend.snapshot().unwrap());
+    assert_eq!(again.len(), 1, "resolutions are cached: {again:?}");
 }
 
 /// A board whose tasks all carry explicit evidence needs no history read at all.

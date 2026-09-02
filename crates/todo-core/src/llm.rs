@@ -150,13 +150,19 @@ impl LlmSemanticReconciler {
                 "request timeout must be greater than zero".into(),
             ));
         }
-        let client = Client::builder()
+        let mut builder = Client::builder()
             .connect_timeout(timeout.min(Duration::from_secs(10)))
-            .timeout(timeout)
-            .build()
-            .map_err(|_| {
-                Error::InvalidLlmConfiguration("could not initialize HTTP client".into())
-            })?;
+            .timeout(timeout);
+        // A loopback endpoint is a local model (or a test double) and is
+        // contacted directly. Routing it through a system proxy from the
+        // developer's shell would send "localhost" to the proxy host instead,
+        // and a refused connection would surface as a slow proxy error.
+        if is_loopback_endpoint(&config.base_url) {
+            builder = builder.no_proxy();
+        }
+        let client = builder.build().map_err(|_| {
+            Error::InvalidLlmConfiguration("could not initialize HTTP client".into())
+        })?;
         Ok(Self { config, client })
     }
 
@@ -320,6 +326,25 @@ fn proposal_from_verdict(verdict: AlignmentVerdict) -> Option<SemanticProposal> 
         evidence,
         completed: (verdict.verdict == Verdict::Done).then_some(true),
     })
+}
+
+fn is_loopback_endpoint(base_url: &str) -> bool {
+    let without_scheme = base_url
+        .split_once("://")
+        .map_or(base_url, |(_, rest)| rest);
+    let authority = without_scheme
+        .split(['/', '?', '#'])
+        .next()
+        .unwrap_or_default();
+    let host = authority.rsplit_once('@').map_or(authority, |(_, h)| h);
+    let host = host
+        .strip_prefix('[')
+        .and_then(|rest| rest.split_once(']').map(|(h, _)| h))
+        .unwrap_or_else(|| host.rsplit_once(':').map_or(host, |(h, _)| h));
+    host.eq_ignore_ascii_case("localhost")
+        || host
+            .parse::<std::net::IpAddr>()
+            .is_ok_and(|ip| ip.is_loopback())
 }
 
 fn provider_endpoint(base_url: &str, provider: LlmProvider) -> String {
