@@ -47,8 +47,8 @@ mkdir -p docs
 printf '# Plan\n\n- [ ] 写迁移脚本\n' > docs/plan.md
 git add docs/plan.md
 git commit -qm "add implementation plan"
-# Keep the working tree clean: evidence availability intentionally refuses to
-# suggest a range while TODO.md has uncommitted changes.
+# Start from a clean tree so the evidence range the browser sees is exactly
+# introduction..HEAD; the CLI leaves a lock file behind that git would report.
 
 rm -f .TODO.md.lock
 git status --porcelain | grep -q . && { git status --short; exit 1; }

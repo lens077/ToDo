@@ -100,6 +100,8 @@ pnpm build
 | `normal` | 说明可选；未传 `--note` 时清除旧说明 | `--note` 必填 | `--note` 必填 |
 | `strict` | `--note` 必填 | `--note` 必填 | `--note` 必填 |
 
+桌面端与 Web 端把未完成任务拖入 `type: done` 列同样算完成，因此要过同一道门：严格模式下拒绝并提示改用结局记录；带有 `◐`/`⚠` 的任务在任何策略下都必须通过结局记录完成，以便清除这些 token。
+
 `↳` 说明行记录三个结局的结果、剩余工作或失败原因。`done` 总会清除互相冲突的 `◐`、`⚠`；普通模式未给新说明时也清除旧 `↳`，严格模式则把本次必填说明写回。部分完成与失败的语法见 `docs/format-spec-v1.md` §3.1。
 
 `todo done <id> --note "验收通过" --evidence` 会尝试附带建议物证区间：已有 `🔗from..to` 时沿用其 `from`，否则从 Git 历史中查找稳定 ID 首次出现的 commit，并以当前 `HEAD` 为 `to`。Git 不可用、稳定 ID 尚未进入历史、commit 无法解析或区间会成为空的 `HEAD..HEAD` 时，命令明确报告 `evidence unavailable` 并拒绝写入；绝不会生成 `HEAD..HEAD`。不需要物证时省略 `--evidence`。

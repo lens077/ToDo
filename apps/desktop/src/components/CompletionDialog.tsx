@@ -25,7 +25,9 @@ const outcomes: Array<{ value: Outcome; label: string; detail: string }> = [
 export function CompletionDialog({ task, initialOutcome = 'done', busy, onCancel, onConfirm }: CompletionDialogProps) {
   const [outcome, setOutcome] = React.useState<Outcome>(initialOutcome);
   const [percent, setPercent] = React.useState(task.progress ?? 50);
-  const [note, setNote] = React.useState(task.note ?? '');
+  // Always start empty: the explanation must be written for this outcome, so a
+  // stale note can never be re-submitted as if it were the current one.
+  const [note, setNote] = React.useState('');
   const availability = task.evidence_availability;
   const availableRange: EvidenceRange | undefined = availability.status === 'available'
     ? { from: availability.from, to: availability.to }
@@ -51,7 +53,7 @@ export function CompletionDialog({ task, initialOutcome = 'done', busy, onCancel
     }}>
       <section className="completion-panel" role="dialog" aria-modal="true" aria-labelledby="completion-dialog-title">
         <header className="completion-panel__header">
-          <span className="eyebrow">STRICT COMPLETION</span>
+          <span className="eyebrow">TASK OUTCOME</span>
           <h2 id="completion-dialog-title">确认任务结局</h2>
           <p>{task.body}</p>
         </header>
@@ -80,7 +82,7 @@ export function CompletionDialog({ task, initialOutcome = 'done', busy, onCancel
           <label className="completion-field">
             <span>{noteLabel} <b>必填</b></span>
             <textarea aria-label={noteLabel} autoFocus rows={4} value={note} onChange={(event) => setNote(event.target.value)} />
-            <small>严格模式的完成、部分完成和失败都必须留下说明。</small>
+            <small>本次结局必须留下说明；旧说明不会自动沿用。</small>
           </label>
           <label className={`completion-evidence completion-evidence--${availableRange ? 'available' : 'unavailable'}`}>
             <input type="checkbox" checked={includeEvidence && outcome === 'done'} disabled={!availableRange || outcome !== 'done'} onChange={(event) => setIncludeEvidence(event.target.checked)} />

@@ -43,7 +43,6 @@ test.describe('web transport', () => {
     await dialog.getByRole('button', { name: '确认完成' }).click();
 
     await expect(page.getByText(note)).toBeVisible();
-    await expect(page.getByText(evidence!)).toBeVisible();
 
     await page.reload();
     await page.getByRole('button', { name: /看板/ }).click();

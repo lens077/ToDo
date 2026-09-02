@@ -19,7 +19,7 @@ async function completeTask(page: import('@playwright/test').Page, taskName: Reg
 }
 
 async function openOutcomeMenu(page: import('@playwright/test').Page, taskName: RegExp) {
-  const task = page.getByRole('article', { name: /为 reconcile findings/ });
+  const task = page.getByRole('article', { name: taskName });
   await task.locator('summary').filter({ hasText: '···' }).click();
   return page.getByRole('menu', { name: '记录任务结局' });
 }
@@ -45,7 +45,7 @@ async function recordFailure(page: import('@playwright/test').Page, taskName: Re
 }
 
 const completionTask = /完成“为 reconcile findings/;
-const outcomeTask = /记录“为 reconcile findings.*任务结局/;
+const outcomeTask = /Project Task：为 reconcile findings/;
 
 test('strict dialog persists partial progress and its explanation', async ({ page }) => {
   await page.getByRole('button', { name: /完成“为 reconcile findings/ }).click();

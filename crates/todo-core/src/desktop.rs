@@ -217,6 +217,7 @@ impl DesktopBackend {
                 &intent,
                 &mut created_task_id,
                 self.clock.local_today(),
+                path,
             )
         })?;
         Ok((document, created_task_id))
@@ -323,6 +324,7 @@ fn intent_changes(
     intent: &DesktopIntent,
     created_task_id: &mut Option<String>,
     today: NaiveDate,
+    path: &Path,
 ) -> Result<Vec<Change>> {
     match intent {
         DesktopIntent::AddTask { body, column } => {
@@ -353,25 +355,29 @@ fn intent_changes(
                 && document
                     .completion_policy()
                     .requires_note(CompletionOutcome::Done)
+                && note.as_deref().is_none_or(|text| text.trim().is_empty())
             {
-                let existing = document.tasks[task]
-                    .note
-                    .as_ref()
-                    .map(|note| note.text.as_str());
-                if note
-                    .as_deref()
-                    .or(existing)
-                    .is_none_or(|text| text.trim().is_empty())
-                {
-                    return Err(Error::InvalidTaskLine(
-                        "strict completion requires a note for done".into(),
-                    ));
-                }
+                return Err(Error::InvalidTaskLine(
+                    "strict completion requires a note for done".into(),
+                ));
             }
             let mut changes = vec![Change::SetCompleted {
                 task,
                 completed: *completed,
             }];
+            if *completed {
+                for (token, metadata) in document.tasks[task].metadata.iter().enumerate() {
+                    if matches!(
+                        metadata.kind,
+                        TokenKind::Progress(_) | TokenKind::Failure(_)
+                    ) {
+                        changes.push(Change::RemoveMetadata { task, token });
+                    }
+                }
+                if note.is_none() && document.tasks[task].note.is_some() {
+                    changes.push(Change::RemoveNote { task });
+                }
+            }
             if let Some(note) = note {
                 changes.push(Change::SetNote {
                     task,
@@ -379,6 +385,7 @@ fn intent_changes(
                 });
             }
             if let Some(evidence) = evidence {
+                validate_evidence(path, evidence)?;
                 changes.push(Change::SetMetadata {
                     task,
                     kind: TokenKind::Evidence {
@@ -434,11 +441,36 @@ fn intent_changes(
                 },
             ])
         }
-        DesktopIntent::MoveTask { id, column, target } => Ok(vec![Change::MoveTask {
-            task: find_task(document, id)?,
-            column: column.clone(),
-            position: resolve_move_target(document, column, target)?,
-        }]),
+        DesktopIntent::MoveTask { id, column, target } => {
+            let task = find_task(document, id)?;
+            let into_done = document.columns.iter().any(|candidate| {
+                candidate.id == *column && candidate.kind.as_deref() == Some("done")
+            });
+            if into_done && !document.tasks[task].completed {
+                // Dropping a task into Done completes it, so it must clear the same
+                // gate as an explicit completion: strict needs a note, and partial or
+                // failed state must be resolved through the outcome path so its tokens
+                // are cleared rather than carried onto a `[x]` line.
+                if document
+                    .completion_policy()
+                    .requires_note(CompletionOutcome::Done)
+                {
+                    return Err(Error::InvalidTaskLine(
+                        "strict completion requires a note for done; record the outcome instead of moving into Done".into(),
+                    ));
+                }
+                if document.tasks[task].partial() {
+                    return Err(Error::InvalidTaskLine(
+                        "task has partial or failed state; record the outcome instead of moving into Done".into(),
+                    ));
+                }
+            }
+            Ok(vec![Change::MoveTask {
+                task,
+                column: column.clone(),
+                position: resolve_move_target(document, column, target)?,
+            }])
+        }
     }
 }
 
@@ -549,11 +581,14 @@ fn task_view(
 }
 
 fn git_introductions(repository: &Path, document: &Document) -> HashMap<String, String> {
+    // Match the stable-ID anchor, not the bare ID: a six-character base36 ID is
+    // short enough to occur inside prose, a commit hash, or another anchor.
     let wanted: HashSet<_> = document
         .tasks
         .iter()
         .filter(|task| task.evidence().is_none())
-        .filter_map(|task| task.id.clone())
+        .filter_map(|task| task.id.as_ref())
+        .map(|id| (id.clone(), format!("<!--t:{id}-->")))
         .collect();
     if wanted.is_empty() {
         return HashMap::new();
@@ -577,8 +612,8 @@ fn git_introductions(repository: &Path, document: &Document) -> HashMap<String, 
         if let Some(hash) = line.strip_prefix("commit:") {
             commit = Some(hash.to_string());
         } else if let Some(added) = line.strip_prefix('+').filter(|_| !line.starts_with("+++")) {
-            for id in &wanted {
-                if !introductions.contains_key(id) && added.contains(id) {
+            for (id, anchor) in &wanted {
+                if !introductions.contains_key(id) && added.contains(anchor) {
                     if let Some(hash) = &commit {
                         introductions.insert(id.clone(), hash.clone());
                     }
@@ -619,6 +654,32 @@ fn evidence_availability(
             reason: format!("stable ID {id} was not found in TODO.md git history"),
         },
     }
+}
+
+fn validate_evidence(path: &Path, evidence: &EvidenceRange) -> Result<()> {
+    let repository = path.parent().unwrap_or_else(|| Path::new("."));
+    let head = git_output(repository, &["rev-parse", "--verify", "HEAD^{commit}"])
+        .map_err(Error::InvalidTaskLine)?;
+    let resolve = |value: &str| {
+        git_output(
+            repository,
+            &["rev-parse", "--verify", &format!("{value}^{{commit}}")],
+        )
+        .map_err(Error::InvalidTaskLine)
+    };
+    let from = resolve(&evidence.from)?;
+    let to = resolve(&evidence.to)?;
+    if from == to {
+        return Err(Error::InvalidTaskLine(
+            "evidence range must not be empty".into(),
+        ));
+    }
+    if to != head {
+        return Err(Error::InvalidTaskLine(
+            "evidence range must end at current HEAD".into(),
+        ));
+    }
+    Ok(())
 }
 
 fn git_output(repository: &Path, args: &[&str]) -> std::result::Result<String, String> {

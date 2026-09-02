@@ -7,7 +7,8 @@ use std::{
 };
 use tempfile::tempdir;
 use todo_core::{
-    CaptureProject, CaptureStore, Clock, DesktopBackend, DesktopIntent, MoveTarget, TriageResult,
+    CaptureProject, CaptureStore, Clock, DesktopBackend, DesktopIntent, EvidenceRange, MoveTarget,
+    TriageResult,
 };
 
 #[derive(Debug)]
@@ -145,6 +146,224 @@ fn partial_and_failed_outcomes_are_atomic_and_require_notes() {
     let source = fs::read_to_string(path).unwrap();
     assert!(source.contains("◐60 ⚠2026-01-02"));
     assert!(source.contains("↳ load test failed <!--n:aaaaaa-->"));
+}
+
+#[test]
+fn done_clears_partial_failure_and_normal_stale_note() {
+    let (dir, backend) = project();
+    let path = dir.path().join("TODO.md");
+    let source = fs::read_to_string(&path).unwrap().replace(
+        "- [ ] overdue <!--t:aaaaaa--> 📅2026-01-01",
+        "- [ ] overdue <!--t:aaaaaa--> 📅2026-01-01 ◐60 ⚠2026-01-02\n  ↳ stale result <!--n:aaaaaa-->",
+    );
+    fs::write(&path, source).unwrap();
+
+    let snapshot = backend
+        .mutate(DesktopIntent::SetCompleted {
+            id: "aaaaaa".into(),
+            completed: true,
+            note: None,
+            evidence: None,
+        })
+        .unwrap();
+    let task = snapshot
+        .tasks
+        .iter()
+        .find(|task| task.id.as_deref() == Some("aaaaaa"))
+        .unwrap();
+    assert!(task.completed);
+    assert_eq!(task.progress, None);
+    assert_eq!(task.failed_on, None);
+    assert_eq!(task.note, None);
+    let written = fs::read_to_string(path).unwrap();
+    assert!(!written.contains("◐60"));
+    assert!(!written.contains("⚠2026-01-02"));
+    assert!(!written.contains("stale result"));
+}
+
+fn git(dir: &std::path::Path, args: &[&str]) -> String {
+    let output = std::process::Command::new("git")
+        .args(args)
+        .current_dir(dir)
+        .env("GIT_AUTHOR_NAME", "t")
+        .env("GIT_AUTHOR_EMAIL", "t@example.com")
+        .env("GIT_COMMITTER_NAME", "t")
+        .env("GIT_COMMITTER_EMAIL", "t@example.com")
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    String::from_utf8(output.stdout).unwrap().trim().to_string()
+}
+
+/// A strict project inside a real repository with two commits touching TODO.md:
+/// the task is introduced in the first, so a valid range is `first..HEAD`.
+fn strict_git_project() -> (tempfile::TempDir, DesktopBackend, String, String) {
+    let dir = tempdir().unwrap();
+    let path = dir.path().join("TODO.md");
+    git(dir.path(), &["init", "-q"]);
+    fs::write(
+        &path,
+        "---\ntodo-spec: 1\ncompletion-policy: strict\ncolumns:\n  - {id: todo, name: Todo}\n  - {id: done, name: Done, type: done}\n---\n## Todo\n- [ ] work <!--t:aaaaaa-->\n  ↳ old note <!--n:aaaaaa-->\n\n## Done\n",
+    )
+    .unwrap();
+    git(dir.path(), &["add", "TODO.md"]);
+    git(dir.path(), &["commit", "-qm", "introduce"]);
+    let first = git(dir.path(), &["rev-parse", "HEAD"]);
+    for step in ["advance", "advance again"] {
+        fs::write(&path, format!("{}\n", fs::read_to_string(&path).unwrap())).unwrap();
+        git(dir.path(), &["add", "TODO.md"]);
+        git(dir.path(), &["commit", "-qm", step]);
+    }
+    let head = git(dir.path(), &["rev-parse", "HEAD"]);
+    let mut backend = DesktopBackend::with_clock(Duration::from_secs(2), FakeClock::fixed());
+    backend.open_project(dir.path()).unwrap();
+    (dir, backend, first, head)
+}
+
+#[test]
+fn strict_done_requires_a_current_note_and_rejects_invalid_evidence_without_writing() {
+    let (dir, backend, first, head) = strict_git_project();
+    let path = dir.path().join("TODO.md");
+    let before = fs::read(&path).unwrap();
+    let done = |note: Option<&str>, evidence: Option<(&str, &str)>| {
+        backend.mutate(DesktopIntent::SetCompleted {
+            id: "aaaaaa".into(),
+            completed: true,
+            note: note.map(str::to_string),
+            evidence: evidence.map(|(from, to)| EvidenceRange {
+                from: from.into(),
+                to: to.into(),
+            }),
+        })
+    };
+
+    let stale = done(None, None).unwrap_err().to_string();
+    assert!(stale.contains("requires a note"), "{stale}");
+    let empty = done(Some("current"), Some((&head, &head)))
+        .unwrap_err()
+        .to_string();
+    assert!(empty.contains("must not be empty"), "{empty}");
+    let stale_head = done(Some("current"), Some(("HEAD~1", "HEAD~1")))
+        .unwrap_err()
+        .to_string();
+    assert!(stale_head.contains("must not be empty"), "{stale_head}");
+    let not_head = done(Some("current"), Some((&first, "HEAD~1")))
+        .unwrap_err()
+        .to_string();
+    assert!(not_head.contains("current HEAD"), "{not_head}");
+    let unknown = done(Some("current"), Some(("0123456789abcdef", &head)))
+        .unwrap_err()
+        .to_string();
+    assert!(!unknown.contains("HEAD"), "{unknown}");
+    assert_eq!(fs::read(&path).unwrap(), before);
+
+    let snapshot = done(Some("current"), Some((&first, &head))).unwrap();
+    let task = snapshot
+        .tasks
+        .iter()
+        .find(|task| task.id.as_deref() == Some("aaaaaa"))
+        .unwrap();
+    assert!(task.completed);
+    assert_eq!(task.note.as_deref(), Some("current"));
+    assert_eq!(
+        task.evidence.as_deref(),
+        Some(format!("{first}..{head}").as_str())
+    );
+}
+
+#[test]
+fn moving_into_a_done_column_cannot_bypass_the_completion_gate() {
+    let (dir, backend, _, _) = strict_git_project();
+    let path = dir.path().join("TODO.md");
+    let before = fs::read(&path).unwrap();
+
+    let error = backend
+        .mutate(DesktopIntent::MoveTask {
+            id: "aaaaaa".into(),
+            column: "done".into(),
+            target: MoveTarget::ColumnEnd,
+        })
+        .unwrap_err()
+        .to_string();
+    assert!(error.contains("requires a note"), "{error}");
+    assert_eq!(fs::read(&path).unwrap(), before);
+
+    // Normal policy: a task that carries partial/failure state must be completed
+    // through the outcome path so those tokens are cleared, not dragged into Done.
+    let (dir, backend) = project();
+    let path = dir.path().join("TODO.md");
+    let source = fs::read_to_string(&path).unwrap().replace(
+        "- [ ] overdue <!--t:aaaaaa--> 📅2026-01-01",
+        "- [ ] overdue <!--t:aaaaaa--> 📅2026-01-01 ◐60",
+    );
+    fs::write(&path, source).unwrap();
+    let before = fs::read(&path).unwrap();
+    assert!(backend
+        .mutate(DesktopIntent::MoveTask {
+            id: "aaaaaa".into(),
+            column: "done".into(),
+            target: MoveTarget::ColumnEnd,
+        })
+        .is_err());
+    assert_eq!(fs::read(&path).unwrap(), before);
+    // A plain task still completes by moving into Done.
+    let moved = backend
+        .mutate(DesktopIntent::MoveTask {
+            id: "bbbbbb".into(),
+            column: "done".into(),
+            target: MoveTarget::ColumnEnd,
+        })
+        .unwrap();
+    assert!(
+        moved
+            .tasks
+            .iter()
+            .find(|task| task.id.as_deref() == Some("bbbbbb"))
+            .unwrap()
+            .completed
+    );
+}
+
+#[test]
+fn evidence_suggestion_matches_the_stable_id_anchor_not_a_substring() {
+    let dir = tempdir().unwrap();
+    let path = dir.path().join("TODO.md");
+    git(dir.path(), &["init", "-q"]);
+    // "abcdef" appears as prose in the first commit; the task itself arrives later.
+    fs::write(
+        &path,
+        "---\ntodo-spec: 1\ncolumns:\n  - {id: todo, name: Todo}\n---\n## Todo\n- [ ] see abcdef in the docs <!--t:zzzzzz-->\n",
+    )
+    .unwrap();
+    git(dir.path(), &["add", "TODO.md"]);
+    git(dir.path(), &["commit", "-qm", "prose"]);
+    fs::write(
+        &path,
+        "---\ntodo-spec: 1\ncolumns:\n  - {id: todo, name: Todo}\n---\n## Todo\n- [ ] see abcdef in the docs <!--t:zzzzzz-->\n- [ ] real <!--t:abcdef-->\n",
+    )
+    .unwrap();
+    git(dir.path(), &["add", "TODO.md"]);
+    git(dir.path(), &["commit", "-qm", "introduce"]);
+    let introduced = git(dir.path(), &["rev-parse", "HEAD"]);
+    fs::write(&path, format!("{}\n", fs::read_to_string(&path).unwrap())).unwrap();
+    git(dir.path(), &["add", "TODO.md"]);
+    git(dir.path(), &["commit", "-qm", "advance"]);
+
+    let mut backend = DesktopBackend::with_clock(Duration::from_secs(2), FakeClock::fixed());
+    let snapshot = backend.open_project(dir.path()).unwrap();
+    let task = snapshot
+        .tasks
+        .iter()
+        .find(|task| task.id.as_deref() == Some("abcdef"))
+        .unwrap();
+    match &task.evidence_availability {
+        todo_core::EvidenceAvailability::Available { from, .. } => assert_eq!(*from, introduced),
+        other => panic!("{other:?}"),
+    }
 }
 
 #[test]

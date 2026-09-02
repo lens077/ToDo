@@ -246,6 +246,41 @@ async fn read_only_refuses_writes_but_still_serves_reads() {
     );
 }
 
+fn git(dir: &std::path::Path, args: &[&str]) {
+    let status = std::process::Command::new("git")
+        .args(args)
+        .current_dir(dir)
+        .env("GIT_AUTHOR_NAME", "t")
+        .env("GIT_AUTHOR_EMAIL", "t@example.com")
+        .env("GIT_COMMITTER_NAME", "t")
+        .env("GIT_COMMITTER_EMAIL", "t@example.com")
+        .status()
+        .unwrap();
+    assert!(status.success());
+}
+
+#[tokio::test]
+async fn completed_rejects_invalid_evidence_without_writing() {
+    // A real repository, so the rejection comes from the range rules rather than
+    // from git being absent.
+    let dir = fixture();
+    git(dir.path(), &["init", "-q"]);
+    git(dir.path(), &["add", "TODO.md"]);
+    git(dir.path(), &["commit", "-qm", "seed"]);
+    let before = std::fs::read(dir.path().join("TODO.md")).unwrap();
+    let base = start(dir.path(), false).await;
+
+    let (status, body) = post(
+        &format!("{base}/tasks/aaaaaa/completed"),
+        "{\"completed\":true,\"evidence\":{\"from\":\"HEAD\",\"to\":\"HEAD\"}}",
+    )
+    .await;
+
+    assert_eq!(status, 400, "{body}");
+    assert!(body.contains("must not be empty"), "{body}");
+    assert_eq!(std::fs::read(dir.path().join("TODO.md")).unwrap(), before);
+}
+
 #[tokio::test]
 async fn a_missing_task_is_a_404_not_a_server_error() {
     // Clients need to tell "you asked for something that is not there" from
