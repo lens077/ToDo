@@ -1,5 +1,5 @@
 import * as React from 'react';
-import type { DesktopColumn, DesktopSnapshot, DesktopTask } from '../lib/desktop';
+import type { DesktopColumn, DesktopSnapshot, DesktopTask, TaskPriority } from '../lib/desktop';
 import {
   clampFocusLimit,
   dueBands,
@@ -20,6 +20,7 @@ interface GoalViewProps extends Omit<TaskCardActions, 'onSetCompleted' | 'onMove
   readOnly: boolean;
   onSetCompleted: (id: string, completed: boolean) => Promise<boolean>;
   onMove: (id: string, column: string) => Promise<boolean>;
+  onSetPriority: (id: string, priority: TaskPriority) => void;
 }
 
 function storage(): Storage | null {
@@ -158,6 +159,7 @@ export function GoalView({
   onSetPartial,
   onSetFailed,
   onMove,
+  onSetPriority,
 }: GoalViewProps) {
   const [layout, updateLayout] = useGoalLayout();
   const [dueFilter, setDueFilter] = React.useState<DueFilter>('all');
@@ -205,6 +207,7 @@ export function GoalView({
     onSetPartial,
     onSetFailed,
     onMove: (id: string, column: string) => void drop.moveTask(id, column),
+    onSetPriority,
   });
 
   if (snapshot.tasks.length === 0) {

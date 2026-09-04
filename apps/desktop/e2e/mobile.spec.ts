@@ -66,7 +66,7 @@ test('mobile navigation stays reachable at the bottom', async ({ page }) => {
   expect(sidebarBox!.y).toBeGreaterThanOrEqual(workspaceBox!.y + workspaceBox!.height - 1);
 
   const navButtons = page.getByRole('navigation', { name: '主要视图' }).getByRole('button');
-  await expect(navButtons).toHaveCount(3);
+  await expect(navButtons).toHaveCount(4);
   for (const button of await navButtons.all()) {
     const box = await button.boundingBox();
     expect(box?.height ?? 0).toBeGreaterThanOrEqual(44);

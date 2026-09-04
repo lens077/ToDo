@@ -5,6 +5,8 @@ import { CompletionDialog, type CompletionDecision } from './components/Completi
 import { ConfirmCompleteDialog } from './components/ConfirmCompleteDialog';
 import { EmptyState } from './components/EmptyState';
 import { GoalView } from './components/GoalView';
+import { PriorityScopeDialog } from './components/PriorityScopeDialog';
+import { QuadrantView } from './components/QuadrantView';
 import { ProviderSettings } from './components/ProviderSettings';
 import { ReviewView } from './components/ReviewView';
 import { SettingsDialog } from './components/SettingsDialog';
@@ -12,7 +14,13 @@ import { Sidebar, type MainView } from './components/Sidebar';
 import { StatusBanner } from './components/StatusBanner';
 import { useDesktop } from './hooks/useDesktop';
 import { useAppSettings } from './lib/appSettings';
-import { transportCapabilities, type DesktopTask } from './lib/desktop';
+import { transportCapabilities, type DesktopTask, type TaskPriority } from './lib/desktop';
+
+interface PriorityRequest {
+  task: DesktopTask;
+  priority: TaskPriority;
+  descendantCount: number;
+}
 
 interface CompletionRequest {
   task: DesktopTask;
@@ -29,11 +37,14 @@ export function App() {
   const [providerSettingsOpen, setProviderSettingsOpen] = React.useState(false);
   const [completionRequest, setCompletionRequest] = React.useState<CompletionRequest | null>(null);
   const completionRequestRef = React.useRef<CompletionRequest | null>(null);
+  const [priorityRequest, setPriorityRequest] = React.useState<PriorityRequest | null>(null);
   const [confirmTask, setConfirmTask] = React.useState<DesktopTask | null>(null);
   const [appSettings] = useAppSettings();
   const model = useDesktop();
   const readOnly = transportCapabilities()?.writable === false;
   // The badge counts what needs attention today: overdue plus due-today work.
+  const doneColumnIds = new Set(model.snapshot?.columns.filter((column) => column.done).map((column) => column.id) ?? []);
+  const unrankedCount = model.snapshot?.tasks.filter((task) => !task.completed && !doneColumnIds.has(task.column ?? '') && task.priority === null).length ?? 0;
   const goalCount = model.snapshot
     ? model.snapshot.today.overdue.length + model.snapshot.today.today.length
     : 0;
@@ -87,6 +98,18 @@ export function App() {
     });
   }, [model, openCompletion]);
 
+  const requestPriority = React.useCallback((task: DesktopTask, priority: TaskPriority) => {
+    if (!task.id || !model.snapshot) return;
+    const root = model.snapshot.tasks.findIndex((item) => item.id === task.id);
+    let descendants = 0;
+    for (let index = root + 1; index < model.snapshot.tasks.length; index += 1) {
+      if (model.snapshot.tasks[index].indent_level <= task.indent_level) break;
+      descendants += 1;
+    }
+    if (descendants === 0) void model.setPriority(task.id, priority);
+    else setPriorityRequest({ task, priority, descendantCount: descendants });
+  }, [model]);
+
   const confirmTick = React.useCallback(async () => {
     if (!confirmTask?.id) return;
     const written = await model.setCompleted(confirmTask.id, true);
@@ -129,6 +152,7 @@ export function App() {
         status={model.status}
         goalCount={goalCount}
         captureCount={model.captures.length}
+        unrankedCount={unrankedCount}
         readOnly={readOnly}
         onChangeView={setActiveView}
         onChooseProject={() => void model.chooseProject()}
@@ -178,6 +202,18 @@ export function App() {
             />
           ) : activeView === 'review' ? (
             <ReviewView snapshot={model.snapshot} readOnly={readOnly} onApplied={model.applySnapshot} />
+          ) : activeView === 'quadrant' && model.snapshot ? (
+            <QuadrantView
+              snapshot={model.snapshot}
+              busyKeys={model.busyKeys}
+              readOnly={readOnly}
+              onSetCompleted={setCompleted}
+              onSetPartial={model.setPartial}
+              onSetFailed={model.setFailed}
+              onMove={(id, column) => void moveTask(id, column)}
+              onSetPriority={(id, priority) => { const task = model.snapshot?.tasks.find((item) => item.id === id); if (task) requestPriority(task, priority); }}
+              onRequestPriority={requestPriority}
+            />
           ) : model.snapshot ? (
             <GoalView
               snapshot={model.snapshot}
@@ -187,6 +223,7 @@ export function App() {
               onSetPartial={model.setPartial}
               onSetFailed={model.setFailed}
               onMove={moveTask}
+              onSetPriority={(id, priority) => { const task = model.snapshot?.tasks.find((item) => item.id === id); if (task) requestPriority(task, priority); }}
             />
           ) : (
             <EmptyState
@@ -198,6 +235,20 @@ export function App() {
         </main>
       </div>
 
+      {priorityRequest && (
+        <PriorityScopeDialog
+          task={priorityRequest.task}
+          descendantCount={priorityRequest.descendantCount}
+          priority={priorityRequest.priority}
+          busy={Boolean(priorityRequest.task.id && model.busyKeys.has(`task:${priorityRequest.task.id}`))}
+          onCancel={() => setPriorityRequest(null)}
+          onConfirm={async (scope) => {
+            if (!priorityRequest.task.id) return;
+            const written = await model.setPriority(priorityRequest.task.id, priorityRequest.priority, scope);
+            if (written) setPriorityRequest(null);
+          }}
+        />
+      )}
       {completionRequest && (
         <CompletionDialog
           key={`${completionRequest.task.id ?? completionRequest.task.body}:${completionRequest.destinationColumn ?? 'checkbox'}`}

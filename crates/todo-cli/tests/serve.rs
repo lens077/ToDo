@@ -91,6 +91,31 @@ async fn snapshot_is_served_over_http() {
 }
 
 #[tokio::test]
+async fn priority_endpoint_sets_clears_and_validates_the_value() {
+    let dir = fixture();
+    let base = start(dir.path(), false).await;
+
+    let (status, body) = post(
+        &format!("{base}/tasks/aaaaaa/priority"),
+        "{\"priority\":4,\"scope\":\"task\"}",
+    )
+    .await;
+    assert_eq!(status, 200);
+    assert_eq!(json(&body)["tasks"][0]["priority"], 4);
+
+    let (status, body) = post(
+        &format!("{base}/tasks/aaaaaa/priority"),
+        "{\"priority\":null,\"scope\":\"task\"}",
+    )
+    .await;
+    assert_eq!(status, 200);
+    assert_eq!(json(&body)["tasks"][0]["priority"], serde_json::Value::Null);
+
+    let (status, _) = post(&format!("{base}/tasks/aaaaaa/priority"), "{\"priority\":5}").await;
+    assert_eq!(status, 400);
+}
+
+#[tokio::test]
 async fn progress_rejects_zero_and_one_hundred_exactly_like_the_cli() {
     // One rule, one implementation: 0 and 100 would become second spellings of
     // "not started" and "done" no matter which face of the product wrote them.

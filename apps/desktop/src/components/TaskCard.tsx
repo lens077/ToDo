@@ -1,11 +1,11 @@
 import * as React from 'react';
 import type { DragEvent } from 'react';
-import type { DesktopColumn, DesktopTask } from '../lib/desktop';
+import type { DesktopColumn, DesktopTask, TaskPriority } from '../lib/desktop';
 import { formatDueDate, shortId } from '../lib/format';
 import { Icon } from './Icon';
 import { TaskContextMenu, type TaskMoveTargets } from './TaskContextMenu';
 
-export type TaskCardVariant = 'card' | 'compact' | 'focus';
+export type TaskCardVariant = 'card' | 'compact' | 'focus' | 'quadrant';
 
 export interface TaskCardActions {
   onSetCompleted: (taskId: string, completed: boolean) => void;
@@ -14,6 +14,7 @@ export interface TaskCardActions {
   /** Writes a `⚠` failed attempt. Resolves `true` when the file accepted it. */
   onSetFailed: (taskId: string, note: string) => Promise<boolean>;
   onMove: (taskId: string, columnId: string) => void;
+  onSetPriority?: (taskId: string, priority: TaskPriority) => void;
 }
 
 interface TaskCardProps extends TaskCardActions {
@@ -25,6 +26,7 @@ interface TaskCardProps extends TaskCardActions {
   variant?: TaskCardVariant;
   onDragStart?: (taskId: string) => void;
   onDragEnd?: () => void;
+  isInFocus?: boolean;
 }
 
 type InlineOutcome = 'partial' | 'failed';
@@ -150,6 +152,8 @@ export function TaskCard({
   onSetPartial,
   onSetFailed,
   onMove,
+  onSetPriority,
+  isInFocus = false,
 }: TaskCardProps) {
   const [inline, setInline] = React.useState<InlineOutcome | null>(null);
   const [contextMenu, setContextMenu] = React.useState<{
@@ -161,6 +165,7 @@ export function TaskCard({
   const movable = Boolean(task.id && columns.length > 1 && !busy && !readOnly);
   const dueTone = task.due && !task.completed && task.due < localDateKey() ? 'overdue' : 'normal';
   const canRecord = Boolean(task.id) && !readOnly && !task.completed;
+  const supportsPriority = Boolean(task.id && onSetPriority && !busy && !readOnly);
 
   React.useEffect(() => {
     if (task.completed) setInline(null);
@@ -238,7 +243,7 @@ export function TaskCard({
 
   return (
     <article
-      className={`task-card task-card--${variant}${task.completed ? ' is-complete' : ''}${busy ? ' is-busy' : ''}${readOnly ? ' is-read-only' : ''}${inline ? ' is-editing' : ''}`}
+      className={`task-card task-card--${variant}${isInFocus ? ' is-in-focus' : ''}${task.completed ? ' is-complete' : ''}${busy ? ' is-busy' : ''}${readOnly ? ' is-read-only' : ''}${inline ? ' is-editing' : ''}`}
       data-task-id={task.id ?? undefined}
       draggable={movable && !inline}
       aria-disabled={readOnly || undefined}
@@ -250,7 +255,13 @@ export function TaskCard({
         openMenuAt(event.clientX, event.clientY, event.currentTarget);
       }}
       onKeyDown={(event) => {
-        if (!movable || inline) return;
+        if (inline) return;
+        if (supportsPriority && /^[0-4]$/.test(event.key) && !event.metaKey && !event.ctrlKey && !event.altKey) {
+          event.preventDefault();
+          onSetPriority?.(task.id!, event.key === '0' ? null : Number(event.key) as TaskPriority);
+          return;
+        }
+        if (!movable) return;
         if ((event.shiftKey && event.key === 'F10') || event.key === 'ContextMenu') {
           event.preventDefault();
           const rect = event.currentTarget.getBoundingClientRect();
@@ -288,6 +299,8 @@ export function TaskCard({
         )}
       </div>
 
+      {variant === 'quadrant' && isInFocus && <span className="task-card__focus-mark">推进中</span>}
+      {variant === 'quadrant' && task.column === null && <span className="task-card__orphan-mark">未归列</span>}
       <p className="task-card__body">{task.body}</p>
 
       {focus && task.progress !== null && !task.completed && (
@@ -297,7 +310,7 @@ export function TaskCard({
       )}
 
       <div className="task-card__metadata">
-        {task.priority && (
+        {variant !== 'quadrant' && task.priority && (
           <span className={`priority priority--${task.priority}`} aria-label={`优先级 ${task.priority}`}>
             P{task.priority}
           </span>
@@ -360,6 +373,7 @@ export function TaskCard({
           y={contextMenu.y}
           onClose={closeMenu}
           onMove={(columnId) => onMove(task.id!, columnId)}
+          onSetPriority={onSetPriority ? (priority) => onSetPriority(task.id!, priority) : undefined}
         />
       )}
 

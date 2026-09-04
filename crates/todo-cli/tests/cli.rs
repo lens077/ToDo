@@ -64,6 +64,47 @@ fn init_add_list_done_next_and_json_are_scriptable() {
 }
 
 #[test]
+fn priority_sets_clears_and_updates_a_subtree() {
+    let dir = tempdir().unwrap();
+    fs::write(
+        dir.path().join("TODO.md"),
+        "---\ntodo-spec: 1\ncolumns:\n  - {id: todo, name: Todo}\n---\n\n## Todo\n- [ ] parent <!--t:abc123--> !1\n    - [ ] child <!--t:def456--> !3\n",
+    )
+    .unwrap();
+
+    let changed = todo(
+        dir.path(),
+        &["priority", "abc123", "4", "--subtree", "--json"],
+    );
+    assert!(
+        changed.status.success(),
+        "{}",
+        String::from_utf8_lossy(&changed.stderr)
+    );
+    let listed: serde_json::Value =
+        serde_json::from_slice(&todo(dir.path(), &["list", "--json"]).stdout).unwrap();
+    assert!(listed["data"]["tasks"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .all(|task| task["priority"] == 4));
+
+    let cleared = todo(dir.path(), &["priority", "abc123", "--clear", "--json"]);
+    assert!(cleared.status.success());
+    let listed: serde_json::Value =
+        serde_json::from_slice(&todo(dir.path(), &["list", "--json"]).stdout).unwrap();
+    assert_eq!(
+        listed["data"]["tasks"][0]["priority"],
+        serde_json::Value::Null
+    );
+    assert_eq!(listed["data"]["tasks"][1]["priority"], 4);
+
+    assert!(!todo(dir.path(), &["priority", "abc123", "5"])
+        .status
+        .success());
+}
+
+#[test]
 fn completion_policy_enforces_the_note_matrix() {
     for (policy, command, succeeds) in [
         ("normal", vec!["done", "abc123"], true),

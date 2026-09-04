@@ -2,6 +2,7 @@ import type { SVGProps } from 'react';
 
 export type IconName =
   | 'board'
+  | 'grid'
   | 'calendar'
   | 'capture'
   | 'folder'
@@ -26,6 +27,7 @@ export type IconName =
   | 'settings';
 
 const paths: Record<IconName, React.ReactNode> = {
+  grid: <path d="M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4zM14 14h6v6h-6z" />,
   board: (
     <>
       <rect x="3" y="4" width="7" height="16" rx="1" />

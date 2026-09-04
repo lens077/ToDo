@@ -2,7 +2,7 @@ import type { WorkspaceStatus } from '../hooks/useDesktop';
 import { shortProjectName } from '../lib/desktop';
 import { Icon, type IconName } from './Icon';
 
-export type MainView = 'goal' | 'capture' | 'review';
+export type MainView = 'goal' | 'quadrant' | 'capture' | 'review';
 
 interface SidebarProps {
   activeView: MainView;
@@ -10,6 +10,7 @@ interface SidebarProps {
   /** Tasks in flight right now: the Doing count shown beside 目标. */
   goalCount: number;
   captureCount: number;
+  unrankedCount: number;
   readOnly: boolean;
   onChangeView: (view: MainView) => void;
   onChooseProject: () => void;
@@ -20,6 +21,7 @@ interface SidebarProps {
 // finished, so "what should I do now" never needs a second view.
 const navItems: Array<{ id: MainView; label: string; icon: IconName }> = [
   { id: 'goal', label: '目标', icon: 'target' },
+  { id: 'quadrant', label: '象限', icon: 'grid' },
   { id: 'capture', label: '随记', icon: 'capture' },
   { id: 'review', label: '扫描与历史', icon: 'folder' },
 ];
@@ -29,13 +31,14 @@ export function Sidebar({
   status,
   goalCount,
   captureCount,
+  unrankedCount,
   readOnly,
   onChangeView,
   onChooseProject,
   onOpenSettings,
 }: SidebarProps) {
   const projectName = status.projectPath ? shortProjectName(status.projectPath) : '未选择项目';
-  const countFor = (view: MainView) => (view === 'goal' ? goalCount : view === 'capture' ? captureCount : null);
+  const countFor = (view: MainView) => (view === 'goal' ? goalCount : view === 'quadrant' ? unrankedCount : view === 'capture' ? captureCount : null);
 
   return (
     <aside className="sidebar">

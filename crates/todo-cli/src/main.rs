@@ -13,9 +13,9 @@ use std::{
 use clap::{Parser, Subcommand, ValueEnum};
 use serde::Serialize;
 use todo_core::{
-    atomic_write, generate_task_id, parse_file, Change, CompletionOutcome, CompletionPolicy, Error,
-    History, InsertPosition, LlmSemanticReconciler, LockedWriter, ReconcileOptions,
-    ReconcileReport, Reconciler, TokenKind,
+    atomic_write, generate_task_id, parse_file, set_priority_changes, Change, CompletionOutcome,
+    CompletionPolicy, Error, History, InsertPosition, LlmSemanticReconciler, LockedWriter,
+    PriorityScope, ReconcileOptions, ReconcileReport, Reconciler, TokenKind,
 };
 
 const TODO_TEMPLATE: &str = "---\ntodo-spec: 1\ncolumns:\n  - {id: todo, name: Todo}\n  - {id: doing, name: Doing}\n  - {id: done, name: Done, type: done}\n---\n\n# Project tasks\n\n## Todo\n\n## Doing\n\n## Done\n";
@@ -75,6 +75,16 @@ enum Command {
     },
     Undone {
         id: String,
+    },
+    /// Set one task priority: 1 最高 / 2 高 / 3 中 / 4 低.
+    Priority {
+        id: String,
+        value: Option<u8>,
+        #[arg(long, conflicts_with = "value")]
+        clear: bool,
+        /// Apply the same priority to the task and all descendants.
+        #[arg(long)]
+        subtree: bool,
     },
     /// Record partial completion: `todo progress <id> 60 --note "…"`.
     Progress {
@@ -362,6 +372,12 @@ fn run(cli: &Cli) -> Result<u8, Error> {
             complete(cli, &path, id, note.as_deref(), *evidence)
         }
         Command::Undone { id } => toggle(cli, &path, id, false),
+        Command::Priority {
+            id,
+            value,
+            clear,
+            subtree,
+        } => priority(cli, &path, id, *value, *clear, *subtree),
         Command::Progress { id, percent, note } => {
             progress(cli, &path, id, *percent, note.as_deref())
         }
@@ -1137,6 +1153,31 @@ fn emit_task(cli: &Cli, document: &todo_core::Document, id: &str) -> Result<u8, 
         |data| human_task(&data.task),
     );
     Ok(0)
+}
+
+fn priority(
+    cli: &Cli,
+    path: &Path,
+    id: &str,
+    value: Option<u8>,
+    clear: bool,
+    subtree: bool,
+) -> Result<u8, Error> {
+    if clear == value.is_some() {
+        return Err(Error::InvalidTaskLine(
+            "provide a priority from 1 to 4, or --clear".into(),
+        ));
+    }
+    let scope = if subtree {
+        PriorityScope::Subtree
+    } else {
+        PriorityScope::Task
+    };
+    let document = LockedWriter::new(path, Duration::from_millis(cli.lock_timeout_ms))
+        .update_labeled("priority", |document| {
+            set_priority_changes(document, id, value, scope)
+        })?;
+    emit_task(cli, &document, id)
 }
 
 fn progress(

@@ -11,7 +11,8 @@ import {
   type TransportKind,
 } from './transport';
 
-export type TaskPriority = 1 | 2 | 3 | null;
+export type TaskPriority = 1 | 2 | 3 | 4 | null;
+export type PriorityScope = 'task' | 'subtree';
 
 export interface DesktopColumn {
   id: string;
@@ -35,6 +36,8 @@ export interface DesktopTask {
   body: string;
   completed: boolean;
   column: string | null;
+  indent_level: number;
+  parent_id: string | null;
   due: string | null;
   priority: TaskPriority;
   tags: string[];
@@ -169,6 +172,7 @@ export type DesktopMutation =
   | { type: 'set_completed'; id: string; completed: boolean; note?: string; evidence?: EvidenceRange }
   | { type: 'set_partial'; id: string; percent: number; note: string }
   | { type: 'set_failed'; id: string; note: string }
+  | { type: 'set_priority'; id: string; priority: TaskPriority; scope?: PriorityScope }
   | ({ type: 'move_task'; id: string; column: string; target: MoveTarget } & MoveCompletionDetails);
 
 type TriageOutcome =
@@ -216,6 +220,8 @@ const mockInitialTasks: DesktopTask[] = [
     body: '为 reconcile findings 补齐 evidence diff 摘要',
     completed: false,
     column: 'doing',
+      indent_level: 0,
+      parent_id: null,
     due: '2026-08-30',
     priority: 1,
     tags: ['core', 'evidence'],
@@ -230,6 +236,8 @@ const mockInitialTasks: DesktopTask[] = [
     body: '测量 1,000 项 Snapshot 构建预算',
     completed: false,
     column: 'doing',
+      indent_level: 0,
+      parent_id: null,
     due: MOCK_TODAY,
     priority: 2,
     tags: ['desktop'],
@@ -244,6 +252,8 @@ const mockInitialTasks: DesktopTask[] = [
     body: '完善 agent hook 安装后的首次使用说明',
     completed: false,
     column: 'inbox',
+      indent_level: 0,
+      parent_id: null,
     due: '2026-09-02',
     priority: 2,
     tags: ['agents', 'docs'],
@@ -258,6 +268,8 @@ const mockInitialTasks: DesktopTask[] = [
     body: '补充文件冲突恢复的端到端覆盖',
     completed: false,
     column: 'review',
+      indent_level: 0,
+      parent_id: null,
     due: null,
     priority: 1,
     tags: ['rust'],
@@ -272,6 +284,8 @@ const mockInitialTasks: DesktopTask[] = [
     body: '发布前跑一遍键盘与屏幕阅读器路径',
     completed: false,
     column: 'inbox',
+      indent_level: 0,
+      parent_id: null,
     due: '2026-09-06',
     priority: 3,
     tags: ['qa'],
@@ -286,6 +300,8 @@ const mockInitialTasks: DesktopTask[] = [
     body: '确定 TODO.md v1 的保真写回边界',
     completed: true,
     column: 'done',
+      indent_level: 0,
+      parent_id: null,
     due: '2026-08-28',
     priority: 2,
     tags: ['format'],
@@ -378,12 +394,14 @@ function asBridgeError(value: unknown): DesktopBridgeError {
 
 function normalizeTask(raw: unknown): DesktopTask {
   const task = (raw ?? {}) as Partial<DesktopTask>;
-  const priority = task.priority === 1 || task.priority === 2 || task.priority === 3 ? task.priority : null;
+  const priority = task.priority === 1 || task.priority === 2 || task.priority === 3 || task.priority === 4 ? task.priority : null;
   return {
     id: typeof task.id === 'string' ? task.id : null,
     body: typeof task.body === 'string' ? task.body : '',
     completed: Boolean(task.completed),
     column: typeof task.column === 'string' ? task.column : null,
+    indent_level: typeof task.indent_level === 'number' ? task.indent_level : 0,
+    parent_id: typeof task.parent_id === 'string' ? task.parent_id : null,
     due: typeof task.due === 'string' ? task.due : null,
     priority,
     tags: Array.isArray(task.tags) ? task.tags.filter((tag): tag is string => typeof tag === 'string') : [],
@@ -557,6 +575,8 @@ async function mockMutate(intent: DesktopMutation): Promise<DesktopSnapshot> {
       body: intent.body.trim(),
       completed: false,
       column: intent.column ?? mockColumns[0]?.id ?? null,
+      indent_level: 0,
+      parent_id: null,
       due: null,
       priority: null,
       tags: [],
@@ -580,6 +600,17 @@ async function mockMutate(intent: DesktopMutation): Promise<DesktopSnapshot> {
     mockTasks = mockTasks.map((task) => task.id === intent.id
       ? { ...task, failed_on: MOCK_TODAY, note: intent.note.trim() }
       : task);
+  } else if (intent.type === 'set_priority') {
+    const root = mockTasks.findIndex((task) => task.id === intent.id);
+    const rootTask = mockTasks[root];
+    const end = intent.scope === 'subtree' && rootTask
+      ? mockTasks.findIndex((task, index) => index > root && (
+          task.indent_level <= rootTask.indent_level || task.column !== rootTask.column
+        ))
+      : root + 1;
+    const boundary = end === -1 ? mockTasks.length : end;
+    mockTasks = mockTasks.map((task, index) =>
+      index >= root && index < boundary ? { ...task, priority: intent.priority } : task);
   } else {
     const moving = mockTasks.find((task) => task.id === intent.id);
     if (moving) {
@@ -797,7 +828,12 @@ export const desktop = {
               ? { path: `/tasks/${intent.id}/progress`, payload: { percent: intent.percent, note: intent.note } }
               : intent.type === 'set_failed'
                 ? { path: `/tasks/${intent.id}/fail`, payload: { note: intent.note } }
-                : {
+                : intent.type === 'set_priority'
+                  ? {
+                      path: `/tasks/${intent.id}/priority`,
+                      payload: { priority: intent.priority, scope: intent.scope ?? 'task' },
+                    }
+                  : {
                     path: `/tasks/${intent.id}/move`,
                     payload: {
                       column: intent.column,
@@ -861,6 +897,8 @@ export const desktop = {
         body: capture.text,
         completed: false,
         column,
+        indent_level: 0,
+        parent_id: null,
         due: null,
         priority: null,
         tags: ['capture'],

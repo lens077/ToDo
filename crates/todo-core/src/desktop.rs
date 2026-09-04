@@ -54,6 +54,8 @@ pub struct DesktopTask {
     pub body: String,
     pub completed: bool,
     pub column: Option<String>,
+    pub indent_level: usize,
+    pub parent_id: Option<String>,
     pub due: Option<String>,
     pub priority: Option<u8>,
     pub tags: Vec<String>,
@@ -102,6 +104,14 @@ pub struct EvidenceRange {
     pub to: String,
 }
 
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum PriorityScope {
+    #[default]
+    Task,
+    Subtree,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum DesktopIntent {
@@ -125,6 +135,12 @@ pub enum DesktopIntent {
     SetFailed {
         id: String,
         note: String,
+    },
+    SetPriority {
+        id: String,
+        priority: Option<u8>,
+        #[serde(default)]
+        scope: PriorityScope,
     },
     MoveTask {
         id: String,
@@ -150,6 +166,7 @@ impl DesktopIntent {
             Self::SetCompleted { .. } => "board-undone",
             Self::SetPartial { .. } => "board-partial",
             Self::SetFailed { .. } => "board-fail",
+            Self::SetPriority { .. } => "board-priority",
             Self::MoveTask { .. } => "board-move",
         }
     }
@@ -258,7 +275,7 @@ impl DesktopBackend {
                     .as_ref()
                     .and_then(|id| projected.remove(id))
                     .map_or_else(
-                        || task_view(head.as_ref(), &lookup, task),
+                        || task_view(head.as_ref(), &lookup, document, task),
                         |projected| projected_task_view(head.as_ref(), &lookup, projected),
                     )
             })
@@ -439,6 +456,11 @@ fn intent_changes(
                 },
             ])
         }
+        DesktopIntent::SetPriority {
+            id,
+            priority,
+            scope,
+        } => set_priority_changes(document, id, *priority, *scope),
         DesktopIntent::SetFailed { id, note } => {
             if note.trim().is_empty() {
                 return Err(Error::InvalidTaskLine(
@@ -520,6 +542,70 @@ fn intent_changes(
     }
 }
 
+pub fn set_priority_changes(
+    document: &Document,
+    id: &str,
+    priority: Option<u8>,
+    scope: PriorityScope,
+) -> Result<Vec<Change>> {
+    if priority.is_some_and(|value| !(1..=4).contains(&value)) {
+        return Err(Error::InvalidTaskLine(
+            "priority must be between 1 and 4".into(),
+        ));
+    }
+    let root = find_task(document, id)?;
+    let end = if scope == PriorityScope::Subtree {
+        document.tasks[root + 1..]
+            .iter()
+            .position(|task| {
+                task.indent_level <= document.tasks[root].indent_level
+                    || task.column != document.tasks[root].column
+            })
+            .map_or(document.tasks.len(), |offset| root + 1 + offset)
+    } else {
+        root + 1
+    };
+    let mut changes = Vec::new();
+    for task_index in root..end {
+        let tokens: Vec<_> = document.tasks[task_index]
+            .metadata
+            .iter()
+            .enumerate()
+            .filter_map(|(index, token)| {
+                matches!(token.kind, TokenKind::Priority(_)).then_some(index)
+            })
+            .collect();
+        if let Some(value) = priority {
+            let already_normalized = tokens.len() == 1
+                && matches!(document.tasks[task_index].metadata[tokens[0]].kind, TokenKind::Priority(current) if current == value);
+            if already_normalized {
+                continue;
+            }
+            if tokens.len() > 1 {
+                for token in tokens.iter().skip(1).rev() {
+                    changes.push(Change::RemoveMetadata {
+                        task: task_index,
+                        token: *token,
+                    });
+                }
+            }
+            changes.push(Change::SetMetadata {
+                task: task_index,
+                kind: TokenKind::Priority(value),
+                raw: format!("!{value}"),
+            });
+        } else {
+            for token in tokens.into_iter().rev() {
+                changes.push(Change::RemoveMetadata {
+                    task: task_index,
+                    token,
+                });
+            }
+        }
+    }
+    Ok(changes)
+}
+
 fn resolve_move_target(
     document: &Document,
     column: &str,
@@ -576,6 +662,8 @@ fn projected_task_view(
         body: task.body,
         completed: task.completed,
         column: task.column,
+        indent_level: task.indent_level,
+        parent_id: task.parent_id,
         due: task.due,
         priority: task.priority,
         tags: task.tags,
@@ -590,6 +678,7 @@ fn projected_task_view(
 fn task_view(
     head: std::result::Result<&String, &String>,
     introductions: &EvidenceLookup,
+    document: &Document,
     task: &crate::Task,
 ) -> DesktopTask {
     let mut due = None;
@@ -615,6 +704,10 @@ fn task_view(
         body: task.body.clone(),
         completed: task.completed,
         column: task.column.clone(),
+        indent_level: task.indent_level,
+        parent_id: task
+            .parent
+            .and_then(|index| document.tasks.get(index)?.id.clone()),
         due,
         priority,
         tags,

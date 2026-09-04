@@ -30,7 +30,7 @@ use axum::{
 use serde::{Deserialize, Serialize};
 use todo_core::{
     diff_lines, import_text, parse_file, review_alignment, scan, DesktopBackend, DesktopIntent,
-    DesktopSnapshot, History, LockedWriter, MoveTarget, ScanOptions,
+    DesktopSnapshot, History, LockedWriter, MoveTarget, PriorityScope, ScanOptions,
 };
 use tower_http::{cors::CorsLayer, services::ServeDir};
 
@@ -127,6 +127,7 @@ pub fn router(
         .route("/tasks/{id}/completed", post(set_completed))
         .route("/tasks/{id}/progress", post(set_progress))
         .route("/tasks/{id}/fail", post(set_failed))
+        .route("/tasks/{id}/priority", post(set_priority))
         .route("/tasks/{id}/move", post(move_task))
         .route("/scan", get(run_scan))
         .route("/scan/import", post(import_scan))
@@ -270,6 +271,54 @@ async fn move_task(
             target: MoveTarget::ColumnStart,
             note: input.note,
             evidence: input.evidence,
+        },
+    )
+}
+
+#[derive(Deserialize)]
+struct PriorityInput {
+    #[serde(default)]
+    priority: PriorityValue,
+    #[serde(default)]
+    scope: PriorityScope,
+}
+
+#[derive(Default)]
+enum PriorityValue {
+    #[default]
+    Missing,
+    Value(Option<u8>),
+}
+
+impl<'de> Deserialize<'de> for PriorityValue {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        Option::<u8>::deserialize(deserializer).map(Self::Value)
+    }
+}
+
+async fn set_priority(
+    State(state): State<Arc<ServeState>>,
+    AxumPath(id): AxumPath<String>,
+    Json(input): Json<PriorityInput>,
+) -> ApiResult<DesktopSnapshot> {
+    let priority = match input.priority {
+        PriorityValue::Value(priority) => priority,
+        PriorityValue::Missing => {
+            return Err(ApiError {
+                status: StatusCode::BAD_REQUEST,
+                message: "priority must be 1-4 or null".into(),
+            });
+        }
+    };
+    mutate(
+        &state,
+        DesktopIntent::SetPriority {
+            id,
+            priority,
+            scope: input.scope,
         },
     )
 }

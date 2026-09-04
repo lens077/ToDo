@@ -354,6 +354,8 @@ export function useDesktop() {
       runMutation(`task:${id}`, { type: 'set_partial', id, percent, note }),
     setFailed: (id: string, note: string) =>
       runMutation(`task:${id}`, { type: 'set_failed', id, note }),
+    setPriority: (id: string, priority: 1 | 2 | 3 | 4 | null, scope: 'task' | 'subtree' = 'task') =>
+      runMutation(`task:${id}`, { type: 'set_priority', id, priority, scope }),
     moveTask: (id: string, column: string, completion: MoveCompletionDetails = {}) =>
       runMutation(`task:${id}`, {
         type: 'move_task',

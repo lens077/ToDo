@@ -1,6 +1,6 @@
 import * as React from 'react';
 import { createPortal } from 'react-dom';
-import type { DesktopColumn, DesktopTask } from '../lib/desktop';
+import type { DesktopColumn, DesktopTask, TaskPriority } from '../lib/desktop';
 import { Icon } from './Icon';
 
 export interface TaskMoveTargets {
@@ -16,6 +16,7 @@ interface TaskContextMenuProps {
   x: number;
   y: number;
   onMove: (columnId: string) => void;
+  onSetPriority?: (priority: TaskPriority) => void;
   onClose: (restoreFocus?: boolean) => void;
 }
 
@@ -72,12 +73,16 @@ export function TaskContextMenu({
   x,
   y,
   onMove,
+  onSetPriority,
   onClose,
 }: TaskContextMenuProps) {
   const menuRef = React.useRef<HTMLDivElement>(null);
   const submenuTriggerRef = React.useRef<HTMLButtonElement>(null);
+  const priorityTriggerRef = React.useRef<HTMLButtonElement>(null);
+  const priorityRef = React.useRef<HTMLDivElement>(null);
   const submenuRef = React.useRef<HTMLDivElement>(null);
   const [submenuOpen, setSubmenuOpen] = React.useState(false);
+  const [priorityOpen, setPriorityOpen] = React.useState(false);
   const [submenuTop, setSubmenuTop] = React.useState(-7);
   const [position, setPosition] = React.useState({ x, y });
   const actions = React.useMemo(
@@ -112,14 +117,14 @@ export function TaskContextMenu({
   React.useEffect(() => {
     const closeOutside = (event: PointerEvent) => {
       const target = event.target as Node | null;
-      if (!menuRef.current?.contains(target) && !submenuRef.current?.contains(target)) {
+      if (!menuRef.current?.contains(target) && !submenuRef.current?.contains(target) && !priorityRef.current?.contains(target)) {
         onClose(false);
       }
     };
     const close = () => onClose(false);
     const closeOnOutsideWheel = (event: WheelEvent) => {
       const target = event.target as Node | null;
-      if (!menuRef.current?.contains(target) && !submenuRef.current?.contains(target)) {
+      if (!menuRef.current?.contains(target) && !submenuRef.current?.contains(target) && !priorityRef.current?.contains(target)) {
         close();
       }
     };
@@ -164,6 +169,15 @@ export function TaskContextMenu({
       event.preventDefault();
       const items = enabledItems(menu);
       (event.key === 'Home' ? items[0] : items.at(-1))?.focus();
+    } else if (event.key === 'ArrowRight' && event.target === priorityTriggerRef.current) {
+      event.preventDefault();
+      setPriorityOpen(true);
+      setSubmenuOpen(false);
+      requestAnimationFrame(() => priorityRef.current && enabledItems(priorityRef.current)[0]?.focus());
+    } else if (event.key === 'ArrowLeft' && priorityRef.current?.contains(event.target as Node)) {
+      event.preventDefault();
+      setPriorityOpen(false);
+      priorityTriggerRef.current?.focus();
     } else if (event.key === 'ArrowRight' && event.target === submenuTriggerRef.current) {
       event.preventDefault();
       openSubmenu(true);
@@ -195,7 +209,7 @@ export function TaskContextMenu({
           key={action.column.id}
           type="button"
           role="menuitem"
-          onPointerEnter={() => setSubmenuOpen(false)}
+          onPointerEnter={() => { setSubmenuOpen(false); setPriorityOpen(false); }}
           onClick={() => runMove(action.column.id)}
         >
           <Icon name={action.icon} />
@@ -203,6 +217,24 @@ export function TaskContextMenu({
         </button>
       ))}
       {actions.length > 0 && <span className="task-context-menu__rule" role="separator" />}
+      {onSetPriority && (
+        <>
+          <button ref={priorityTriggerRef} type="button" role="menuitem" aria-haspopup="menu" aria-expanded={priorityOpen} onClick={() => { setPriorityOpen((open) => !open); setSubmenuOpen(false); }}>
+            <Icon name="grid" /><span>优先级…</span><Icon name="chevron-right" className="task-context-menu__chevron" />
+          </button>
+          {priorityOpen && (
+            <div ref={priorityRef} className="task-context-menu task-context-menu__submenu task-context-menu__priority" role="menu" aria-label="设置优先级">
+              {([1, 2, 3, 4, null] as TaskPriority[]).map((priority) => (
+                <button type="button" role="menuitem" key={priority ?? 0} disabled={task.priority === priority} onClick={() => { onClose(false); onSetPriority(priority); }}>
+                  <span className={`priority-dot priority-dot--${priority ?? 0}`} />
+                  <span>{priority === null ? '清除优先级' : `!${priority} ${['最高', '高', '中', '低'][priority - 1]}`}</span>
+                  <kbd>{priority ?? 0}</kbd>
+                </button>
+              ))}
+            </div>
+          )}
+        </>
+      )}
       <button
         ref={submenuTriggerRef}
         type="button"
