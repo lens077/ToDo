@@ -7,11 +7,29 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-PORT="${PORT:-3021}"
+if [[ -n "${PORT:-}" ]]; then
+  PORT="$PORT"
+else
+  PORT="$(python3 - <<'PYPORT'
+import socket
+with socket.socket() as sock:
+    sock.bind(('127.0.0.1', 0))
+    print(sock.getsockname()[1])
+PYPORT
+)"
+fi
 TODO_BIN="$ROOT/target/debug/todo"
+RESTART_SIGNAL=""
+RESTART_READY=""
 
 cleanup() {
-  [[ -n "${SERVER_PID:-}" ]] && kill "$SERVER_PID" 2>/dev/null || true
+  if [[ -n "${SUPERVISOR_PID:-}" ]]; then
+    kill "$SUPERVISOR_PID" 2>/dev/null || true
+    wait "$SUPERVISOR_PID" 2>/dev/null || true
+  fi
+  if [[ -n "${WORKDIR:-}" && -f "$WORKDIR/server.pid" ]]; then
+    kill "$(cat "$WORKDIR/server.pid")" 2>/dev/null || true
+  fi
   [[ -n "${WORKDIR:-}" ]] && rm -rf "$WORKDIR" || true
 }
 trap cleanup EXIT
@@ -68,10 +86,30 @@ rm -f .TODO.md.lock
 git status --porcelain | grep -q . && { git status --short; exit 1; }
 
 echo "==> serving on :$PORT"
-"$TODO_BIN" serve --port "$PORT" --web-root "$ROOT/apps/desktop/dist" >"$WORKDIR/serve.log" 2>&1 &
-SERVER_PID=$!
+RESTART_SIGNAL="$WORKDIR/restart.signal"
+RESTART_READY="$WORKDIR/restart.ready"
+(
+  while true; do
+    rm -f "$RESTART_SIGNAL" "$RESTART_READY"
+    "$TODO_BIN" serve --port "$PORT" --web-root "$ROOT/apps/desktop/dist" >>"$WORKDIR/serve.log" 2>&1 &
+    child=$!
+    trap 'kill "$child" 2>/dev/null || true; wait "$child" 2>/dev/null || true; exit 0' TERM INT
+    printf '%s\n' "$child" > "$WORKDIR/server.pid"
+    touch "$RESTART_READY"
+    while kill -0 "$child" 2>/dev/null; do
+      if [[ -f "$RESTART_SIGNAL" ]]; then
+        kill "$child" 2>/dev/null || true
+        wait "$child" 2>/dev/null || true
+        break
+      fi
+      sleep 0.1
+    done
+    [[ -f "$RESTART_SIGNAL" ]] || exit 0
+  done
+) &
+SUPERVISOR_PID=$!
 
-for _ in $(seq 1 40); do
+for _ in $(seq 1 80); do
   if curl -fsS "http://127.0.0.1:$PORT/api/v1/health" >/dev/null 2>&1; then break; fi
   sleep 0.25
 done
@@ -83,4 +121,6 @@ echo "==> running web specs"
 cd "$ROOT/apps/desktop"
 E2E_WEB_URL="http://127.0.0.1:$PORT" \
 E2E_TODO_PATH="$WORKDIR/TODO.md" \
+E2E_RESTART_SIGNAL="$RESTART_SIGNAL" \
+E2E_RESTART_READY="$RESTART_READY" \
   "$ROOT/node_modules/.bin/playwright" test e2e/web.spec.ts --reporter=list

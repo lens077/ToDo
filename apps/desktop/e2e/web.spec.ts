@@ -12,6 +12,22 @@ import { expect, test } from '@playwright/test';
  */
 const webUrl = process.env.E2E_WEB_URL;
 const fixturePath = process.env.E2E_TODO_PATH;
+const restartSignal = process.env.E2E_RESTART_SIGNAL;
+const restartReady = process.env.E2E_RESTART_READY;
+
+async function restartServer(): Promise<void> {
+  if (!restartSignal || !restartReady) throw new Error('restart signal paths are required');
+  const { rm, writeFile } = await import('node:fs/promises');
+  await rm(restartReady, { force: true });
+  await writeFile(restartSignal, 'restart');
+  await expect.poll(async () => {
+    try {
+      const response = await fetch(`${webUrl}/api/v1/health`);
+      const ready = await import('node:fs/promises').then(({ access }) => access(restartReady).then(() => true, () => false));
+      return response.ok && ready;
+    } catch { return false; }
+  }, { timeout: 15_000 }).toBe(true);
+}
 
 async function taskFile(): Promise<string> {
   if (!fixturePath) throw new Error('E2E_TODO_PATH is required for file assertions');
@@ -61,6 +77,7 @@ test.describe('web transport', () => {
     expect(taskLine(afterClear, 'low001')).toBe(taskLine(before, 'low001').replace(' !4', ''));
     expect(afterClear.replace(taskLine(afterClear, 'low001'), '')).toBe(before.replace(taskLine(before, 'low001'), ''));
 
+    await restartServer();
     const freshPage = await browser.newPage({ baseURL: webUrl });
     await freshPage.goto('/');
     await freshPage.getByRole('button', { name: '象限' }).click();
@@ -87,6 +104,38 @@ test.describe('web transport', () => {
     expect(taskLine(after, 'child01')).toBe(taskLine(before, 'child01').replace('!3', '!1'));
     expect(taskLine(after, 'child02')).toBe(taskLine(before, 'child02').replace('!4', '!1'));
     for (const id of ['low001']) expect(taskLine(after, id)).toBe(taskLine(before, id));
+  });
+
+
+  test('parent can update only itself while children keep their priorities', async ({ page }) => {
+    test.skip(!fixturePath, 'E2E_TODO_PATH is required');
+    await page.goto('/');
+    await page.getByRole('button', { name: '象限' }).click();
+    const before = await taskFile();
+
+    await page.getByRole('article', { name: /发布桌面版/ }).dragTo(page.getByRole('region', { name: '!3 中' }));
+    const dialog = page.getByRole('dialog', { name: '这个任务包含子任务' });
+    await dialog.getByRole('button', { name: '仅修改这一项' }).click();
+    await expect(page.getByRole('region', { name: '!3 中' }).getByText('发布桌面版')).toBeVisible();
+
+    const after = await taskFile();
+    expect(taskLine(after, 'parent1')).toBe(taskLine(before, 'parent1').replace('!1', '!3'));
+    expect(taskLine(after, 'child01')).toBe(taskLine(before, 'child01'));
+    expect(taskLine(after, 'child02')).toBe(taskLine(before, 'child02'));
+  });
+
+  test('Escape cancels a parent priority change without writing', async ({ page }) => {
+    test.skip(!fixturePath, 'E2E_TODO_PATH is required');
+    await page.goto('/');
+    await page.getByRole('button', { name: '象限' }).click();
+    const before = await taskFile();
+
+    await page.getByRole('article', { name: /发布桌面版/ }).dragTo(page.getByRole('region', { name: '!4 低' }));
+    const dialog = page.getByRole('dialog', { name: '这个任务包含子任务' });
+    await expect(dialog).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(dialog).toBeHidden();
+    expect(await taskFile()).toBe(before);
   });
 
   test('strict done persists its note and Git evidence across reload', async ({ page }) => {

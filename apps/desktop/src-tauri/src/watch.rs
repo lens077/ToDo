@@ -110,6 +110,13 @@ where
 {
     let mut deadline = Instant::now() + debounce;
     loop {
+        // A permanently non-empty queue makes recv_timeout return immediately.
+        // Check the wall clock ourselves so unrelated parent-directory noise
+        // cannot starve a relevant target event forever.
+        if Instant::now() >= deadline {
+            on_signal(WatchSignal::Reload);
+            return true;
+        }
         let timeout = deadline.saturating_duration_since(Instant::now());
         match receiver.recv_timeout(timeout) {
             Ok(WatchMessage::Stop) => return false,
@@ -136,7 +143,12 @@ fn event_affects_target(event: &Event, target: &Path) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::{fs, sync::mpsc, time::Duration};
+    use std::{
+        fs,
+        sync::mpsc,
+        thread,
+        time::{Duration, Instant},
+    };
     use tempfile::tempdir;
 
     #[test]
@@ -177,6 +189,47 @@ mod tests {
             "second"
         );
         assert!(receiver.recv_timeout(Duration::from_millis(250)).is_err());
+    }
+
+    #[test]
+    fn relevant_events_are_not_starved_by_continuous_parent_noise() {
+        let target = PathBuf::from("/tmp/TODO.md");
+        let (sender, receiver) = mpsc::channel();
+        let noise_sender = sender.clone();
+        let noise = thread::spawn(move || {
+            let deadline = Instant::now() + Duration::from_secs(2);
+            while Instant::now() < deadline {
+                if noise_sender
+                    .send(WatchMessage::Event(Ok(Event::new(notify::EventKind::Any))))
+                    .is_err()
+                {
+                    break;
+                }
+            }
+        });
+        sender
+            .send(WatchMessage::Event(Ok(
+                Event::new(notify::EventKind::Any).add_path(target.clone())
+            )))
+            .unwrap();
+
+        let (signal_sender, signal_receiver) = mpsc::channel();
+        let worker = thread::spawn(move || {
+            run_event_loop(
+                receiver,
+                &target,
+                Duration::from_millis(10),
+                &mut |signal| signal_sender.send(signal).unwrap(),
+            );
+        });
+
+        assert!(matches!(
+            signal_receiver.recv_timeout(Duration::from_millis(250)),
+            Ok(WatchSignal::Reload)
+        ));
+        sender.send(WatchMessage::Stop).unwrap();
+        worker.join().unwrap();
+        noise.join().unwrap();
     }
 
     fn atomic_replace(target: &Path, contents: &str, sequence: usize) {
