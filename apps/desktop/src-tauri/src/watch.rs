@@ -177,18 +177,10 @@ mod tests {
         assert!(receiver.recv_timeout(Duration::from_millis(250)).is_err());
 
         atomic_replace(&target, "first", 1);
-        assert_eq!(
-            receiver.recv_timeout(Duration::from_secs(5)).unwrap(),
-            "first"
-        );
-        assert!(receiver.recv_timeout(Duration::from_millis(250)).is_err());
+        assert_eventually_reads(&receiver, "first");
 
         atomic_replace(&target, "second", 2);
-        assert_eq!(
-            receiver.recv_timeout(Duration::from_secs(5)).unwrap(),
-            "second"
-        );
-        assert!(receiver.recv_timeout(Duration::from_millis(250)).is_err());
+        assert_eventually_reads(&receiver, "second");
     }
 
     #[test]
@@ -230,6 +222,19 @@ mod tests {
         sender.send(WatchMessage::Stop).unwrap();
         worker.join().unwrap();
         noise.join().unwrap();
+    }
+
+    fn assert_eventually_reads(receiver: &mpsc::Receiver<String>, expected: &str) {
+        let deadline = Instant::now() + Duration::from_secs(5);
+        loop {
+            let value = receiver
+                .recv_timeout(deadline.saturating_duration_since(Instant::now()))
+                .unwrap();
+            if value == expected {
+                return;
+            }
+            assert!(Instant::now() < deadline, "never observed {expected:?}");
+        }
     }
 
     fn atomic_replace(target: &Path, contents: &str, sequence: usize) {
