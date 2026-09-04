@@ -11,6 +11,19 @@ import { expect, test } from '@playwright/test';
  * hermetic. `scripts/e2e-web.sh` starts one and sets it.
  */
 const webUrl = process.env.E2E_WEB_URL;
+const fixturePath = process.env.E2E_TODO_PATH;
+
+async function taskFile(): Promise<string> {
+  if (!fixturePath) throw new Error('E2E_TODO_PATH is required for file assertions');
+  const { readFile } = await import('node:fs/promises');
+  return readFile(fixturePath, 'utf8');
+}
+
+function taskLine(source: string, id: string): string {
+  const line = source.split(/\r?\n/).find((candidate) => candidate.includes(`<!--t:${id}-->`));
+  if (!line) throw new Error(`task ${id} is missing from fixture`);
+  return line;
+}
 
 test.describe('web transport', () => {
   test.skip(!webUrl, 'set E2E_WEB_URL to a running `todo serve` to enable');
@@ -26,6 +39,54 @@ test.describe('web transport', () => {
     // The fixture project has a task the mock data does not, so seeing it proves
     // the data came from the server rather than the built-in fixtures.
     await expect(page.getByText('给登录接口加限流')).toBeVisible();
+  });
+
+  test('quadrant writes only priority tokens and survives a fresh page', async ({ page, browser }) => {
+    test.skip(!fixturePath, 'E2E_TODO_PATH is required');
+    await page.goto('/');
+    await page.getByRole('button', { name: '象限' }).click();
+
+    const before = await taskFile();
+    const lowCard = page.getByRole('article', { name: /清理发布记录/ });
+    const highest = page.getByRole('region', { name: '!1 最高' });
+    await lowCard.dragTo(highest);
+    await expect(highest.getByText('清理发布记录')).toBeVisible();
+    const afterMove = await taskFile();
+    expect(taskLine(afterMove, 'low001')).toBe(taskLine(before, 'low001').replace('!4', '!1'));
+    expect(afterMove.replace(taskLine(afterMove, 'low001'), '')).toBe(before.replace(taskLine(before, 'low001'), ''));
+
+    await highest.getByRole('article', { name: /清理发布记录/ }).dragTo(page.getByRole('region', { name: /未定级/ }));
+    await expect(page.getByRole('region', { name: /未定级 1/ }).getByText('清理发布记录')).toBeVisible();
+    const afterClear = await taskFile();
+    expect(taskLine(afterClear, 'low001')).toBe(taskLine(before, 'low001').replace(' !4', ''));
+    expect(afterClear.replace(taskLine(afterClear, 'low001'), '')).toBe(before.replace(taskLine(before, 'low001'), ''));
+
+    const freshPage = await browser.newPage({ baseURL: webUrl });
+    await freshPage.goto('/');
+    await freshPage.getByRole('button', { name: '象限' }).click();
+    await expect(freshPage.getByRole('region', { name: /未定级 1/ }).getByText('清理发布记录')).toBeVisible();
+    await freshPage.close();
+  });
+
+  test('parent priority asks for scope and subtree update is atomic', async ({ page }) => {
+    test.skip(!fixturePath, 'E2E_TODO_PATH is required');
+    await page.goto('/');
+    await page.getByRole('button', { name: '象限' }).click();
+    const before = await taskFile();
+
+    const parent = page.getByRole('article', { name: /发布桌面版/ });
+    await parent.dragTo(page.getByRole('region', { name: '!1 最高' }));
+    const dialog = page.getByRole('dialog', { name: '这个任务包含子任务' });
+    await expect(dialog.getByRole('button', { name: '仅修改这一项' })).toBeVisible();
+    await expect(dialog.getByRole('button', { name: '同时修改 2 个子任务' })).toBeVisible();
+    await dialog.getByRole('button', { name: '同时修改 2 个子任务' }).click();
+    await expect(page.getByRole('region', { name: '!1 最高' }).getByText('发布桌面版')).toBeVisible();
+
+    const after = await taskFile();
+    expect(taskLine(after, 'parent1')).toBe(taskLine(before, 'parent1').replace('!2', '!1'));
+    expect(taskLine(after, 'child01')).toBe(taskLine(before, 'child01').replace('!3', '!1'));
+    expect(taskLine(after, 'child02')).toBe(taskLine(before, 'child02').replace('!4', '!1'));
+    for (const id of ['low001']) expect(taskLine(after, id)).toBe(taskLine(before, id));
   });
 
   test('strict done persists its note and Git evidence across reload', async ({ page }) => {

@@ -11,6 +11,7 @@
 # Local test and agent artifacts
 /.playwright-cli/
 /.agent-teams/
+/.scratch/
 *.log
 .DS_Store
 

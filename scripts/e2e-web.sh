@@ -31,6 +31,20 @@ git config user.name "e2e"
 git add TODO.md
 git commit -qm "initialize project"
 "$TODO_BIN" add "给登录接口加限流" --priority 1 >/dev/null
+# Seed a real parent subtree plus a low-priority task for quadrant persistence.
+python3 - <<'PY'
+from pathlib import Path
+path = Path('TODO.md')
+text = path.read_text()
+needle = '## Todo\n'
+fixture = '''## Todo
+- [ ] 发布桌面版 <!--t:parent1--> !2 #release
+    - [ ] 构建 macOS 安装包 <!--t:child01--> !3 #release
+    - [ ] 编写安装说明 <!--t:child02--> !4 #docs
+- [ ] 清理发布记录 <!--t:low001--> !4 #release
+'''
+path.write_text(text.replace(needle, fixture, 1))
+PY
 git add TODO.md
 git commit -qm "seed project task"
 # The desktop history scanner follows TODO.md specifically; advance that history
@@ -68,4 +82,5 @@ curl -fsS "http://127.0.0.1:$PORT/api/v1/health" >/dev/null || {
 echo "==> running web specs"
 cd "$ROOT/apps/desktop"
 E2E_WEB_URL="http://127.0.0.1:$PORT" \
+E2E_TODO_PATH="$WORKDIR/TODO.md" \
   "$ROOT/node_modules/.bin/playwright" test e2e/web.spec.ts --reporter=list
