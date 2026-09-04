@@ -102,7 +102,7 @@ jobs:
           printf 'version=%s\n' "$playwright_version" >> "$GITHUB_OUTPUT"
 
       - name: Cache Playwright Chromium
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ~/.cache/ms-playwright
           key: ${{ runner.os }}-playwright-chromium-${{ steps.playwright-version.outputs.version }}
@@ -172,7 +172,7 @@ jobs:
           printf 'version=%s\n' "$playwright_version" >> "$GITHUB_OUTPUT"
 
       - name: Cache Playwright Chromium
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ~/.cache/ms-playwright
           key: ${{ runner.os }}-playwright-chromium-${{ steps.playwright-version.outputs.version }}
