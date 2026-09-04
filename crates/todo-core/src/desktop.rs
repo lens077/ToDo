@@ -130,6 +130,12 @@ pub enum DesktopIntent {
         id: String,
         column: String,
         target: MoveTarget,
+        /// Completion details used only when the destination is a done column.
+        /// The column determines the checkbox state; callers never set it twice.
+        #[serde(default)]
+        note: Option<String>,
+        #[serde(default)]
+        evidence: Option<EvidenceRange>,
     },
 }
 
@@ -453,34 +459,62 @@ fn intent_changes(
                 },
             ])
         }
-        DesktopIntent::MoveTask { id, column, target } => {
+        DesktopIntent::MoveTask {
+            id,
+            column,
+            target,
+            note,
+            evidence,
+        } => {
             let task = find_task(document, id)?;
             let into_done = document.columns.iter().any(|candidate| {
                 candidate.id == *column && candidate.kind.as_deref() == Some("done")
             });
+            if note
+                .as_deref()
+                .is_some_and(|text| text.contains(['\n', '\r']))
+            {
+                return Err(Error::InvalidTaskLine(
+                    "completion note must remain on one line".into(),
+                ));
+            }
+            let completion_note = note.as_deref().filter(|text| !text.trim().is_empty());
+            if !into_done && (completion_note.is_some() || evidence.is_some()) {
+                return Err(Error::InvalidTaskLine(
+                    "completion details require a done destination".into(),
+                ));
+            }
             if into_done && !document.tasks[task].completed {
-                // Dropping a task into Done completes it, so it must clear the same
-                // gate as an explicit completion: strict needs a note, and partial or
-                // failed state must be resolved through the outcome path so its tokens
-                // are cleared rather than carried onto a `[x]` line.
+                // A move into Done is one completion transaction. Strict and
+                // in-progress tasks supply their outcome here so the checkbox,
+                // metadata cleanup, note, evidence, and placement write atomically.
+                let missing_note = completion_note.is_none();
                 if document
                     .completion_policy()
                     .requires_note(CompletionOutcome::Done)
+                    && missing_note
                 {
                     return Err(Error::InvalidTaskLine(
                         "strict completion requires a note for done; record the outcome instead of moving into Done".into(),
                     ));
                 }
-                if document.tasks[task].partial() {
+                if document.tasks[task].partial() && missing_note {
                     return Err(Error::InvalidTaskLine(
                         "task has partial or failed state; record the outcome instead of moving into Done".into(),
                     ));
                 }
             }
+            if let Some(evidence) = evidence {
+                validate_evidence(path, evidence)?;
+            }
             Ok(vec![Change::MoveTask {
                 task,
                 column: column.clone(),
                 position: resolve_move_target(document, column, target)?,
+                completion_note: completion_note.map(str::to_owned),
+                completion_evidence: evidence
+                    .as_ref()
+                    .map(|range| (range.from.clone(), range.to.clone())),
             }])
         }
     }

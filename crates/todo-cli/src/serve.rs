@@ -249,6 +249,10 @@ async fn set_completed(
 #[derive(Deserialize)]
 struct MoveInput {
     column: String,
+    #[serde(default)]
+    note: Option<String>,
+    #[serde(default)]
+    evidence: Option<todo_core::EvidenceRange>,
 }
 
 async fn move_task(
@@ -261,7 +265,11 @@ async fn move_task(
         DesktopIntent::MoveTask {
             id,
             column: input.column,
-            target: MoveTarget::ColumnEnd,
+            // Cross-column moves are surfaced as state transitions in the UI;
+            // the changed task must be the first item the user sees.
+            target: MoveTarget::ColumnStart,
+            note: input.note,
+            evidence: input.evidence,
         },
     )
 }

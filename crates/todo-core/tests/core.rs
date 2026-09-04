@@ -172,6 +172,8 @@ fn inserts_deletes_and_moves_only_whole_task_lines() {
             task: 2,
             column: "done".into(),
             position: InsertPosition::End,
+            completion_note: None,
+            completion_evidence: None,
         }],
     )
     .unwrap();

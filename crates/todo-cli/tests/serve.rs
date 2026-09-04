@@ -147,6 +147,39 @@ async fn progress_and_failure_require_notes_and_share_the_desktop_mutation_contr
 }
 
 #[tokio::test]
+async fn move_endpoint_changes_state_atomically_and_accepts_strict_completion_details() {
+    let dir = fixture();
+    let path = dir.path().join("TODO.md");
+    let strict = std::fs::read_to_string(&path).unwrap().replace(
+        "todo-spec: 1\n",
+        "todo-spec: 1\ncompletion-policy: strict\n",
+    );
+    std::fs::write(&path, strict).unwrap();
+    let base = start(dir.path(), false).await;
+
+    let (rejected, _) = post(&format!("{base}/tasks/aaaaaa/move"), r#"{"column":"done"}"#).await;
+    assert_eq!(rejected, 400);
+
+    let (completed, body) = post(
+        &format!("{base}/tasks/aaaaaa/move"),
+        r#"{"column":"done","note":"严格验收通过"}"#,
+    )
+    .await;
+    assert_eq!(completed, 200);
+    let value = json(&body);
+    assert_eq!(value["tasks"][0]["column"], "done");
+    assert_eq!(value["tasks"][0]["completed"], true);
+    assert_eq!(value["tasks"][0]["note"], "严格验收通过");
+
+    let (restored, body) = post(&format!("{base}/tasks/aaaaaa/move"), r#"{"column":"todo"}"#).await;
+    assert_eq!(restored, 200);
+    let value = json(&body);
+    assert_eq!(value["tasks"][0]["column"], "todo");
+    assert_eq!(value["tasks"][0]["completed"], false);
+    assert_eq!(value["tasks"][0]["note"], "严格验收通过");
+}
+
+#[tokio::test]
 async fn an_import_preview_writes_nothing() {
     let dir = fixture();
     std::fs::write(dir.path().join("plan.md"), "- [ ] 写迁移脚本\n").unwrap();
@@ -235,6 +268,7 @@ async fn read_only_refuses_writes_but_still_serves_reads() {
             format!("{base}/tasks/aaaaaa/fail"),
             "{\"note\":\"attempt failed\"}",
         ),
+        (format!("{base}/tasks/aaaaaa/move"), "{\"column\":\"done\"}"),
     ] {
         let (status, _) = post(&url, payload).await;
         assert_eq!(status, 403, "{url} must be refused in read-only mode");

@@ -98,6 +98,37 @@ test('goal regions stack without horizontal scrolling', async ({ page }) => {
   expect(overflow.scrollWidth).toBeLessThanOrEqual(overflow.clientWidth + 1);
 });
 
+test('touch menu can restore a completed task to the top of Todo', async ({ page }) => {
+  await page.goto('/');
+  const focusButtonBounds = await page.locator('.task-card--focus .move-menu').boundingBox();
+  expect(focusButtonBounds?.width).toBeGreaterThan(44);
+  expect(focusButtonBounds?.height).toBeGreaterThanOrEqual(44);
+
+  const completed = page.getByRole('article', { name: /确定 TODO\.md v1 的保真写回边界/ });
+  const menuButton = completed.getByRole('button', { name: /打开“确定 TODO\.md v1.*任务菜单/ });
+  const buttonBounds = await menuButton.boundingBox();
+  expect(buttonBounds?.width).toBeGreaterThanOrEqual(44);
+  expect(buttonBounds?.height).toBeGreaterThanOrEqual(44);
+  await menuButton.click();
+  await page.getByRole('menuitem', { name: '恢复到 待梳理' }).click();
+
+  const first = page.locator('[aria-label="待梳理"]').getByRole('article').first();
+  await expect(first).toHaveAccessibleName(/未完成 Project Task：确定 TODO\.md v1/);
+
+  await first.getByRole('button', { name: /打开“确定 TODO\.md v1.*任务菜单/ }).click();
+  await page.getByRole('menuitem', { name: '移动到…' }).click();
+  const submenu = page.getByRole('menu', { name: '移动到列' });
+  const bounds = await submenu.boundingBox();
+  const viewportWidth = page.viewportSize()?.width ?? 0;
+  expect(bounds).not.toBeNull();
+  expect(bounds!.x).toBeGreaterThanOrEqual(0);
+  expect(bounds!.width).toBeGreaterThanOrEqual(200);
+  expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(viewportWidth);
+  await submenu.getByRole('menuitem', { name: '等待验证' }).click();
+  await expect(page.locator('[aria-label="等待验证"]').getByRole('article').first())
+    .toHaveAccessibleName(/未完成 Project Task：确定 TODO\.md v1/);
+});
+
 test('read-only mode disables task, capture, import, and restore writes', async ({ page }) => {
   await useReadOnlyBackend(page);
   await page.goto('/');

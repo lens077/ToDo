@@ -1,5 +1,5 @@
 import * as React from 'react';
-import type { DesktopColumn, DesktopSnapshot, DesktopTask, MoveTarget } from '../lib/desktop';
+import type { DesktopColumn, DesktopSnapshot, DesktopTask } from '../lib/desktop';
 import {
   clampFocusLimit,
   dueBands,
@@ -19,7 +19,7 @@ interface GoalViewProps extends Omit<TaskCardActions, 'onSetCompleted' | 'onMove
   busyKeys: Set<string>;
   readOnly: boolean;
   onSetCompleted: (id: string, completed: boolean) => Promise<boolean>;
-  onMove: (id: string, column: string, target?: MoveTarget) => Promise<boolean>;
+  onMove: (id: string, column: string) => Promise<boolean>;
 }
 
 function storage(): Storage | null {
@@ -57,15 +57,31 @@ function useDropTargets(
   const [announcement, setAnnouncement] = React.useState('');
 
   const moveTask = React.useCallback(
-    async (taskId: string, columnId: string, target?: MoveTarget) => {
+    async (taskId: string, columnId: string, allowSameColumn = false) => {
       if (readOnly) return;
       const task = snapshot.tasks.find((item) => item.id === taskId);
-      if (!task || (task.column === columnId && !target)) return;
       const destination = snapshot.columns.find((column) => column.id === columnId);
-      const name = destination?.name ?? columnId;
-      setAnnouncement(`正在把“${task.body}”移动到${name}`);
-      const succeeded = await onMove(taskId, columnId, target);
-      setAnnouncement(succeeded ? `“${task.body}”已移动到${name}` : `“${task.body}”没有移动，仍保留原位置`);
+      if (!task || !destination) return;
+      if (
+        !allowSameColumn
+        && task.column === columnId
+        && task.completed === destination.done
+      ) {
+        setAnnouncement(`“${task.body}”仍在${destination.name}`);
+        return;
+      }
+      setAnnouncement(`正在把“${task.body}”移动到${destination.name}顶部`);
+      const succeeded = await onMove(taskId, columnId);
+      setAnnouncement(
+        succeeded
+          ? `“${task.body}”已移动到${destination.name}顶部`
+          : `“${task.body}”没有移动，仍保留原位置`,
+      );
+      requestAnimationFrame(() => {
+        const card = Array.from(document.querySelectorAll<HTMLElement>('[data-task-id]'))
+          .find((element) => element.dataset.taskId === taskId);
+        card?.focus();
+      });
     },
     [onMove, readOnly, snapshot.columns, snapshot.tasks],
   );
@@ -173,9 +189,15 @@ export function GoalView({
     upcoming: bands.upcoming.size,
   };
 
+  const moveTargets = {
+    todo: columns.backlog[0] ?? null,
+    doing: columns.focus,
+    done: columns.done[0] ?? null,
+  };
   const cardActions = (task: DesktopTask, variant: 'card' | 'compact' | 'focus') => ({
     task,
     columns: snapshot.columns,
+    moveTargets,
     busy: Boolean(task.id && busyKeys.has(`task:${task.id}`)),
     readOnly,
     variant,
@@ -309,7 +331,7 @@ export function GoalView({
                           type="button"
                           className="focus-queue__promote"
                           disabled={busyKeys.has(`task:${task.id}`)}
-                          onClick={() => void drop.moveTask(task.id!, columns.focus!.id, { type: 'column_start' })}
+                          onClick={() => void drop.moveTask(task.id!, columns.focus!.id, true)}
                         >
                           提到最前
                         </button>
@@ -326,8 +348,9 @@ export function GoalView({
         {/* ── Queue ─────────────────────────────────────────────────── */}
         <section
           id="goal-todo-region"
-          className={`goal-region goal-region--todo${layout.todoCollapsed ? ' is-collapsed' : ''}`}
+          className={`goal-region goal-region--todo${layout.todoCollapsed ? ' is-collapsed' : ''}${layout.todoCollapsed && drop.isDropTarget(columns.backlog[0]?.id ?? null) ? ' is-drop-target' : ''}`}
           aria-labelledby="goal-todo-title"
+          {...(layout.todoCollapsed ? drop.dropProps(columns.backlog[0]?.id ?? null) : {})}
         >
           <header className="goal-region__header">
             <div className="goal-region__title">
@@ -394,7 +417,7 @@ export function GoalView({
                   <div className="todo-lane__cards">
                     {orphanTasks.filter(passesFilter).map((task, index) => (
                       <div className="task-card-wrap" style={{ '--task-index': index } as React.CSSProperties} key={task.id ?? `orphan-${index}`}>
-                        <TaskCard {...cardActions(task, 'card')} />
+                        <TaskCard {...cardActions(task, 'card')} {...drop.cardDragProps} />
                       </div>
                     ))}
                   </div>
@@ -438,9 +461,9 @@ export function GoalView({
                   doneTasks.map((task, index) => (
                     <div className="task-card-wrap" style={{ '--task-index': index } as React.CSSProperties} key={task.id ?? `done-${index}`}>
                       {!isDoneColumn(task.column) && (
-                        <span className="done-list__stray">仍在「{columnName(task.column) ?? '未归列'}」，拖到「{doneName}」归档</span>
+                        <span className="done-list__stray">仍在「{columnName(task.column) ?? '未归列'}」，拖动或打开菜单归档到「{doneName}」</span>
                       )}
-                      <TaskCard {...cardActions(task, 'compact')} />
+                      <TaskCard {...cardActions(task, 'compact')} {...drop.cardDragProps} />
                     </div>
                   ))
                 ) : (

@@ -14,13 +14,21 @@ import { useDesktop } from './hooks/useDesktop';
 import { useAppSettings } from './lib/appSettings';
 import { transportCapabilities, type DesktopTask } from './lib/desktop';
 
+interface CompletionRequest {
+  task: DesktopTask;
+  /** Present when the dialog was opened by a move into Done. */
+  destinationColumn?: string;
+  settleMove?: (moved: boolean) => void;
+}
+
 export function App() {
   // 目标 is the landing view: in-flight work, the queue, and finished work on
   // one surface, so "what should I do now" is answered without navigating.
   const [activeView, setActiveView] = React.useState<MainView>('goal');
   const [settingsOpen, setSettingsOpen] = React.useState(false);
   const [providerSettingsOpen, setProviderSettingsOpen] = React.useState(false);
-  const [completionTask, setCompletionTask] = React.useState<DesktopTask | null>(null);
+  const [completionRequest, setCompletionRequest] = React.useState<CompletionRequest | null>(null);
+  const completionRequestRef = React.useRef<CompletionRequest | null>(null);
   const [confirmTask, setConfirmTask] = React.useState<DesktopTask | null>(null);
   const [appSettings] = useAppSettings();
   const model = useDesktop();
@@ -30,6 +38,17 @@ export function App() {
     ? model.snapshot.today.overdue.length + model.snapshot.today.today.length
     : 0;
 
+  const openCompletion = React.useCallback((request: CompletionRequest) => {
+    completionRequestRef.current?.settleMove?.(false);
+    completionRequestRef.current = request;
+    setCompletionRequest(request);
+  }, []);
+
+  React.useEffect(() => () => {
+    completionRequestRef.current?.settleMove?.(false);
+    completionRequestRef.current = null;
+  }, []);
+
   const setCompleted = React.useCallback((id: string, completed: boolean) => {
     if (!completed) return model.setCompleted(id, false);
     const task = model.snapshot?.tasks.find((item) => item.id === id);
@@ -37,7 +56,7 @@ export function App() {
     if (model.snapshot?.completion_policy === 'strict') {
       // Strict completion needs a note and an evidence decision; that is the
       // one outcome that still earns a full outcome dialog.
-      setCompletionTask(task);
+      openCompletion({ task });
       return Promise.resolve(false);
     }
     if (appSettings.confirmCompletion) {
@@ -47,7 +66,26 @@ export function App() {
       return Promise.resolve(false);
     }
     return model.setCompleted(id, true);
-  }, [appSettings.confirmCompletion, model]);
+  }, [appSettings.confirmCompletion, model, openCompletion]);
+
+  const moveTask = React.useCallback((id: string, column: string): Promise<boolean> => {
+    const task = model.snapshot?.tasks.find((item) => item.id === id);
+    const destination = model.snapshot?.columns.find((item) => item.id === column);
+    if (!task || !destination) return Promise.resolve(false);
+    const enteringDone = destination.done && !task.completed;
+    const needsOutcome = enteringDone && (
+      model.snapshot?.completion_policy === 'strict'
+      || task.progress !== null
+      || task.failed_on !== null
+    );
+    if (!needsOutcome) return model.moveTask(id, column);
+
+    // Keep the drop pending until the protected outcome write succeeds or the
+    // user cancels. This lets the live announcement report the real result.
+    return new Promise<boolean>((settleMove) => {
+      openCompletion({ task, destinationColumn: column, settleMove });
+    });
+  }, [model, openCompletion]);
 
   const confirmTick = React.useCallback(async () => {
     if (!confirmTask?.id) return;
@@ -55,15 +93,34 @@ export function App() {
     if (written) setConfirmTask(null);
   }, [confirmTask, model]);
 
+  const cancelCompletion = React.useCallback(() => {
+    completionRequestRef.current?.settleMove?.(false);
+    completionRequestRef.current = null;
+    setCompletionRequest(null);
+  }, []);
+
   const confirmCompletion = React.useCallback(async (decision: CompletionDecision) => {
-    if (!completionTask?.id) return;
+    const taskId = completionRequest?.task.id;
+    if (!taskId) return;
+    const { destinationColumn, settleMove } = completionRequest;
     const written = decision.outcome === 'done'
-      ? await model.setCompleted(completionTask.id, true, decision.note, decision.evidence)
+      ? destinationColumn
+        ? await model.moveTask(taskId, destinationColumn, {
+            note: decision.note,
+            evidence: decision.evidence,
+          })
+        : await model.setCompleted(taskId, true, decision.note, decision.evidence)
       : decision.outcome === 'partial'
-        ? await model.setPartial(completionTask.id, decision.percent, decision.note)
-        : await model.setFailed(completionTask.id, decision.note);
-    if (written) setCompletionTask(null);
-  }, [completionTask, model]);
+        ? await model.setPartial(taskId, decision.percent, decision.note)
+        : await model.setFailed(taskId, decision.note);
+    if (written) {
+      settleMove?.(decision.outcome === 'done' && Boolean(destinationColumn));
+      if (completionRequestRef.current === completionRequest) {
+        completionRequestRef.current = null;
+        setCompletionRequest(null);
+      }
+    }
+  }, [completionRequest, model]);
 
   return (
     <div className="app-shell">
@@ -129,7 +186,7 @@ export function App() {
               onSetCompleted={setCompleted}
               onSetPartial={model.setPartial}
               onSetFailed={model.setFailed}
-              onMove={model.moveTask}
+              onMove={moveTask}
             />
           ) : (
             <EmptyState
@@ -141,12 +198,16 @@ export function App() {
         </main>
       </div>
 
-      {completionTask && (
+      {completionRequest && (
         <CompletionDialog
-          task={completionTask}
+          key={`${completionRequest.task.id ?? completionRequest.task.body}:${completionRequest.destinationColumn ?? 'checkbox'}`}
+          task={completionRequest.task}
           initialOutcome="done"
-          busy={Boolean(completionTask.id && model.busyKeys.has(`task:${completionTask.id}`))}
-          onCancel={() => setCompletionTask(null)}
+          busy={Boolean(
+            completionRequest.task.id
+            && model.busyKeys.has(`task:${completionRequest.task.id}`)
+          )}
+          onCancel={cancelCompletion}
           onConfirm={(decision) => void confirmCompletion(decision)}
         />
       )}

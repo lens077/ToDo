@@ -48,6 +48,10 @@ pub enum Change {
         task: usize,
         column: String,
         position: InsertPosition,
+        /// A fresh completion note when this move enters a done column.
+        completion_note: Option<String>,
+        /// A validated Git range written when this move enters a done column.
+        completion_evidence: Option<(String, String)>,
     },
     /// Write the `↳ … <!--n:ID-->` line under a task, replacing any existing note.
     SetNote {
@@ -283,7 +287,16 @@ fn change_to_edits(document: &Document, change: &Change) -> Result<Vec<Edit>> {
             task,
             column,
             position,
-        } => move_task_edits(document, *task, column, *position),
+            completion_note,
+            completion_evidence,
+        } => move_task_edits(
+            document,
+            *task,
+            column,
+            *position,
+            completion_note.as_deref(),
+            completion_evidence.as_ref(),
+        ),
         Change::SetNote { task, text } => {
             reject_newline(text)?;
             validate_note_text(text)?;
@@ -419,8 +432,32 @@ fn move_task_edits(
     task_index: usize,
     column_id: &str,
     position: InsertPosition,
+    completion_note: Option<&str>,
+    completion_evidence: Option<&(String, String)>,
 ) -> Result<Vec<Edit>> {
     let root = task_at(document, task_index)?;
+    let target_column = document
+        .columns
+        .iter()
+        .find(|column| column.id == column_id)
+        .ok_or_else(|| Error::ColumnNotFound(column_id.into()))?;
+    let complete = target_column.kind.as_deref() == Some("done");
+    if !complete && (completion_note.is_some() || completion_evidence.is_some()) {
+        return Err(Error::InvalidTaskLine(
+            "completion details require a done destination".into(),
+        ));
+    }
+    if let Some(note) = completion_note {
+        reject_newline(note)?;
+        validate_note_text(note)?;
+    }
+
+    let source_done = root.column.as_deref().is_some_and(|source_column| {
+        document
+            .columns
+            .iter()
+            .any(|column| column.id == source_column && column.kind.as_deref() == Some("done"))
+    });
     let subtree_end_index = document
         .tasks
         .iter()
@@ -428,65 +465,98 @@ fn move_task_edits(
         .skip(task_index + 1)
         .find(|(_, task)| task.indent_level <= root.indent_level)
         .map_or(document.tasks.len(), |(index, _)| index);
-    let block_range =
-        root.full_line_range.start..document.tasks[subtree_end_index - 1].full_line_range.end;
-    let destination = match position {
-        InsertPosition::After(index) => {
-            let target = task_at(document, index)?;
-            let next_same_column = document
-                .tasks
-                .iter()
-                .skip(index + 1)
-                .find(|candidate| candidate.column == target.column)
-                .map(|candidate| candidate.full_line_range.start);
-            next_same_column
-                .or_else(|| {
-                    document
-                        .columns
-                        .iter()
-                        .find(|column| column.id == column_id)
-                        .map(|column| column.content_range.end)
-                })
-                .unwrap_or(target.full_line_range.end)
+    if let InsertPosition::Before(target) | InsertPosition::After(target) = position {
+        if target > task_index && target < subtree_end_index {
+            return Err(Error::InvalidTaskLine(
+                "move target belongs to the task subtree".into(),
+            ));
         }
-        _ => insertion_offset(document, Some(column_id), position)?,
-    };
-    if block_range.contains(&destination) || destination == block_range.end {
-        return Ok(Vec::new());
     }
+    let last = &document.tasks[subtree_end_index - 1];
+    let block_end = last
+        .note
+        .as_ref()
+        .map_or(last.full_line_range.end, |note| note.full_line_range.end);
+    let block_range = root.full_line_range.start..block_end;
+    let destination = insertion_offset(document, Some(column_id), position)?;
     let target_indent = match position {
         InsertPosition::Before(index) => task_at(document, index)?.indent.clone(),
         InsertPosition::After(index) => task_at(document, index)?.indent.clone(),
         InsertPosition::Start | InsertPosition::End => String::new(),
     };
-    let target_column = document
-        .columns
-        .iter()
-        .find(|column| column.id == column_id)
-        .ok_or_else(|| Error::ColumnNotFound(column_id.into()))?;
-    let complete = target_column.kind.as_deref() == Some("done");
     let newline = local_newline(document, destination);
     let mut moved = String::new();
-    for task in &document.tasks[task_index..subtree_end_index] {
+    for (offset, task) in document.tasks[task_index..subtree_end_index]
+        .iter()
+        .enumerate()
+    {
         let relative_indent = task
             .indent
             .strip_prefix(&root.indent)
             .unwrap_or(&task.indent);
-        let mut raw = document.source[task.line_range.clone()].to_string();
-        raw.replace_range(
-            0..task.indent.len(),
-            &format!("{target_indent}{relative_indent}"),
-        );
-        if complete && !task.completed {
-            let local_start = task.checkbox_range.start - task.line_range.start
-                + target_indent.len()
-                + relative_indent.len()
-                - task.indent.len();
-            raw.replace_range(local_start..local_start + 3, "[x]");
-        }
-        moved.push_str(&raw);
+        let new_indent = format!("{target_indent}{relative_indent}");
+        let destination_completed = if offset == 0 {
+            complete
+        } else if complete && !source_done {
+            true
+        } else if !complete && source_done {
+            false
+        } else {
+            task.completed
+        };
+        let entering_done = destination_completed && !task.completed;
+        let clear_outcome = destination_completed
+            && (entering_done || task.progress().is_some() || task.failure().is_some());
+        let evidence = (offset == 0).then_some(completion_evidence).flatten();
+        moved.push_str(&render_moved_task_line(
+            document,
+            task,
+            &new_indent,
+            destination_completed,
+            clear_outcome,
+            evidence,
+        )?);
         moved.push_str(newline);
+
+        let fresh_note = (offset == 0 && complete)
+            .then_some(completion_note)
+            .flatten();
+        if let Some(note) = fresh_note {
+            let id = task.id.as_deref().ok_or(Error::MissingTaskId)?;
+            moved.push_str(&format!("{new_indent}      ↳ {note} <!--n:{id}-->"));
+            moved.push_str(newline);
+        } else if !(offset == 0 && complete && entering_done) {
+            if let Some(note) = &task.note {
+                let relative_indent = note
+                    .indent
+                    .strip_prefix(&task.indent)
+                    .unwrap_or(&note.indent);
+                let mut raw = document.source[note.line_range.clone()].to_string();
+                raw.replace_range(
+                    0..note.indent.len(),
+                    &format!("{new_indent}{relative_indent}"),
+                );
+                moved.push_str(&raw);
+                moved.push_str(newline);
+            }
+        }
     }
+
+    // A same-column move can already point inside its own block. It still has
+    // work to do when the column state must repair the checkbox, so replace the
+    // block in place instead of treating it as a no-op.
+    if block_range.contains(&destination) || destination == block_range.end {
+        let original = &document.source[block_range.clone()];
+        if !original.ends_with(['\n', '\r']) && moved.ends_with(newline) {
+            moved.truncate(moved.len() - newline.len());
+        }
+        return if original == moved {
+            Ok(Vec::new())
+        } else {
+            Ok(vec![edit(document, block_range, moved)])
+        };
+    }
+
     let prefix = if destination > 0 && !document.source[..destination].ends_with('\n') {
         newline
     } else {
@@ -502,6 +572,76 @@ fn move_task_edits(
     ])
 }
 
+fn render_moved_task_line(
+    document: &Document,
+    task: &crate::Task,
+    new_indent: &str,
+    completed: bool,
+    clear_outcome: bool,
+    completion_evidence: Option<&(String, String)>,
+) -> Result<String> {
+    let line_start = task.line_range.start;
+    let mut raw = document.source[task.line_range.clone()].to_string();
+    let mut replacements: Vec<(Range<usize>, String)> = Vec::new();
+
+    if task.indent != new_indent {
+        replacements.push((0..task.indent.len(), new_indent.into()));
+    }
+    if task.completed != completed {
+        replacements.push((
+            task.checkbox_range.start - line_start..task.checkbox_range.end - line_start,
+            if completed { "[x]" } else { "[ ]" }.into(),
+        ));
+    }
+    if clear_outcome {
+        for metadata in &task.metadata {
+            if matches!(
+                metadata.kind,
+                TokenKind::Progress(_) | TokenKind::Failure(_)
+            ) {
+                let mut start = metadata.range.start - line_start;
+                if start > task.body_range.end - line_start
+                    && raw.as_bytes()[start - 1].is_ascii_whitespace()
+                {
+                    start -= 1;
+                }
+                replacements.push((start..metadata.range.end - line_start, String::new()));
+            }
+        }
+    }
+    if let Some((from, to)) = completion_evidence {
+        let kind = TokenKind::Evidence {
+            from: from.clone(),
+            to: to.clone(),
+        };
+        let rendered = format!("🔗{from}..{to}");
+        validate_metadata(&kind, &rendered)?;
+        if let Some(existing) = task
+            .metadata
+            .iter()
+            .find(|metadata| matches!(metadata.kind, TokenKind::Evidence { .. }))
+        {
+            replacements.push((
+                existing.range.start - line_start..existing.range.end - line_start,
+                rendered,
+            ));
+        } else {
+            let separator = if raw.as_bytes().last().is_some_and(u8::is_ascii_whitespace) {
+                ""
+            } else {
+                " "
+            };
+            replacements.push((raw.len()..raw.len(), format!("{separator}{rendered}")));
+        }
+    }
+
+    replacements.sort_by_key(|(range, _)| range.start);
+    for (range, replacement) in replacements.into_iter().rev() {
+        raw.replace_range(range, &replacement);
+    }
+    Ok(raw)
+}
+
 fn insertion_offset(
     document: &Document,
     column: Option<&str>,
@@ -511,24 +651,26 @@ fn insertion_offset(
         InsertPosition::Before(index) => Ok(task_at(document, index)?.full_line_range.start),
         InsertPosition::After(index) => {
             let task = task_at(document, index)?;
-            let subtree_end = document
-                .tasks
-                .iter()
-                .skip(index + 1)
-                .find(|candidate| {
-                    candidate.indent_level <= task.indent_level && candidate.column == task.column
-                })
-                .map(|candidate| candidate.full_line_range.start)
-                .or_else(|| {
-                    task.column.as_deref().and_then(|column_id| {
-                        document
-                            .columns
-                            .iter()
-                            .find(|column| column.id == column_id)
-                            .map(|column| column.content_range.end)
+            let next_sibling = document.tasks.iter().skip(index + 1).find(|candidate| {
+                candidate.indent_level <= task.indent_level && candidate.column == task.column
+            });
+            let subtree_end = if let Some(candidate) = next_sibling {
+                candidate.full_line_range.start
+            } else {
+                let last = document
+                    .tasks
+                    .iter()
+                    .skip(index + 1)
+                    .take_while(|candidate| {
+                        candidate.column == task.column
+                            && candidate.indent_level > task.indent_level
                     })
-                })
-                .unwrap_or(task.full_line_range.end);
+                    .last()
+                    .unwrap_or(task);
+                last.note
+                    .as_ref()
+                    .map_or(last.full_line_range.end, |note| note.full_line_range.end)
+            };
             Ok(subtree_end)
         }
         InsertPosition::Start | InsertPosition::End => {
@@ -554,7 +696,10 @@ fn insertion_offset(
                 }
                 InsertPosition::End => {
                     if let Some(task) = tasks.last() {
-                        Ok(task.full_line_range.end)
+                        Ok(task
+                            .note
+                            .as_ref()
+                            .map_or(task.full_line_range.end, |note| note.full_line_range.end))
                     } else if let Some(id) = column {
                         let column = document
                             .columns

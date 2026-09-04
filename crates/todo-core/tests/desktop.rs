@@ -277,7 +277,7 @@ fn strict_done_requires_a_current_note_and_rejects_invalid_evidence_without_writ
 
 #[test]
 fn moving_into_a_done_column_cannot_bypass_the_completion_gate() {
-    let (dir, backend, _, _) = strict_git_project();
+    let (dir, backend, first, head) = strict_git_project();
     let path = dir.path().join("TODO.md");
     let before = fs::read(&path).unwrap();
 
@@ -286,11 +286,59 @@ fn moving_into_a_done_column_cannot_bypass_the_completion_gate() {
             id: "aaaaaa".into(),
             column: "done".into(),
             target: MoveTarget::ColumnEnd,
+            note: None,
+            evidence: None,
         })
         .unwrap_err()
         .to_string();
     assert!(error.contains("requires a note"), "{error}");
     assert_eq!(fs::read(&path).unwrap(), before);
+
+    let completed = backend
+        .mutate(DesktopIntent::MoveTask {
+            id: "aaaaaa".into(),
+            column: "done".into(),
+            target: MoveTarget::ColumnStart,
+            note: Some("accepted through the outcome dialog".into()),
+            evidence: Some(EvidenceRange {
+                from: first,
+                to: head,
+            }),
+        })
+        .unwrap();
+    let task = completed
+        .tasks
+        .iter()
+        .find(|task| task.id.as_deref() == Some("aaaaaa"))
+        .unwrap();
+    assert!(task.completed);
+    assert_eq!(task.column.as_deref(), Some("done"));
+    assert_eq!(
+        task.note.as_deref(),
+        Some("accepted through the outcome dialog")
+    );
+    assert!(task.evidence.is_some());
+
+    let reopened = backend
+        .mutate(DesktopIntent::MoveTask {
+            id: "aaaaaa".into(),
+            column: "todo".into(),
+            target: MoveTarget::ColumnStart,
+            note: None,
+            evidence: None,
+        })
+        .unwrap();
+    let task = reopened
+        .tasks
+        .iter()
+        .find(|task| task.id.as_deref() == Some("aaaaaa"))
+        .unwrap();
+    assert!(!task.completed);
+    assert_eq!(
+        task.note.as_deref(),
+        Some("accepted through the outcome dialog")
+    );
+    assert!(task.evidence.is_some());
 
     // Normal policy: a task that carries partial/failure state must be completed
     // through the outcome path so those tokens are cleared, not dragged into Done.
@@ -307,25 +355,54 @@ fn moving_into_a_done_column_cannot_bypass_the_completion_gate() {
             id: "aaaaaa".into(),
             column: "done".into(),
             target: MoveTarget::ColumnEnd,
+            note: None,
+            evidence: None,
         })
         .is_err());
     assert_eq!(fs::read(&path).unwrap(), before);
-    // A plain task still completes by moving into Done.
+
+    let resolved = backend
+        .mutate(DesktopIntent::MoveTask {
+            id: "aaaaaa".into(),
+            column: "done".into(),
+            target: MoveTarget::ColumnStart,
+            note: Some("finished the remaining integration".into()),
+            evidence: None,
+        })
+        .unwrap();
+    let task = resolved
+        .tasks
+        .iter()
+        .find(|task| task.id.as_deref() == Some("aaaaaa"))
+        .unwrap();
+    assert!(task.completed);
+    assert_eq!(task.progress, None);
+    assert_eq!(
+        task.note.as_deref(),
+        Some("finished the remaining integration")
+    );
+
+    // A plain task completes without a dialog and lands at the top of Done.
     let moved = backend
         .mutate(DesktopIntent::MoveTask {
             id: "bbbbbb".into(),
             column: "done".into(),
-            target: MoveTarget::ColumnEnd,
+            target: MoveTarget::ColumnStart,
+            note: Some("   ".into()),
+            evidence: None,
         })
         .unwrap();
-    assert!(
-        moved
-            .tasks
-            .iter()
-            .find(|task| task.id.as_deref() == Some("bbbbbb"))
-            .unwrap()
-            .completed
+    let done: Vec<_> = moved
+        .tasks
+        .iter()
+        .filter(|task| task.column.as_deref() == Some("done"))
+        .collect();
+    assert_eq!(
+        done.first().and_then(|task| task.id.as_deref()),
+        Some("bbbbbb")
     );
+    assert!(done[0].completed);
+    assert_eq!(done[0].note, None);
 }
 
 #[test]
@@ -383,6 +460,8 @@ fn move_resolves_target_id_after_external_index_shift() {
             target: MoveTarget::After {
                 task_id: "cccccc".into(),
             },
+            note: None,
+            evidence: None,
         })
         .unwrap();
     let ids: Vec<_> = moved
@@ -411,6 +490,8 @@ fn move_rejects_a_target_from_another_column_without_writing() {
         target: MoveTarget::Before {
             task_id: "gggggg".into(),
         },
+        note: None,
+        evidence: None,
     });
     assert!(result.is_err());
     assert_eq!(fs::read(path).unwrap(), before);

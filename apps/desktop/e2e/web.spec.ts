@@ -51,6 +51,27 @@ test.describe('web transport', () => {
     expect(persisted.evidence).toBe(evidence);
   });
 
+  test('restoring through the context menu preserves the outcome note and evidence', async ({ page }) => {
+    await page.goto('/');
+    const before = await page.request.get('/api/v1/snapshot');
+    const completed = (await before.json()).tasks.find(
+      (task: { body: string }) => task.body === '给登录接口加限流',
+    );
+
+    const card = page.getByRole('article', { name: /给登录接口加限流/ });
+    await card.click({ button: 'right' });
+    await page.getByRole('menuitem', { name: '恢复到 Todo' }).click();
+
+    const reopened = await page.request.get('/api/v1/snapshot');
+    const task = (await reopened.json()).tasks.find(
+      (candidate: { body: string }) => candidate.body === '给登录接口加限流',
+    );
+    expect(task.completed).toBe(false);
+    expect(task.column).toBe('todo');
+    expect(task.note).toBe(completed.note);
+    expect(task.evidence).toBe(completed.evidence);
+  });
+
   test('writes reach the file through the API', async ({ page }) => {
     await page.goto('/');
 

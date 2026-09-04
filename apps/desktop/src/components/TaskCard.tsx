@@ -3,6 +3,7 @@ import type { DragEvent } from 'react';
 import type { DesktopColumn, DesktopTask } from '../lib/desktop';
 import { formatDueDate, shortId } from '../lib/format';
 import { Icon } from './Icon';
+import { TaskContextMenu, type TaskMoveTargets } from './TaskContextMenu';
 
 export type TaskCardVariant = 'card' | 'compact' | 'focus';
 
@@ -18,6 +19,7 @@ export interface TaskCardActions {
 interface TaskCardProps extends TaskCardActions {
   task: DesktopTask;
   columns: DesktopColumn[];
+  moveTargets: TaskMoveTargets;
   busy: boolean;
   readOnly: boolean;
   variant?: TaskCardVariant;
@@ -138,6 +140,7 @@ function OutcomeInline({
 export function TaskCard({
   task,
   columns,
+  moveTargets,
   busy,
   readOnly,
   variant = 'card',
@@ -149,7 +152,11 @@ export function TaskCard({
   onMove,
 }: TaskCardProps) {
   const [inline, setInline] = React.useState<InlineOutcome | null>(null);
-  const compact = variant === 'compact';
+  const [contextMenu, setContextMenu] = React.useState<{
+    x: number;
+    y: number;
+    restoreFocus: HTMLElement | null;
+  } | null>(null);
   const focus = variant === 'focus';
   const movable = Boolean(task.id && columns.length > 1 && !busy && !readOnly);
   const dueTone = task.due && !task.completed && task.due < localDateKey() ? 'overdue' : 'normal';
@@ -161,37 +168,42 @@ export function TaskCard({
 
   const startDrag = (event: DragEvent<HTMLElement>) => {
     if (!task.id) return;
+    setContextMenu(null);
     event.dataTransfer.effectAllowed = 'move';
     event.dataTransfer.setData('text/plain', task.id);
     onDragStart?.(task.id);
   };
 
-  const moveMenu = !compact && !readOnly && (
-    <details className="move-menu">
-      <summary aria-label={`移动“${task.body}”到其他列`} title="移动到列">
-        <Icon name="move" />
-        {focus && <span>移动</span>}
-      </summary>
-      <div className="move-menu__popover" role="menu" aria-label="移动到列">
-        <span className="move-menu__label">移动到</span>
-        {columns.map((column) => (
-          <button
-            type="button"
-            role="menuitem"
-            key={column.id}
-            disabled={!movable || column.id === task.column}
-            onClick={(event) => {
-              event.currentTarget.closest('details')?.removeAttribute('open');
-              if (task.id) onMove(task.id, column.id);
-            }}
-          >
-            <span className={`column-dot column-dot--${column.done ? 'done' : 'active'}`} />
-            {column.name}
-            {column.id === task.column && <span className="move-menu__current">当前</span>}
-          </button>
-        ))}
-      </div>
-    </details>
+  const openMenuAt = (x: number, y: number, restoreFocus: HTMLElement | null) => {
+    if (movable && !inline) setContextMenu({ x, y, restoreFocus });
+  };
+  const closeMenu = (restoreFocus = false) => {
+    const target = contextMenu?.restoreFocus;
+    setContextMenu(null);
+    if (restoreFocus && target) {
+      requestAnimationFrame(() => {
+        if (target.isConnected) target.focus();
+      });
+    }
+  };
+
+  const moveMenu = !readOnly && task.id && (
+    <button
+      type="button"
+      className="move-menu"
+      aria-label={`打开“${task.body}”的任务菜单`}
+      aria-haspopup="menu"
+      aria-expanded={Boolean(contextMenu)}
+      title="任务菜单"
+      disabled={!movable}
+      onClick={(event) => {
+        const rect = event.currentTarget.getBoundingClientRect();
+        openMenuAt(rect.right + 4, rect.bottom + 4, event.currentTarget);
+      }}
+    >
+      <Icon name="move" />
+      {focus && <span>移动</span>}
+    </button>
   );
 
   const partialButton = canRecord && (
@@ -227,10 +239,28 @@ export function TaskCard({
   return (
     <article
       className={`task-card task-card--${variant}${task.completed ? ' is-complete' : ''}${busy ? ' is-busy' : ''}${readOnly ? ' is-read-only' : ''}${inline ? ' is-editing' : ''}`}
-      draggable={movable && !compact && !inline}
+      data-task-id={task.id ?? undefined}
+      draggable={movable && !inline}
       aria-disabled={readOnly || undefined}
       onDragStart={startDrag}
       onDragEnd={onDragEnd}
+      onContextMenu={(event) => {
+        if (!movable || inline) return;
+        event.preventDefault();
+        openMenuAt(event.clientX, event.clientY, event.currentTarget);
+      }}
+      onKeyDown={(event) => {
+        if (!movable || inline) return;
+        if ((event.shiftKey && event.key === 'F10') || event.key === 'ContextMenu') {
+          event.preventDefault();
+          const rect = event.currentTarget.getBoundingClientRect();
+          openMenuAt(
+            rect.left + Math.min(48, rect.width / 2),
+            rect.top + 32,
+            document.activeElement instanceof HTMLElement ? document.activeElement : event.currentTarget,
+          );
+        }
+      }}
       tabIndex={0}
       aria-label={`${task.completed ? '已完成' : '未完成'} Project Task：${task.body}`}
     >
@@ -318,6 +348,18 @@ export function TaskCard({
           onCancel={() => setInline(null)}
           onSetPartial={onSetPartial}
           onSetFailed={onSetFailed}
+        />
+      )}
+
+      {contextMenu && task.id && (
+        <TaskContextMenu
+          task={task}
+          columns={columns}
+          targets={moveTargets}
+          x={contextMenu.x}
+          y={contextMenu.y}
+          onClose={closeMenu}
+          onMove={(columnId) => onMove(task.id!, columnId)}
         />
       )}
 

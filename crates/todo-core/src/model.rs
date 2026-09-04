@@ -218,7 +218,7 @@ pub enum TokenKind {
         id: String,
     },
     /// `◐<0-100>` — partial completion percentage. Its presence means the task is
-    /// underway; it never implies completion (spec §6.5.4 keeps status monotonic).
+    /// underway; it never implies completion (spec §6.5.4 keeps automatic reconciliation monotonic).
     Progress(u8),
     /// `⚠<YYYY-MM-DD>` — the date an attempt on this task last failed. Independent
     /// of progress: a task can be 80% done and still carry an unresolved failure.

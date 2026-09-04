@@ -159,12 +159,17 @@ export type MoveTarget =
   | { type: 'before'; task_id: string }
   | { type: 'after'; task_id: string };
 
+export interface MoveCompletionDetails {
+  note?: string;
+  evidence?: EvidenceRange;
+}
+
 export type DesktopMutation =
   | { type: 'add_task'; body: string; column: string | null }
   | { type: 'set_completed'; id: string; completed: boolean; note?: string; evidence?: EvidenceRange }
   | { type: 'set_partial'; id: string; percent: number; note: string }
   | { type: 'set_failed'; id: string; note: string }
-  | { type: 'move_task'; id: string; column: string; target: MoveTarget };
+  | ({ type: 'move_task'; id: string; column: string; target: MoveTarget } & MoveCompletionDetails);
 
 type TriageOutcome =
   | { status: 'completed'; task_id: string }
@@ -578,10 +583,20 @@ async function mockMutate(intent: DesktopMutation): Promise<DesktopSnapshot> {
   } else {
     const moving = mockTasks.find((task) => task.id === intent.id);
     if (moving) {
+      const completed = Boolean(mockColumns.find((column) => column.id === intent.column)?.done);
+      const enteringDone = completed && !moving.completed;
       const moved = {
         ...moving,
         column: intent.column,
-        completed: moving.completed || Boolean(mockColumns.find((column) => column.id === intent.column)?.done),
+        completed,
+        progress: completed ? null : moving.progress,
+        failed_on: completed ? null : moving.failed_on,
+        note: completed
+          ? intent.note === undefined
+            ? enteringDone ? null : moving.note
+            : intent.note.trim() || null
+          : moving.note,
+        evidence: intent.evidence ? `${intent.evidence.from}..${intent.evidence.to}` : moving.evidence,
       };
       const rest = mockTasks.filter((task) => task.id !== intent.id);
       // Mirror the file's ordering semantics: column_start lands ahead of the
@@ -782,7 +797,14 @@ export const desktop = {
               ? { path: `/tasks/${intent.id}/progress`, payload: { percent: intent.percent, note: intent.note } }
               : intent.type === 'set_failed'
                 ? { path: `/tasks/${intent.id}/fail`, payload: { note: intent.note } }
-                : { path: `/tasks/${intent.id}/move`, payload: { column: intent.column } };
+                : {
+                    path: `/tasks/${intent.id}/move`,
+                    payload: {
+                      column: intent.column,
+                      ...(intent.note === undefined ? {} : { note: intent.note }),
+                      ...(intent.evidence === undefined ? {} : { evidence: intent.evidence }),
+                    },
+                  };
       return normalizeSnapshot(
         await api<unknown>(route.path, { method: 'POST', body: route.payload }),
       );

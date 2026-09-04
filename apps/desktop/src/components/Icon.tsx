@@ -9,6 +9,7 @@ export type IconName =
   | 'refresh'
   | 'check'
   | 'chevron'
+  | 'chevron-right'
   | 'move'
   | 'trash'
   | 'command'
@@ -48,6 +49,7 @@ const paths: Record<IconName, React.ReactNode> = {
   refresh: <path d="M20 7v5h-5M4 17v-5h5M6.1 9a7 7 0 0 1 11.6-2L20 12M4 12l2.3 5a7 7 0 0 0 11.6-2" />,
   check: <path d="m5 12 4 4L19 6" />,
   chevron: <path d="m8 10 4 4 4-4" />,
+  'chevron-right': <path d="m10 8 4 4-4 4" />,
   move: <path d="M12 3v18M3 12h18M12 3l-3 3M12 3l3 3M21 12l-3-3M21 12l-3 3M12 21l-3-3M12 21l3-3M3 12l3-3M3 12l3 3" />,
   trash: <path d="M4 7h16M9 7V4h6v3M7 7l1 13h8l1-13M10 11v5M14 11v5" />,
   command: <path d="M9 7V5a3 3 0 1 0-3 3h12a3 3 0 1 0-3-3v14a3 3 0 1 0 3-3H6a3 3 0 1 0 3 3z" />,
