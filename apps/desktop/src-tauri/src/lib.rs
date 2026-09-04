@@ -1,4 +1,5 @@
 pub mod ops;
+mod preferences;
 mod watch;
 
 use serde::Serialize;
@@ -19,6 +20,9 @@ struct AppState {
     ops: ops::DesktopOps,
     watcher: Mutex<Option<TargetFileWatcher>>,
     status: Mutex<DesktopStatus>,
+    /// `None` when the home directory is unavailable; the desktop then simply
+    /// forgets the project between launches.
+    preferences_path: Option<PathBuf>,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
@@ -73,8 +77,34 @@ fn open_project(
     path: String,
 ) -> Result<DesktopSnapshot, String> {
     let snapshot = state.ops.open_project(&path)?;
-    start_watcher(&app, &state, PathBuf::from(&snapshot.project_path))?;
+    let project = PathBuf::from(&snapshot.project_path);
+    start_watcher(&app, &state, project.clone())?;
+    preferences::remember_project(state.preferences_path.as_deref(), &project);
     Ok(snapshot)
+}
+
+/// Reopens the project from the previous launch, if it is still a task file.
+///
+/// Failure is deliberately silent: a moved repository or a file that no longer
+/// parses must not block startup. The user sees the ordinary "choose a project"
+/// state and can pick again; the stale entry is replaced on the next open.
+fn reopen_last_project(app: &tauri::AppHandle, state: &State<'_, AppState>) {
+    let Some(path) = state.preferences_path.as_deref() else {
+        return;
+    };
+    let Some(last) = preferences::read(path).last_project else {
+        return;
+    };
+    let Some(last) = last.to_str() else { return };
+    match state.ops.open_project(last) {
+        Ok(snapshot) => {
+            let _ = start_watcher(app, state, PathBuf::from(&snapshot.project_path));
+        }
+        #[cfg(debug_assertions)]
+        Err(error) => eprintln!("last project {last} not reopened: {error}"),
+        #[cfg(not(debug_assertions))]
+        Err(_) => {}
+    }
 }
 
 #[tauri::command]
@@ -278,6 +308,7 @@ pub fn run() {
                 startup_ms: None,
                 shortcut_status: ShortcutStatus::Pending,
             }),
+            preferences_path: preferences::default_path(),
         })
         .invoke_handler(tauri::generate_handler![
             open_project,
@@ -314,6 +345,8 @@ pub fn run() {
                 .status
                 .lock()
                 .map_err(|_| std::io::Error::other("desktop status lock is poisoned"))? = status;
+            let handle = app.handle().clone();
+            reopen_last_project(&handle, &app.state::<AppState>());
             let _ = app.emit("desktop://ready", startup_ms);
             Ok(())
         })

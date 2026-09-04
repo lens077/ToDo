@@ -57,13 +57,15 @@ todo next
 
 CLI 在当前工作目录查找 `TODO.md`，不会向上级目录搜索。
 
-开发 Web 端或桌面端时，再安装前端依赖并构建工作区：
+开发 Web 端或桌面端时，使用仓库根目录的 `Makefile` 安装依赖并构建：
 
 ```bash
-pnpm install
-cargo build
-pnpm build
+make install
+make build
+make dev
 ```
+
+`make help` 列出完整命令。`make bundle-macos` 只生成 `Todo.app`；`make package-macos` 生成本地验收用的 CLI、应用压缩包和 `SHA256SUMS`。本地验收包未经 Developer ID 签名和 Apple 公证，不得分发。
 
 已有普通 GFM 清单时，用 `todo init --adopt` 接管现有文件并补齐稳定 ID。不带 `--adopt` 时遇到已存在的文件会拒绝写入。
 
@@ -227,11 +229,15 @@ pnpm --filter @todo/desktop tauri build --debug
 
 正式发布由 `.github/workflows/release.yml` 构建、签名、公证并上传 release 产物。证书配置、失败条件与下载后验证步骤见 `docs/macos-release.md`。
 
-桌面端首页是**今日视图**，分逾期、今天、未来 7 天、后续可做四段。最后一段是没有截止日期的活，按优先级排——否则一个 P1 但没写日期的任务会在首页上完全消失。每段内部按优先级、截止日期、是否已开工排序——同等紧急时，把做到一半的排在没动过的前面。看板、随记、扫描与历史各占一个一级视图，行为与边界见 `docs/desktop-mvp-spec.md`。
+桌面端首页是**目标视图**，把推进中、待办、已完成放在同一个工作区：推进中的列在最前，默认只展开 1 项、最多同时展开 5 项，卡片内容完整可见，其余排队并可「提到最前」；待办列在其下；已完成栏在右侧纵贯整个工作区。已完成栏和待办区都可以像 VS Code 侧栏一样收起成细条，让推进中占满；展开数与收起状态记在本机。顶部的「逾期 / 今天 / 7 天内」筛选沿用今日视图的派生规则，只筛选、不复制任务。推进中的列按列 `id`/名称匹配 `doing`、`正在`、`进行` 等词，匹配不到时取第二个活动列。
+
+部分完成与失败直接在卡片里记录：点 ◐ 或 ⚠ 展开进度条与一行说明，回车写入，`Esc` 取消，不弹对话框。勾选完成默认先弹一步确认（回车完成、`Esc` 取消），防止误点直接写盘；可在左下角「设置」里关闭。严格模式下的「完成」仍走结局确认对话框，因为它要决定 Git 物证。随记、扫描与历史各占一个一级视图，行为与边界见 `docs/desktop-mvp-spec.md`。
+
+桌面端会记住上次打开的项目（`~/.todo/desktop.json`），下次启动直接载入；项目已移走或文件无法解析时静默回到「选择项目」状态，而不是把它报告成解析错误。
 
 任何整文件改写（扫描导入、版本恢复）都必须先看左右两栏 diff 再确认：预览会锁定它所基于的文件指纹，文件在此期间被改动则拒绝写入，避免「确认的是一份 diff、写进去的是另一份」。
 
-桌面端提供看板、今日视图和随记账本，行为与边界见 `docs/desktop-mvp-spec.md`。全局速记快捷键在 macOS 上是 `Cmd+Shift+Space`，其他平台是 `Ctrl+Shift+Space`；速记窗口中 `Cmd/Ctrl+Enter` 保存，`Esc` 隐藏。
+桌面端提供目标视图和随记账本，行为与边界见 `docs/desktop-mvp-spec.md`。全局速记快捷键在 macOS 上是 `Cmd+Shift+Space`，其他平台是 `Ctrl+Shift+Space`；速记窗口中 `Cmd/Ctrl+Enter` 保存，`Esc` 隐藏。
 
 Capture 是个人收件箱，存放在 `~/.todo/inbox.md`，不属于任何项目，也没有完成状态。分拣后才会成为当前项目的 Project Task。该文件不进入项目 Git，也不受项目 `.todo/history/` 还原点保护，需要单独备份。
 

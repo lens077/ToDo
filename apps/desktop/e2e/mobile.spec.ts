@@ -66,37 +66,36 @@ test('mobile navigation stays reachable at the bottom', async ({ page }) => {
   expect(sidebarBox!.y).toBeGreaterThanOrEqual(workspaceBox!.y + workspaceBox!.height - 1);
 
   const navButtons = page.getByRole('navigation', { name: '主要视图' }).getByRole('button');
-  await expect(navButtons).toHaveCount(4);
+  await expect(navButtons).toHaveCount(3);
   for (const button of await navButtons.all()) {
     const box = await button.boundingBox();
     expect(box?.height ?? 0).toBeGreaterThanOrEqual(44);
   }
 
-  await page.getByRole('button', { name: '看板', exact: true }).click();
-  await expect(page.getByRole('heading', { name: '工作台' })).toBeVisible();
+  await page.getByRole('button', { name: '目标', exact: true }).click();
+  await expect(page.getByRole('heading', { name: '目标' })).toBeVisible();
 });
 
-test('board columns stack without horizontal scrolling', async ({ page }) => {
+test('goal regions stack without horizontal scrolling', async ({ page }) => {
   await page.goto('/');
-  await page.getByRole('button', { name: '看板', exact: true }).click();
 
-  const columns = page.locator('.board-column');
-  await expect(columns).toHaveCount(4);
-  const layout = await columns.evaluateAll((items) =>
+  const regions = page.locator('.goal-region');
+  await expect(regions).toHaveCount(3);
+  const layout = await regions.evaluateAll((items) =>
     items.map((item) => {
       const box = item.getBoundingClientRect();
       return { left: Math.round(box.left), width: Math.round(box.width) };
     }),
   );
-  expect(new Set(layout.map((column) => column.left)).size).toBe(1);
+  expect(new Set(layout.map((region) => region.left)).size).toBe(1);
   const viewportWidth = page.viewportSize()?.width ?? 0;
-  expect(layout.every((column) => column.width <= viewportWidth)).toBe(true);
+  expect(layout.every((region) => region.width <= viewportWidth)).toBe(true);
 
-  const boardOverflow = await page.locator('.board-scroll').evaluate((element) => ({
+  const overflow = await page.locator('.workspace__content').evaluate((element) => ({
     clientWidth: element.clientWidth,
     scrollWidth: element.scrollWidth,
   }));
-  expect(boardOverflow.scrollWidth).toBeLessThanOrEqual(boardOverflow.clientWidth + 1);
+  expect(overflow.scrollWidth).toBeLessThanOrEqual(overflow.clientWidth + 1);
 });
 
 test('read-only mode disables task, capture, import, and restore writes', async ({ page }) => {
@@ -107,7 +106,6 @@ test('read-only mode disables task, capture, import, and restore writes', async 
   await expect(page.getByLabel('快速新增 Project Task')).toBeDisabled();
   await expect(page.getByRole('button', { name: '只读', exact: true })).toBeDisabled();
 
-  await page.getByRole('button', { name: '看板', exact: true }).click();
   const card = page.getByRole('article', { name: /手机上核对语义对账状态/ });
   await expect(card.getByLabel('完成“手机上核对语义对账状态”')).toBeDisabled();
   expect(await card.evaluate((element) => element.draggable)).toBe(false);

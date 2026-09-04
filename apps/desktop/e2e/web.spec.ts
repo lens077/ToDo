@@ -32,8 +32,7 @@ test.describe('web transport', () => {
     const note = '真实服务验收通过';
 
     await page.goto('/');
-    await page.getByRole('button', { name: /看板/ }).click();
-    await page.getByRole('button', { name: /完成“给登录接口加限流/ }).click();
+    await page.getByRole('button', { name: /^完成“给登录接口加限流/ }).click();
 
     const dialog = page.getByRole('dialog', { name: '确认任务结局' });
     await expect(dialog.getByRole('checkbox')).toBeChecked();
@@ -45,7 +44,6 @@ test.describe('web transport', () => {
     await expect(page.getByText(note)).toBeVisible();
 
     await page.reload();
-    await page.getByRole('button', { name: /看板/ }).click();
     await expect(page.getByText(note)).toBeVisible();
     const snapshot = await page.request.get('/api/v1/snapshot');
     expect(snapshot.ok()).toBeTruthy();
@@ -55,7 +53,6 @@ test.describe('web transport', () => {
 
   test('writes reach the file through the API', async ({ page }) => {
     await page.goto('/');
-    await page.getByRole('button', { name: /看板/ }).click();
 
     const input = page.getByPlaceholder(/新增|添加/).first();
     await input.fill('从 Web 端新建的任务');
@@ -65,7 +62,6 @@ test.describe('web transport', () => {
 
     // A reload proves it was persisted, not just added to local state.
     await page.reload();
-    await page.getByRole('button', { name: /看板/ }).click();
     await expect(page.getByText('从 Web 端新建的任务')).toBeVisible();
   });
 
@@ -81,7 +77,6 @@ test.describe('web transport', () => {
     // Self-sufficient: specs run in parallel against one server, so this cannot
     // depend on another test having written first.
     await page.goto('/');
-    await page.getByRole('button', { name: /看板/ }).click();
     const input = page.getByPlaceholder(/新增|添加/).first();
     await input.fill(`历史用例 ${Date.now()}`);
     await input.press('Enter');

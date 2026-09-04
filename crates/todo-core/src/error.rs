@@ -14,6 +14,10 @@ pub enum Error {
     ConflictMarker { line: usize },
     #[error("not a TODO.md task file: missing frontmatter with todo-spec: 1")]
     NotTaskFile,
+    /// The desktop backend has no project open. Distinct from `NotTaskFile` so
+    /// a fresh launch is never reported as a broken file.
+    #[error("no project is open")]
+    NoProject,
     #[error("unsupported todo-spec version {version}; upgrade required")]
     UnsupportedVersion { version: String },
     #[error("invalid frontmatter: {0}")]

@@ -14,7 +14,15 @@ export type IconName =
   | 'command'
   | 'close'
   | 'alert'
-  | 'arrow';
+  | 'arrow'
+  | 'target'
+  | 'half'
+  | 'panel-right'
+  | 'panel-right-collapsed'
+  | 'panel-bottom'
+  | 'panel-bottom-collapsed'
+  | 'minus'
+  | 'settings';
 
 const paths: Record<IconName, React.ReactNode> = {
   board: (
@@ -51,6 +59,53 @@ const paths: Record<IconName, React.ReactNode> = {
     </>
   ),
   arrow: <path d="M5 12h14M14 7l5 5-5 5" />,
+  target: (
+    <>
+      <circle cx="12" cy="12" r="9" />
+      <circle cx="12" cy="12" r="4.5" />
+      <path d="M12 3v3M12 18v3M3 12h3M18 12h3" />
+    </>
+  ),
+  // Half-filled disc: the ◐ partial-progress token drawn in the icon stroke.
+  half: (
+    <>
+      <circle cx="12" cy="12" r="8.5" />
+      <path d="M12 3.5v17A8.5 8.5 0 0 0 12 3.5z" fill="currentColor" stroke="none" />
+    </>
+  ),
+  'panel-right': (
+    <>
+      <rect x="3" y="4" width="18" height="16" rx="1.5" />
+      <path d="M15 4v16" />
+    </>
+  ),
+  'panel-right-collapsed': (
+    <>
+      <rect x="3" y="4" width="18" height="16" rx="1.5" />
+      <path d="M15 4v16" />
+      <path d="M17 12h2M8 12h4M10 9.5 12 12l-2 2.5" />
+    </>
+  ),
+  'panel-bottom': (
+    <>
+      <rect x="3" y="4" width="18" height="16" rx="1.5" />
+      <path d="M3 15h18" />
+    </>
+  ),
+  'panel-bottom-collapsed': (
+    <>
+      <rect x="3" y="4" width="18" height="16" rx="1.5" />
+      <path d="M3 15h18" />
+      <path d="M12 7v4M9.5 9l2.5 2.5L14.5 9" />
+    </>
+  ),
+  minus: <path d="M6 12h12" />,
+  settings: (
+    <>
+      <circle cx="12" cy="12" r="3" />
+      <path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3M5.3 5.3l2.1 2.1M16.6 16.6l2.1 2.1M5.3 18.7l2.1-2.1M16.6 7.4l2.1-2.1" />
+    </>
+  ),
 };
 
 export function Icon({ name, ...props }: { name: IconName } & SVGProps<SVGSVGElement>) {

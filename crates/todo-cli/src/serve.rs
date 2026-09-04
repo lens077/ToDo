@@ -84,9 +84,9 @@ impl From<todo_core::Error> for ApiError {
             todo_core::Error::TaskNotFound(_) | todo_core::Error::HistoryVersionNotFound(_) => {
                 StatusCode::NOT_FOUND
             }
-            todo_core::Error::NotTaskFile | todo_core::Error::InvalidTaskLine(_) => {
-                StatusCode::BAD_REQUEST
-            }
+            todo_core::Error::NotTaskFile
+            | todo_core::Error::NoProject
+            | todo_core::Error::InvalidTaskLine(_) => StatusCode::BAD_REQUEST,
             _ => StatusCode::INTERNAL_SERVER_ERROR,
         };
         Self {

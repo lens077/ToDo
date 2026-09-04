@@ -73,13 +73,19 @@ security find-identity -v -p codesigning
 
 ## 本地构建验收包
 
-没有发布凭据时，运行：
+没有发布凭据时，在仓库根目录运行：
 
 ```bash
-OUTPUT_DIR=target/release-local ./scripts/package-macos.sh
+make package-macos
 ```
 
-脚本执行以下操作：
+默认产物目录是 `target/release-local`。如需修改目录，运行：
+
+```bash
+make package-macos OUTPUT_DIR=target/my-release
+```
+
+`Makefile` 调用 `scripts/package-macos.sh`。脚本执行以下操作：
 
 1. 使用 `cargo build --locked --release -p todo-cli` 构建 CLI。
 2. 使用 Tauri 构建 `Todo.app`。

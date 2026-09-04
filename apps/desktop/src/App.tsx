@@ -1,46 +1,59 @@
 import * as React from 'react';
-import { BoardView } from './components/BoardView';
 import { CaptureView } from './components/CaptureView';
 import { CommandBar } from './components/CommandBar';
 import { CompletionDialog, type CompletionDecision } from './components/CompletionDialog';
+import { ConfirmCompleteDialog } from './components/ConfirmCompleteDialog';
 import { EmptyState } from './components/EmptyState';
+import { GoalView } from './components/GoalView';
 import { ProviderSettings } from './components/ProviderSettings';
 import { ReviewView } from './components/ReviewView';
+import { SettingsDialog } from './components/SettingsDialog';
 import { Sidebar, type MainView } from './components/Sidebar';
 import { StatusBanner } from './components/StatusBanner';
-import { TodayView } from './components/TodayView';
 import { useDesktop } from './hooks/useDesktop';
+import { useAppSettings } from './lib/appSettings';
 import { transportCapabilities, type DesktopTask } from './lib/desktop';
 
 export function App() {
-  // The homepage answers "what should I do now"; the board is one click away.
-  const [activeView, setActiveView] = React.useState<MainView>('today');
+  // 目标 is the landing view: in-flight work, the queue, and finished work on
+  // one surface, so "what should I do now" is answered without navigating.
+  const [activeView, setActiveView] = React.useState<MainView>('goal');
+  const [settingsOpen, setSettingsOpen] = React.useState(false);
   const [providerSettingsOpen, setProviderSettingsOpen] = React.useState(false);
   const [completionTask, setCompletionTask] = React.useState<DesktopTask | null>(null);
-  const [completionOutcome, setCompletionOutcome] = React.useState<CompletionDecision['outcome']>('done');
+  const [confirmTask, setConfirmTask] = React.useState<DesktopTask | null>(null);
+  const [appSettings] = useAppSettings();
   const model = useDesktop();
   const readOnly = transportCapabilities()?.writable === false;
-  const todayCount = model.snapshot
-    ? model.snapshot.today.overdue.length + model.snapshot.today.today.length + model.snapshot.today.upcoming.length
+  // The badge counts what needs attention today: overdue plus due-today work.
+  const goalCount = model.snapshot
+    ? model.snapshot.today.overdue.length + model.snapshot.today.today.length
     : 0;
 
   const setCompleted = React.useCallback((id: string, completed: boolean) => {
-    if (!completed || model.snapshot?.completion_policy !== 'strict') {
-      return model.setCompleted(id, completed);
-    }
-    const task = model.snapshot.tasks.find((item) => item.id === id);
-    if (!task) return Promise.resolve(false);
-    setCompletionOutcome('done');
-    setCompletionTask(task);
-    return Promise.resolve(false);
-  }, [model]);
-
-  const recordOutcome = React.useCallback((id: string, outcome: 'partial' | 'failed') => {
+    if (!completed) return model.setCompleted(id, false);
     const task = model.snapshot?.tasks.find((item) => item.id === id);
-    if (!task) return;
-    setCompletionOutcome(outcome);
-    setCompletionTask(task);
-  }, [model.snapshot]);
+    if (!task) return Promise.resolve(false);
+    if (model.snapshot?.completion_policy === 'strict') {
+      // Strict completion needs a note and an evidence decision; that is the
+      // one outcome that still earns a full outcome dialog.
+      setCompletionTask(task);
+      return Promise.resolve(false);
+    }
+    if (appSettings.confirmCompletion) {
+      // A tick is a file write; the one-key gate keeps a stray click from
+      // becoming one. Enter confirms, Escape backs out.
+      setConfirmTask(task);
+      return Promise.resolve(false);
+    }
+    return model.setCompleted(id, true);
+  }, [appSettings.confirmCompletion, model]);
+
+  const confirmTick = React.useCallback(async () => {
+    if (!confirmTask?.id) return;
+    const written = await model.setCompleted(confirmTask.id, true);
+    if (written) setConfirmTask(null);
+  }, [confirmTask, model]);
 
   const confirmCompletion = React.useCallback(async (decision: CompletionDecision) => {
     if (!completionTask?.id) return;
@@ -57,11 +70,12 @@ export function App() {
       <Sidebar
         activeView={activeView}
         status={model.status}
-        todayCount={todayCount}
+        goalCount={goalCount}
         captureCount={model.captures.length}
         readOnly={readOnly}
         onChangeView={setActiveView}
         onChooseProject={() => void model.chooseProject()}
+        onOpenSettings={() => setSettingsOpen(true)}
       />
 
       <div className={`workspace${readOnly ? ' is-read-only' : ''}`}>
@@ -108,25 +122,15 @@ export function App() {
           ) : activeView === 'review' ? (
             <ReviewView snapshot={model.snapshot} readOnly={readOnly} onApplied={model.applySnapshot} />
           ) : model.snapshot ? (
-            activeView === 'board' ? (
-              <BoardView
-                snapshot={model.snapshot}
-                busyKeys={model.busyKeys}
-                readOnly={readOnly}
-                onSetCompleted={setCompleted}
-                onRecordOutcome={recordOutcome}
-                onMove={model.moveTask}
-              />
-            ) : (
-              <TodayView
-                snapshot={model.snapshot}
-                busyKeys={model.busyKeys}
-                readOnly={readOnly}
-                onSetCompleted={setCompleted}
-                onRecordOutcome={recordOutcome}
-                onMove={model.moveTask}
-              />
-            )
+            <GoalView
+              snapshot={model.snapshot}
+              busyKeys={model.busyKeys}
+              readOnly={readOnly}
+              onSetCompleted={setCompleted}
+              onSetPartial={model.setPartial}
+              onSetFailed={model.setFailed}
+              onMove={model.moveTask}
+            />
           ) : (
             <EmptyState
               phase={model.phase === 'ready' ? 'load-error' : model.phase}
@@ -140,10 +144,27 @@ export function App() {
       {completionTask && (
         <CompletionDialog
           task={completionTask}
-          initialOutcome={completionOutcome}
+          initialOutcome="done"
           busy={Boolean(completionTask.id && model.busyKeys.has(`task:${completionTask.id}`))}
           onCancel={() => setCompletionTask(null)}
           onConfirm={(decision) => void confirmCompletion(decision)}
+        />
+      )}
+      {confirmTask && (
+        <ConfirmCompleteDialog
+          task={confirmTask}
+          busy={Boolean(confirmTask.id && model.busyKeys.has(`task:${confirmTask.id}`))}
+          onCancel={() => setConfirmTask(null)}
+          onConfirm={() => void confirmTick()}
+        />
+      )}
+      {settingsOpen && (
+        <SettingsDialog
+          onClose={() => setSettingsOpen(false)}
+          onOpenProviderSettings={() => {
+            setSettingsOpen(false);
+            setProviderSettingsOpen(true);
+          }}
         />
       )}
       {providerSettingsOpen && <ProviderSettings onClose={() => setProviderSettingsOpen(false)} />}

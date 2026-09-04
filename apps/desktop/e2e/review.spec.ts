@@ -13,16 +13,47 @@ test.beforeEach(async ({ page }) => {
   await expect(page.getByRole('navigation')).toBeVisible();
 });
 
-test('the landing view is Today, not the board', async ({ page }) => {
-  // "What should I do now" is the question the homepage answers.
-  const today = page.getByRole('button', { name: /今日/ });
-  await expect(today).toHaveClass(/is-active/);
+test('the landing view is 目标, with in-flight, queued, and finished work on one surface', async ({ page }) => {
+  // "What should I do now" is the question the homepage answers, without a
+  // second board view to navigate to.
+  await expect(page.getByRole('button', { name: /目标/ })).toHaveClass(/is-active/);
+  await expect(page.getByRole('heading', { name: '目标' })).toBeVisible();
+  await expect(page.locator('.goal-region--doing .task-card--focus').first()).toBeVisible();
+  await expect(page.locator('.goal-region--todo .task-card').first()).toBeVisible();
+  await expect(page.locator('.goal-region--done .task-card').first()).toBeVisible();
 });
 
-test('the board is one click away', async ({ page }) => {
-  await page.getByRole('button', { name: /看板/ }).click();
-  await expect(page.getByRole('button', { name: /看板/ })).toHaveClass(/is-active/);
-  await expect(page.locator('.task-card').first()).toBeVisible();
+test('the finished rail and the queue collapse like a side bar and remember it', async ({ page }) => {
+  const layout = page.locator('.goal-layout');
+  await page.getByRole('button', { name: /收起已完成/ }).click();
+  await expect(layout).toHaveClass(/is-done-collapsed/);
+  await expect(page.locator('.goal-region--done .task-card')).toHaveCount(0);
+
+  await page.getByRole('button', { name: /收起待办/ }).click();
+  await expect(layout).toHaveClass(/is-todo-collapsed/);
+  await expect(page.locator('.goal-region--todo .task-card')).toHaveCount(0);
+
+  await page.reload();
+  await expect(page.locator('.goal-layout')).toHaveClass(/is-done-collapsed/);
+  await expect(page.locator('.goal-layout')).toHaveClass(/is-todo-collapsed/);
+
+  await page.getByRole('button', { name: /展开已完成/ }).click();
+  await page.getByRole('button', { name: /展开待办/ }).click();
+  await expect(page.locator('.goal-region--done .task-card').first()).toBeVisible();
+});
+
+test('the in-flight region shows one task by default and at most five', async ({ page }) => {
+  const focusCards = page.locator('.goal-region--doing .task-card--focus');
+  await expect(focusCards).toHaveCount(1);
+  await expect(page.getByRole('button', { name: '提到最前' })).toBeVisible();
+
+  const more = page.getByRole('button', { name: '增加同时显示数' });
+  await more.click();
+  await expect(focusCards).toHaveCount(2);
+  await expect(page.getByRole('button', { name: '提到最前' })).toHaveCount(0);
+  for (let i = 0; i < 3; i += 1) await more.click();
+  await expect(more).toBeDisabled();
+  await expect(page.locator('.focus-limit output')).toHaveText('5');
 });
 
 test('scanning reports findings without writing anything', async ({ page }) => {

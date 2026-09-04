@@ -153,21 +153,18 @@ export interface CaptureAppendResult {
   captures: Capture[];
 }
 
+export type MoveTarget =
+  | { type: 'column_start' }
+  | { type: 'column_end' }
+  | { type: 'before'; task_id: string }
+  | { type: 'after'; task_id: string };
+
 export type DesktopMutation =
   | { type: 'add_task'; body: string; column: string | null }
   | { type: 'set_completed'; id: string; completed: boolean; note?: string; evidence?: EvidenceRange }
   | { type: 'set_partial'; id: string; percent: number; note: string }
   | { type: 'set_failed'; id: string; note: string }
-  | {
-      type: 'move_task';
-      id: string;
-      column: string;
-      target:
-        | { type: 'column_start' }
-        | { type: 'column_end' }
-        | { type: 'before'; task_id: string }
-        | { type: 'after'; task_id: string };
-    };
+  | { type: 'move_task'; id: string; column: string; target: MoveTarget };
 
 type TriageOutcome =
   | { status: 'completed'; task_id: string }
@@ -358,10 +355,12 @@ export function transportCapabilities(): TransportCapabilities | null {
 
 function classifyError(message: string): DesktopBridgeError['kind'] {
   const value = message.toLowerCase();
+  // "No project" must be tested before "parse": the not-a-task-file message
+  // mentions frontmatter, and a fresh launch must never read as a broken file.
+  if (value.includes('no project') || value.includes('not a todo.md task file') || value.includes('not task file') || value.includes('未打开')) return 'no_project';
   if (value.includes('rebase') || value.includes('conflict') || value.includes('外部更新')) return 'conflict';
   if (value.includes('lock') || value.includes('timeout') || value.includes('busy')) return 'locked';
   if (value.includes('parse') || value.includes('marker') || value.includes('frontmatter')) return 'parse';
-  if (value.includes('not a todo.md task file') || value.includes('not task file') || value.includes('no project') || value.includes('未打开')) return 'no_project';
   return 'unknown';
 }
 
@@ -577,15 +576,24 @@ async function mockMutate(intent: DesktopMutation): Promise<DesktopSnapshot> {
       ? { ...task, failed_on: MOCK_TODAY, note: intent.note.trim() }
       : task);
   } else {
-    mockTasks = mockTasks.map((task) =>
-      task.id === intent.id
-        ? {
-            ...task,
-            column: intent.column,
-            completed: task.completed || Boolean(mockColumns.find((column) => column.id === intent.column)?.done),
-          }
-        : task,
-    );
+    const moving = mockTasks.find((task) => task.id === intent.id);
+    if (moving) {
+      const moved = {
+        ...moving,
+        column: intent.column,
+        completed: moving.completed || Boolean(mockColumns.find((column) => column.id === intent.column)?.done),
+      };
+      const rest = mockTasks.filter((task) => task.id !== intent.id);
+      // Mirror the file's ordering semantics: column_start lands ahead of the
+      // column's first task, everything else at the end of the list.
+      if (intent.target.type === 'column_start') {
+        const firstInColumn = rest.findIndex((task) => task.column === intent.column);
+        rest.splice(firstInColumn === -1 ? rest.length : firstInColumn, 0, moved);
+      } else {
+        rest.push(moved);
+      }
+      mockTasks = rest;
+    }
   }
   mockRevision += 1;
   const snapshot = mockSnapshot();

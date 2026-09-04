@@ -195,7 +195,7 @@ impl DesktopBackend {
     }
 
     pub fn snapshot(&self) -> Result<DesktopSnapshot> {
-        let path = self.project.as_ref().ok_or(Error::NotTaskFile)?;
+        let path = self.project.as_ref().ok_or(Error::NoProject)?;
         self.derive(&parse_file(path)?)
     }
 
@@ -209,7 +209,7 @@ impl DesktopBackend {
     }
 
     fn apply_intent(&self, intent: DesktopIntent) -> Result<(Document, Option<String>)> {
-        let path = self.project.as_ref().ok_or(Error::NotTaskFile)?;
+        let path = self.project.as_ref().ok_or(Error::NoProject)?;
         let writer = LockedWriter::new(path, self.lock_timeout);
         let mut created_task_id = None;
         // Label the restore point with the desktop action that caused it, so a user
@@ -228,7 +228,7 @@ impl DesktopBackend {
     }
 
     fn derive(&self, document: &Document) -> Result<DesktopSnapshot> {
-        let path = self.project.as_ref().ok_or(Error::NotTaskFile)?;
+        let path = self.project.as_ref().ok_or(Error::NoProject)?;
         let head = git_output(
             repository_of(path),
             &["rev-parse", "--verify", "HEAD^{commit}"],

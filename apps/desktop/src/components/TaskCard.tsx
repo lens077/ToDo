@@ -1,20 +1,31 @@
+import * as React from 'react';
 import type { DragEvent } from 'react';
 import type { DesktopColumn, DesktopTask } from '../lib/desktop';
 import { formatDueDate, shortId } from '../lib/format';
 import { Icon } from './Icon';
 
-interface TaskCardProps {
+export type TaskCardVariant = 'card' | 'compact' | 'focus';
+
+export interface TaskCardActions {
+  onSetCompleted: (taskId: string, completed: boolean) => void;
+  /** Writes a `◐` partial outcome. Resolves `true` when the file accepted it. */
+  onSetPartial: (taskId: string, percent: number, note: string) => Promise<boolean>;
+  /** Writes a `⚠` failed attempt. Resolves `true` when the file accepted it. */
+  onSetFailed: (taskId: string, note: string) => Promise<boolean>;
+  onMove: (taskId: string, columnId: string) => void;
+}
+
+interface TaskCardProps extends TaskCardActions {
   task: DesktopTask;
   columns: DesktopColumn[];
   busy: boolean;
   readOnly: boolean;
-  compact?: boolean;
+  variant?: TaskCardVariant;
   onDragStart?: (taskId: string) => void;
   onDragEnd?: () => void;
-  onSetCompleted: (taskId: string, completed: boolean) => void;
-  onRecordOutcome: (taskId: string, outcome: 'partial' | 'failed') => void;
-  onMove: (taskId: string, columnId: string) => void;
 }
+
+type InlineOutcome = 'partial' | 'failed';
 
 function localDateKey(): string {
   const date = new Date();
@@ -22,20 +33,131 @@ function localDateKey(): string {
   return local.toISOString().slice(0, 10);
 }
 
+/**
+ * Records a partial or failed outcome inside the card.
+ *
+ * Writing "where I got to" is part of the work, not an interruption of it, so
+ * the note is typed in place: no modal, no focus trap, Escape simply closes it.
+ * The card keeps its position and the rest of the board stays readable.
+ */
+function OutcomeInline({
+  task,
+  outcome,
+  busy,
+  onCancel,
+  onSetPartial,
+  onSetFailed,
+}: {
+  task: DesktopTask;
+  outcome: InlineOutcome;
+  busy: boolean;
+  onCancel: () => void;
+  onSetPartial: TaskCardActions['onSetPartial'];
+  onSetFailed: TaskCardActions['onSetFailed'];
+}) {
+  const [percent, setPercent] = React.useState(task.progress ?? 50);
+  const [note, setNote] = React.useState('');
+  const trimmed = note.trim();
+  const percentValid = percent >= 1 && percent <= 99;
+  const canSubmit = Boolean(trimmed) && (outcome !== 'partial' || percentValid) && !busy;
+  const noteLabel = outcome === 'partial' ? '进度说明' : '失败原因';
+
+  const submit = async () => {
+    if (!canSubmit || !task.id) return;
+    const written = outcome === 'partial'
+      ? await onSetPartial(task.id, percent, trimmed)
+      : await onSetFailed(task.id, trimmed);
+    if (written) onCancel();
+  };
+
+  return (
+    <form
+      className={`outcome-inline outcome-inline--${outcome}`}
+      aria-label={outcome === 'partial' ? `记录“${task.body}”的部分完成` : `记录“${task.body}”的失败`}
+      onSubmit={(event) => {
+        event.preventDefault();
+        void submit();
+      }}
+      onKeyDown={(event) => {
+        if (event.key === 'Escape') {
+          event.stopPropagation();
+          onCancel();
+        }
+      }}
+    >
+      {outcome === 'partial' && (
+        <div className="outcome-inline__percent">
+          <input
+            type="range"
+            min={1}
+            max={99}
+            step={1}
+            value={percent}
+            aria-label="完成比例"
+            onChange={(event) => setPercent(Number(event.target.value))}
+          />
+          <label className="outcome-inline__percent-field">
+            <input
+              type="number"
+              min={1}
+              max={99}
+              inputMode="numeric"
+              value={percent}
+              aria-label="完成比例数值"
+              onChange={(event) => setPercent(Number(event.target.value))}
+            />
+            <span>%</span>
+          </label>
+        </div>
+      )}
+      <div className="outcome-inline__note">
+        <input
+          type="text"
+          autoFocus
+          value={note}
+          aria-label={noteLabel}
+          placeholder={outcome === 'partial' ? '做到哪了（回车记录）' : '失败原因（回车记录）'}
+          onChange={(event) => setNote(event.target.value)}
+        />
+        <button type="submit" className="outcome-inline__submit" disabled={!canSubmit}>
+          {busy ? '写入中' : '记录'}
+        </button>
+        <button type="button" className="outcome-inline__cancel" aria-label="取消记录" onClick={onCancel} disabled={busy}>
+          <Icon name="close" />
+        </button>
+      </div>
+      <small className="outcome-inline__hint">
+        {outcome === 'partial'
+          ? '写入 ◐ 与 ↳ 说明；任务保留在当前列。'
+          : '写入 ⚠ 与 ↳ 说明；任务不会被标为完成。'}
+      </small>
+    </form>
+  );
+}
+
 export function TaskCard({
   task,
   columns,
   busy,
   readOnly,
-  compact = false,
+  variant = 'card',
   onDragStart,
   onDragEnd,
   onSetCompleted,
-  onRecordOutcome,
+  onSetPartial,
+  onSetFailed,
   onMove,
 }: TaskCardProps) {
+  const [inline, setInline] = React.useState<InlineOutcome | null>(null);
+  const compact = variant === 'compact';
+  const focus = variant === 'focus';
   const movable = Boolean(task.id && columns.length > 1 && !busy && !readOnly);
   const dueTone = task.due && !task.completed && task.due < localDateKey() ? 'overdue' : 'normal';
+  const canRecord = Boolean(task.id) && !readOnly && !task.completed;
+
+  React.useEffect(() => {
+    if (task.completed) setInline(null);
+  }, [task.completed]);
 
   const startDrag = (event: DragEvent<HTMLElement>) => {
     if (!task.id) return;
@@ -44,10 +166,68 @@ export function TaskCard({
     onDragStart?.(task.id);
   };
 
+  const moveMenu = !compact && !readOnly && (
+    <details className="move-menu">
+      <summary aria-label={`移动“${task.body}”到其他列`} title="移动到列">
+        <Icon name="move" />
+        {focus && <span>移动</span>}
+      </summary>
+      <div className="move-menu__popover" role="menu" aria-label="移动到列">
+        <span className="move-menu__label">移动到</span>
+        {columns.map((column) => (
+          <button
+            type="button"
+            role="menuitem"
+            key={column.id}
+            disabled={!movable || column.id === task.column}
+            onClick={(event) => {
+              event.currentTarget.closest('details')?.removeAttribute('open');
+              if (task.id) onMove(task.id, column.id);
+            }}
+          >
+            <span className={`column-dot column-dot--${column.done ? 'done' : 'active'}`} />
+            {column.name}
+            {column.id === task.column && <span className="move-menu__current">当前</span>}
+          </button>
+        ))}
+      </div>
+    </details>
+  );
+
+  const partialButton = canRecord && (
+    <button
+      type="button"
+      className={`outcome-button outcome-button--partial${inline === 'partial' ? ' is-open' : ''}`}
+      aria-label={`部分完成“${task.body}”`}
+      aria-expanded={inline === 'partial'}
+      title="记录部分完成"
+      disabled={busy}
+      onClick={() => setInline((current) => (current === 'partial' ? null : 'partial'))}
+    >
+      <Icon name="half" />
+      {focus && <span>部分完成</span>}
+    </button>
+  );
+
+  const failedButton = canRecord && (
+    <button
+      type="button"
+      className={`outcome-button outcome-button--failed${inline === 'failed' ? ' is-open' : ''}`}
+      aria-label={`记录“${task.body}”的失败`}
+      aria-expanded={inline === 'failed'}
+      title="记录失败"
+      disabled={busy}
+      onClick={() => setInline((current) => (current === 'failed' ? null : 'failed'))}
+    >
+      <Icon name="alert" />
+      {focus && <span>记录失败</span>}
+    </button>
+  );
+
   return (
     <article
-      className={`task-card${task.completed ? ' is-complete' : ''}${busy ? ' is-busy' : ''}${readOnly ? ' is-read-only' : ''}${compact ? ' task-card--compact' : ''}`}
-      draggable={movable && !compact}
+      className={`task-card task-card--${variant}${task.completed ? ' is-complete' : ''}${busy ? ' is-busy' : ''}${readOnly ? ' is-read-only' : ''}${inline ? ' is-editing' : ''}`}
+      draggable={movable && !compact && !inline}
       aria-disabled={readOnly || undefined}
       onDragStart={startDrag}
       onDragEnd={onDragEnd}
@@ -66,53 +246,25 @@ export function TaskCard({
           {task.completed && <Icon name="check" />}
         </button>
         <span className="task-id">{shortId(task.id)}</span>
-        {!readOnly && task.id && (
-          <details className="outcome-menu">
-            <summary aria-label={`记录“${task.body}”的任务结局`} title="记录任务结局">
-              <span aria-hidden="true">···</span>
-            </summary>
-            <div className="move-menu__popover" role="menu" aria-label="记录任务结局">
-              <span className="move-menu__label">记录结局</span>
-              <button type="button" role="menuitem" disabled={busy} onClick={(event) => {
-                event.currentTarget.closest('details')?.removeAttribute('open');
-                onRecordOutcome(task.id!, 'partial');
-              }}>记录部分完成</button>
-              <button type="button" role="menuitem" disabled={busy} onClick={(event) => {
-                event.currentTarget.closest('details')?.removeAttribute('open');
-                onRecordOutcome(task.id!, 'failed');
-              }}>记录失败</button>
-            </div>
-          </details>
+        {focus && task.progress !== null && !task.completed && (
+          <span className="task-card__progress-label" aria-label={`已完成 ${task.progress}%`}>◐ {task.progress}%</span>
         )}
-        {!compact && !readOnly && (
-          <details className="move-menu">
-            <summary aria-label={`移动“${task.body}”到其他列`} title="移动到列">
-              <Icon name="move" />
-            </summary>
-            <div className="move-menu__popover" role="menu" aria-label="移动到列">
-              <span className="move-menu__label">移动到</span>
-              {columns.map((column) => (
-                <button
-                  type="button"
-                  role="menuitem"
-                  key={column.id}
-                  disabled={!movable || column.id === task.column}
-                  onClick={(event) => {
-                    event.currentTarget.closest('details')?.removeAttribute('open');
-                    if (task.id) onMove(task.id, column.id);
-                  }}
-                >
-                  <span className={`column-dot column-dot--${column.done ? 'done' : 'active'}`} />
-                  {column.name}
-                  {column.id === task.column && <span className="move-menu__current">当前</span>}
-                </button>
-              ))}
-            </div>
-          </details>
+        {!focus && (
+          <div className="task-card__tools">
+            {partialButton}
+            {failedButton}
+            {moveMenu}
+          </div>
         )}
       </div>
 
       <p className="task-card__body">{task.body}</p>
+
+      {focus && task.progress !== null && !task.completed && (
+        <div className="task-card__progress" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={task.progress} aria-label="完成比例">
+          <span style={{ width: `${task.progress}%` }} />
+        </div>
+      )}
 
       <div className="task-card__metadata">
         {task.priority && (
@@ -132,7 +284,7 @@ export function TaskCard({
         ))}
         {/* Partial state is shown on the card: a 60%-done task with a failed
             attempt must not read as untouched work. */}
-        {!task.completed && task.progress !== null && (
+        {!focus && !task.completed && task.progress !== null && (
           <span className="task-partial" aria-label={`已完成 ${task.progress}%`}>
             ◐ {task.progress}%
           </span>
@@ -142,9 +294,32 @@ export function TaskCard({
             ⚠ {task.failed_on}
           </span>
         )}
+        {focus && task.evidence && (
+          <code className="task-evidence" title="Git 物证区间">🔗 {task.evidence.slice(0, 7)}…</code>
+        )}
       </div>
 
-      {task.note && !compact && <p className="task-note">↳ {task.note}</p>}
+      {task.note && <p className="task-note">↳ {task.note}</p>}
+
+      {focus && (
+        <div className="task-card__actions">
+          {partialButton}
+          {failedButton}
+          {moveMenu}
+        </div>
+      )}
+
+      {inline && task.id && (
+        <OutcomeInline
+          key={inline}
+          task={task}
+          outcome={inline}
+          busy={busy}
+          onCancel={() => setInline(null)}
+          onSetPartial={onSetPartial}
+          onSetFailed={onSetFailed}
+        />
+      )}
 
       {busy && <span className="task-card__saving">写入中</span>}
     </article>

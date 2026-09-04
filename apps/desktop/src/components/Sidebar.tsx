@@ -2,22 +2,24 @@ import type { WorkspaceStatus } from '../hooks/useDesktop';
 import { shortProjectName } from '../lib/desktop';
 import { Icon, type IconName } from './Icon';
 
-export type MainView = 'today' | 'board' | 'capture' | 'review';
+export type MainView = 'goal' | 'capture' | 'review';
 
 interface SidebarProps {
   activeView: MainView;
   status: WorkspaceStatus;
-  todayCount: number;
+  /** Tasks in flight right now: the Doing count shown beside 目标. */
+  goalCount: number;
   captureCount: number;
   readOnly: boolean;
   onChangeView: (view: MainView) => void;
   onChooseProject: () => void;
+  onOpenSettings: () => void;
 }
 
-// Today leads: the default landing view is "what should I do now", not the board.
+// 目标 leads: one surface holds what is in flight, what is queued, and what is
+// finished, so "what should I do now" never needs a second view.
 const navItems: Array<{ id: MainView; label: string; icon: IconName }> = [
-  { id: 'today', label: '今日', icon: 'calendar' },
-  { id: 'board', label: '看板', icon: 'board' },
+  { id: 'goal', label: '目标', icon: 'target' },
   { id: 'capture', label: '随记', icon: 'capture' },
   { id: 'review', label: '扫描与历史', icon: 'folder' },
 ];
@@ -25,14 +27,15 @@ const navItems: Array<{ id: MainView; label: string; icon: IconName }> = [
 export function Sidebar({
   activeView,
   status,
-  todayCount,
+  goalCount,
   captureCount,
   readOnly,
   onChangeView,
   onChooseProject,
+  onOpenSettings,
 }: SidebarProps) {
   const projectName = status.projectPath ? shortProjectName(status.projectPath) : '未选择项目';
-  const countFor = (view: MainView) => (view === 'today' ? todayCount : view === 'capture' ? captureCount : null);
+  const countFor = (view: MainView) => (view === 'goal' ? goalCount : view === 'capture' ? captureCount : null);
 
   return (
     <aside className="sidebar">
@@ -97,6 +100,10 @@ export function Sidebar({
             <strong>{status.shortcutState === 'unavailable' ? '快捷键不可用' : '⌘ ⇧ Space'}</strong>
           </div>
         </div>
+        <button type="button" className="sidebar-settings" onClick={onOpenSettings} aria-label="设置" title="设置">
+          <Icon name="settings" />
+          <span>设置</span>
+        </button>
       </div>
     </aside>
   );
