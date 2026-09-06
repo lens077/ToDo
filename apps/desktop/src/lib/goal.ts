@@ -11,6 +11,7 @@ import type { DesktopColumn, DesktopSnapshot, DesktopTask } from './desktop';
 export interface GoalColumns {
   /** The column shown as work in flight. `null` when the file has no active column. */
   focus: DesktopColumn | null;
+  focusColumns: DesktopColumn[];
   /** Active columns other than `focus`, in file order. */
   backlog: DesktopColumn[];
   /** `type: done` columns, in file order. */
@@ -20,14 +21,21 @@ export interface GoalColumns {
 const FOCUS_HINT = /doing|progress|wip|active|current|now|正在|进行|推进|执行|处理中/i;
 
 export function splitColumns(columns: DesktopColumn[]): GoalColumns {
+  const paths = [...new Set(columns.map((column) => column.source_path))];
+  if (paths.length > 1) {
+    const groups = paths.map((source) => splitColumns(columns.filter((column) => column.source_path === source)));
+    const focusColumns = groups.flatMap((group) => group.focusColumns);
+    return { focus: focusColumns[0] ?? null, focusColumns, backlog: groups.flatMap((group) => group.backlog), done: groups.flatMap((group) => group.done) };
+  }
   const active = columns.filter((column) => !column.done);
   const done = columns.filter((column) => column.done);
   // A column named like "Doing" wins; otherwise the second active column is
   // the conventional in-flight lane (Todo → Doing), and a single active column
   // is both queue and focus.
-  const focus = active.find((column) => FOCUS_HINT.test(`${column.id} ${column.name}`)) ?? active[1] ?? active[0] ?? null;
+  const focus = active.find((column) => FOCUS_HINT.test(`${column.local_id ?? column.id} ${column.name}`)) ?? active[1] ?? active[0] ?? null;
   return {
     focus,
+    focusColumns: focus ? [focus] : [],
     backlog: active.filter((column) => column !== focus),
     done,
   };

@@ -79,6 +79,10 @@ impl History {
             return Ok(None);
         };
         self.ensure_layout()?;
+        // Different task sources in one directory share this index. Their own
+        // source locks do not serialize allocation of history version numbers.
+        let writer = crate::LockedWriter::new(self.index_path(), std::time::Duration::from_secs(2));
+        let _history_lock = writer.lock()?;
         let version = self.next_version()?;
         let blob = format!("v{version:06}.snap");
         let blob_path = self.root.join(&blob);
@@ -123,6 +127,30 @@ impl History {
             .into_iter()
             .find(|entry| entry.version == version)
             .ok_or_else(|| Error::HistoryVersionNotFound(version))
+    }
+
+    /// Entries belonging to one source, never a sibling task file.
+    pub fn entries_for(&self, path: &Path) -> Result<Vec<HistoryEntry>> {
+        let name = path
+            .file_name()
+            .and_then(|value| value.to_str())
+            .ok_or(Error::NotTaskFile)?;
+        Ok(self
+            .entries()?
+            .into_iter()
+            .filter(|entry| entry.file == name)
+            .collect())
+    }
+
+    pub fn read_for(&self, path: &Path, version: u64) -> Result<String> {
+        let name = path
+            .file_name()
+            .and_then(|value| value.to_str())
+            .ok_or(Error::NotTaskFile)?;
+        if self.entry(version)?.file != name {
+            return Err(Error::HistoryVersionNotFound(version));
+        }
+        self.read(version)
     }
 
     /// Contents captured by a snapshot.

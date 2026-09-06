@@ -37,16 +37,28 @@ impl TargetFileWatcher {
         F: FnMut(WatchSignal) + Send + 'static,
     {
         let target = canonical_target(target.as_ref());
-        let parent = target
-            .parent()
-            .unwrap_or_else(|| Path::new("."))
-            .to_path_buf();
+        let recursive = target.is_dir();
+        let parent = if recursive {
+            target.clone()
+        } else {
+            target
+                .parent()
+                .unwrap_or_else(|| Path::new("."))
+                .to_path_buf()
+        };
         let (sender, receiver) = mpsc::channel();
         let event_sender = sender.clone();
         let mut watcher = notify::recommended_watcher(move |event| {
             let _ = event_sender.send(WatchMessage::Event(event));
         })?;
-        watcher.watch(&parent, RecursiveMode::NonRecursive)?;
+        watcher.watch(
+            &parent,
+            if recursive {
+                RecursiveMode::Recursive
+            } else {
+                RecursiveMode::NonRecursive
+            },
+        )?;
         let worker = thread::spawn(move || {
             run_event_loop(receiver, &target, debounce, &mut on_signal);
         });
@@ -153,7 +165,43 @@ fn event_affects_target(event: &Event, target: &Path) -> bool {
     {
         return false;
     }
-    event.paths.iter().any(|path| path == target)
+    event.paths.iter().any(|path| {
+        if path == target {
+            return true;
+        }
+        if !target.is_dir() {
+            return false;
+        }
+        let Ok(relative) = path.strip_prefix(target) else {
+            return false;
+        };
+        let mut parts = relative.components().peekable();
+        while let Some(part) = parts.next() {
+            let name = part.as_os_str().to_string_lossy();
+            if parts.peek().is_some()
+                && (name.starts_with('.')
+                    || matches!(name.as_ref(), "node_modules" | "target" | "build" | "dist"))
+            {
+                return false;
+            }
+        }
+        let name = path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or("");
+        let name = name.to_ascii_lowercase();
+        matches!(
+            name.as_str(),
+            "todo" | "todo.md" | "todo.txt" | ".gitignore" | ".ignore"
+        ) || (!name.starts_with('.')
+            && (path.is_dir()
+                || matches!(
+                    event.kind,
+                    EventKind::Create(notify::event::CreateKind::Folder)
+                        | EventKind::Remove(notify::event::RemoveKind::Folder)
+                        | EventKind::Modify(notify::event::ModifyKind::Name(_))
+                )))
+    })
 }
 
 #[cfg(test)]
@@ -166,6 +214,71 @@ mod tests {
         time::{Duration, Instant},
     };
     use tempfile::tempdir;
+
+    #[test]
+    fn root_watch_discovers_nested_creation_and_deletion() {
+        let directory = tempdir().unwrap();
+        let nested = directory.path().join("docs");
+        fs::create_dir(&nested).unwrap();
+        let source = nested.join("todo.TXT");
+        let (sender, receiver) = mpsc::channel();
+        let observed = source.clone();
+        let _watcher =
+            TargetFileWatcher::spawn(directory.path(), Duration::from_millis(60), move |signal| {
+                if let WatchSignal::Reload = signal {
+                    let _ = sender.send(observed.exists());
+                }
+            })
+            .unwrap();
+        fs::write(&source, "- [ ] discovered").unwrap();
+        let deadline = Instant::now() + Duration::from_secs(4);
+        loop {
+            if receiver
+                .recv_timeout(deadline.saturating_duration_since(Instant::now()))
+                .unwrap()
+            {
+                break;
+            }
+        }
+        fs::remove_file(&source).unwrap();
+        let deadline = Instant::now() + Duration::from_secs(4);
+        loop {
+            if !receiver
+                .recv_timeout(deadline.saturating_duration_since(Instant::now()))
+                .unwrap()
+            {
+                break;
+            }
+        }
+    }
+
+    #[test]
+    fn recursive_events_ignore_build_outputs_and_detect_source_names() {
+        use notify::event::{CreateKind, RemoveKind};
+        let directory = tempdir().unwrap();
+        let root = directory.path();
+        for path in [
+            "docs/todo.md",
+            "docs/TODO",
+            "docs/ToDo.txt",
+            "docs/.gitignore",
+        ] {
+            let event = Event::new(EventKind::Create(CreateKind::File)).add_path(root.join(path));
+            assert!(event_affects_target(&event, root), "{path}");
+        }
+        for path in [
+            "node_modules/pkg/TODO.md",
+            ".git/TODO",
+            "target/TODO.txt",
+            "src/main.rs",
+        ] {
+            let event = Event::new(EventKind::Create(CreateKind::File)).add_path(root.join(path));
+            assert!(!event_affects_target(&event, root), "{path}");
+        }
+        let deleted =
+            Event::new(EventKind::Remove(RemoveKind::Folder)).add_path(root.join("removed-folder"));
+        assert!(event_affects_target(&deleted, root));
+    }
 
     #[test]
     fn parent_watch_survives_two_atomic_replacements_and_ignores_noise() {

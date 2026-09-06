@@ -53,7 +53,6 @@ export function CompletionDialog({ task, initialOutcome = 'done', busy, onCancel
     }}>
       <section className="completion-panel" role="dialog" aria-modal="true" aria-labelledby="completion-dialog-title">
         <header className="completion-panel__header">
-          <span className="eyebrow">TASK OUTCOME</span>
           <h2 id="completion-dialog-title">确认任务结局</h2>
           <p>{task.body}</p>
         </header>

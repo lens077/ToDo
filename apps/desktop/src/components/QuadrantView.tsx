@@ -36,9 +36,9 @@ export function QuadrantView({ snapshot, busyKeys, readOnly, onSetPriority, ...a
   const openIds = new Set(openTasks.flatMap((task) => task.id ? [task.id] : []));
   const passes = (group: QuadrantGroup) => filter === 'all' || groupTasks(group).some((task) => Boolean(task.id && bands[filter].has(task.id)));
   const bandCount = (band: Exclude<DueFilter, 'all'>) => [...bands[band]].filter((id) => openIds.has(id)).length;
-  const focusId = columns.focus?.id ?? null;
+  const focusIds = new Set(columns.focusColumns.map((column) => column.id));
   const order = (items: QuadrantGroup[]) => [...items].sort((a, b) => {
-    const focus = Number(b.task.column === focusId) - Number(a.task.column === focusId);
+    const focus = Number(focusIds.has(b.task.column ?? '')) - Number(focusIds.has(a.task.column ?? ''));
     if (focus) return focus;
     return (a.task.due ?? '9999-99-99').localeCompare(b.task.due ?? '9999-99-99');
   });
@@ -54,7 +54,7 @@ export function QuadrantView({ snapshot, busyKeys, readOnly, onSetPriority, ...a
   }, [groups, draggedId]);
 
   const setGroupPriority = async (group: QuadrantGroup, priority: TaskPriority) => {
-    if (!group.task.id || readOnly || groupBusy(group)) return;
+    if (!group.task.id || readOnly || group.task.source_writable === false || groupBusy(group)) return;
     const destination = priority === null ? '未定级' : `!${priority}`;
     setAnnouncement(`正在把“${group.task.body}”整组移到${destination}`);
     const written = await onSetPriority(group.task.id, priority);
@@ -92,7 +92,7 @@ export function QuadrantView({ snapshot, busyKeys, readOnly, onSetPriority, ...a
               type="button"
               aria-label={task.completed ? `将“${task.body}”标为未完成` : `完成“${task.body}”`}
               aria-pressed={task.completed}
-              disabled={readOnly || !task.id || busyKeys.has(`task:${task.id}`)}
+              disabled={readOnly || task.source_writable === false || !task.id || busyKeys.has(`task:${task.id}`)}
               onClick={() => task.id && actions.onSetCompleted(task.id, !task.completed)}
             >
               {task.completed && <Icon name="check" />}
@@ -127,7 +127,7 @@ export function QuadrantView({ snapshot, busyKeys, readOnly, onSetPriority, ...a
           busy={groupBusy(group)}
           readOnly={readOnly}
           variant="quadrant"
-          isInFocus={task.column === focusId}
+          isInFocus={focusIds.has(task.column ?? '')}
           {...actions}
           allowCurrentPriority={mixed}
           onSetPriority={(_id, priority) => void setGroupPriority(group, priority)}

@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { useAppSettings } from '../lib/appSettings';
+import { LAYOUT_DENSITIES, useAppSettings } from '../lib/appSettings';
 import { readProviderSettings } from '../lib/providerSettings';
 import { Icon } from './Icon';
 
@@ -55,6 +55,30 @@ export function SettingsDialog({ onClose, onOpenProviderSettings }: SettingsDial
                 <span className="switch__track" aria-hidden="true" />
               </span>
             </label>
+          </section>
+
+          <section className="settings-group" aria-labelledby="settings-density">
+            <h3 id="settings-density">布局密度</h3>
+            <div className="settings-row settings-row--stack">
+              <span className="settings-row__copy">
+                <strong>界面密度</strong>
+                <span>{LAYOUT_DENSITIES.find((item) => item.value === settings.density)?.note}</span>
+              </span>
+              <div className="segmented" role="radiogroup" aria-label="界面密度">
+                {LAYOUT_DENSITIES.map((item) => (
+                  <label key={item.value} className={`segmented__option${settings.density === item.value ? ' is-active' : ''}`}>
+                    <input
+                      type="radio"
+                      name="layout-density"
+                      value={item.value}
+                      checked={settings.density === item.value}
+                      onChange={() => update({ density: item.value })}
+                    />
+                    <span>{item.label}</span>
+                  </label>
+                ))}
+              </div>
+            </div>
           </section>
 
           <section className="settings-group" aria-labelledby="settings-model">

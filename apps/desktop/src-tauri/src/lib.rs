@@ -12,7 +12,7 @@ use std::{
 use tauri::{Emitter, Manager, State};
 use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState};
 use todo_core::{
-    Capture, CaptureStore, DesktopBackend, DesktopIntent, DesktopSnapshot, TriageResult,
+    Capture, CaptureStore, DesktopBackend, DesktopIntent, ProjectSnapshot, TriageResult,
 };
 use watch::{TargetFileWatcher, WatchSignal};
 
@@ -48,7 +48,7 @@ pub struct CaptureAppendResponse {
 #[derive(Debug, Serialize)]
 pub struct CaptureTriageResponse {
     pub result: TriageResult,
-    pub snapshot: CommandValue<DesktopSnapshot>,
+    pub snapshot: CommandValue<ProjectSnapshot>,
     pub captures: CommandValue<Vec<Capture>>,
 }
 
@@ -75,7 +75,7 @@ fn open_project(
     app: tauri::AppHandle,
     state: State<'_, AppState>,
     path: String,
-) -> Result<DesktopSnapshot, String> {
+) -> Result<ProjectSnapshot, String> {
     let snapshot = state.ops.open_project(&path)?;
     let project = PathBuf::from(&snapshot.project_path);
     start_watcher(&app, &state, project.clone())?;
@@ -108,13 +108,53 @@ fn reopen_last_project(app: &tauri::AppHandle, state: &State<'_, AppState>) {
 }
 
 #[tauri::command]
-fn snapshot(state: State<'_, AppState>) -> Result<DesktopSnapshot, String> {
+fn snapshot(state: State<'_, AppState>) -> Result<ProjectSnapshot, String> {
     state.ops.snapshot()
 }
 
 #[tauri::command]
-fn mutate(state: State<'_, AppState>, intent: DesktopIntent) -> Result<DesktopSnapshot, String> {
+fn mutate(state: State<'_, AppState>, intent: DesktopIntent) -> Result<ProjectSnapshot, String> {
     state.ops.mutate(intent)
+}
+
+#[tauri::command]
+fn project_snapshot(
+    state: State<'_, AppState>,
+    source_path: Option<String>,
+) -> Result<ProjectSnapshot, String> {
+    state.ops.project_snapshot(source_path.as_deref())
+}
+
+#[tauri::command]
+fn project_mutate(
+    state: State<'_, AppState>,
+    source_path: Option<String>,
+    intent: DesktopIntent,
+    project_path: Option<String>,
+) -> Result<ProjectSnapshot, String> {
+    state
+        .ops
+        .project_mutate_for(source_path.as_deref(), intent, project_path.as_deref())
+}
+
+#[tauri::command]
+fn preview_adopt(
+    state: State<'_, AppState>,
+    source_path: String,
+) -> Result<todo_core::AdoptionPreview, String> {
+    state.ops.preview_adopt(&source_path)
+}
+
+#[tauri::command]
+fn apply_adopt(
+    state: State<'_, AppState>,
+    source_path: String,
+    base_hash: String,
+    project_path: Option<String>,
+) -> Result<ProjectSnapshot, String> {
+    state
+        .ops
+        .apply_adopt_for(&source_path, &base_hash, project_path.as_deref())
 }
 
 #[tauri::command]
@@ -140,8 +180,15 @@ fn capture_triage(
     state: State<'_, AppState>,
     id: String,
     column: Option<String>,
+    source_path: Option<String>,
+    project_path: Option<String>,
 ) -> Result<CaptureTriageResponse, String> {
-    state.ops.capture_triage(&id, column.as_deref())
+    state.ops.capture_triage_for(
+        &id,
+        column.as_deref(),
+        source_path.as_deref(),
+        project_path.as_deref(),
+    )
 }
 
 #[tauri::command]
@@ -150,10 +197,14 @@ fn scan_repository(
     markdown: bool,
     comments: bool,
     import_into: Option<String>,
+    source_path: Option<String>,
 ) -> Result<ops::ScanPreview, String> {
-    state
-        .ops
-        .scan_repository(markdown, comments, import_into.as_deref())
+    state.ops.scan_repository_source(
+        markdown,
+        comments,
+        import_into.as_deref(),
+        source_path.as_deref(),
+    )
 }
 
 #[tauri::command]
@@ -162,21 +213,35 @@ fn apply_rewrite(
     proposed: String,
     base_hash: String,
     op: String,
-) -> Result<DesktopSnapshot, String> {
-    state.ops.apply_rewrite(&proposed, &base_hash, &op)
+    source_path: Option<String>,
+    project_path: Option<String>,
+) -> Result<ProjectSnapshot, String> {
+    state.ops.apply_rewrite_for(
+        &proposed,
+        &base_hash,
+        &op,
+        source_path.as_deref(),
+        project_path.as_deref(),
+    )
 }
 
 #[tauri::command]
-fn history_list(state: State<'_, AppState>) -> Result<Vec<todo_core::HistoryEntry>, String> {
-    state.ops.history_list()
+fn history_list(
+    state: State<'_, AppState>,
+    source_path: Option<String>,
+) -> Result<Vec<todo_core::HistoryEntry>, String> {
+    state.ops.history_list_source(source_path.as_deref())
 }
 
 #[tauri::command]
 fn history_preview(
     state: State<'_, AppState>,
     version: u64,
+    source_path: Option<String>,
 ) -> Result<ops::ProposedRewrite, String> {
-    state.ops.history_preview(version)
+    state
+        .ops
+        .history_preview_source(version, source_path.as_deref())
 }
 
 #[tauri::command]
@@ -188,8 +253,11 @@ fn alignment_prompt(state: State<'_, AppState>) -> String {
 fn alignment_review(
     state: State<'_, AppState>,
     raw: String,
+    source_path: Option<String>,
 ) -> Result<todo_core::AlignmentReview, String> {
-    state.ops.alignment_review(&raw)
+    state
+        .ops
+        .alignment_review_source(&raw, source_path.as_deref())
 }
 
 #[tauri::command]
@@ -314,6 +382,10 @@ pub fn run() {
             open_project,
             snapshot,
             mutate,
+            project_snapshot,
+            project_mutate,
+            preview_adopt,
+            apply_adopt,
             capture_list,
             capture_append,
             capture_delete,

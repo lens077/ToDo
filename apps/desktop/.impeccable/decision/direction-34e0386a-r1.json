@@ -1,0 +1,172 @@
+{
+  "title": "重掷后的新一手：选择 ToDo 主界面的视觉世界",
+  "question": "上一手的方向已全部出局。这一手掷骰把「事件流工作台」分配为方向。所有卡片仍在你钉住的 macOS 惯例之内：系统字体、跟随系统深浅外观、以 Linear / Raycast 的工艺为标尺。保留指派项、选一个备选、照品类标准打，或再掷一次。",
+  "options": [
+    {
+      "id": "assigned",
+      "label": "事件流工作台",
+      "kicker": "THE ROLL",
+      "lineage": "macOS Console.app 与 Instruments · 系统日志与性能检查器的表格 + 过滤令牌 + 底部详情",
+      "thesis": "TODO.md 是一条可过滤的事件流：每行一条任务，过滤条件是搜索栏里的蓝色令牌，选中一行就在底部展开它的全部事实。",
+      "palette": ["#FFFFFF", "#1E1E1E", "#F5F5F7", "#007AFF", "#FF3B30", "#FF9500"],
+      "materials": ["SF Pro 正文 + SF Mono 物证 / ID / 时间", "过滤令牌：蓝色胶囊，带类型前缀", "分节表格 + 展开三角 + 发丝行线", "底部详情分栏：可拖动、可收起", "深浅两套跟随系统"],
+      "viewport": "工具栏：左侧项目弹出菜单与「+ 新增」，中间「逾期 · 今天 · 7 天内」分段按钮（像 Console 的 Errors and Faults），右侧「对账」「模型」与令牌搜索栏——输入「列: 推进中」「标签: core」「优先级: !1」即成蓝色令牌。左侧源列表：目标 / 象限 / 随记 / 扫描与历史，下方文件同步状态。主区是一张分节表格：推进中 → 待办各列 → 已完成，每节一个展开三角与计数；行 = 状态记号 · 正文 · 截止 · 优先级 · 标签 · 短 ID，推进中的前 N 行放大显示进度条与一行说明。选中一行，底部详情分栏展开：↳ 说明、🔗 物证（等宽，展开成提交列表）、还原点、上一次对账 Finding。拖行跨节即移动列。随记是带时间列的同款流，扫描与历史就是它的本行：日志。",
+      "risk": "表格一次可见 30+ 行，但「推进中」只是顶部一节，不像卡片那样把当前工作放大到眼前；前 N 行放大是它的解法，做不到位就退化成普通清单。",
+      "raised": [
+        { "from": "challenger-nixie", "raise": "计数变化是看得见的事件：侧栏与节头的数字用数字层交叉淡入滚动，只在 Rust 写入成功、新快照到达后才跳——写入成功从此有形。" },
+        { "from": "challenger-star-atlas", "raise": "优先级是一条固定量级坡道：!1–!4 在状态列用四档固定直径的圆点表示，表格、象限、菜单同一坡道，永不按数量缩放。" },
+        { "from": "challenger-civic-prospectus", "raise": "一族字体两个字重扛全部层级：SF Pro 只用 Regular 与 Semibold，层级来自字号与位置；等宽只留给 ID、时间、物证。" },
+        { "from": "challenger-cyclorama", "raise": "颜色永远不是唯一信号：逾期、今天、失败、推进中每个状态都是记号 + 文字标签 + 颜色三件套，在「增强对比度」与灰度下依然成立。" },
+        { "from": "challenger-streetwear", "raise": "只读态穿条纹：解析失败、冲突标记、--read-only 时工作区顶部出现斜纹只读横幅，拖动把手与菜单项一并禁用——不可写是一眼看到的事实。" }
+      ],
+      "wireframe": {
+        "cols": 12,
+        "rows": 10,
+        "regions": [
+          { "label": "工具栏：项目 · + 新增 · 逾期|今天|7天 · 对账 · 令牌搜索", "x": 0, "y": 0, "w": 12, "h": 1 },
+          { "label": "源列表侧栏", "x": 0, "y": 1, "w": 2, "h": 9 },
+          { "label": "分节表格：推进中 → 待办各列 → 已完成", "x": 2, "y": 1, "w": 10, "h": 6, "accent": true },
+          { "label": "底部详情：说明 · 物证 · 还原点 · Finding", "x": 2, "y": 7, "w": 10, "h": 3 }
+        ]
+      }
+    },
+    {
+      "id": "model-pick",
+      "label": "文档即界面",
+      "kicker": "IMPECCABLE’S PICK",
+      "lineage": "Mac 原生编辑器与笔记应用 · Nova / iA Writer / Bear——Markdown 文件本身就是界面",
+      "thesis": "界面就是 TODO.md 的渲染：## Todo 是节标题，- [ ] 是一行任务，◐ ⚠ ↳ 🔗 原样可见——文件是事实，界面只是它的排版。",
+      "palette": ["#FFFFFF", "#1C1C1E", "#F7F7F7", "#007AFF", "#8E8E93"],
+      "materials": ["SF Pro 正文 + SF Mono token", "编辑器画布：单列、宽行距、固定测量宽度", "源列表侧栏：Nova 式文件树", "行内控件：勾选框、进度条在行内展开", "深浅两套跟随系统"],
+      "viewport": "侧栏是项目文件树：TODO.md、TODO.archive.md、随记收件箱、还原点。主区是一页渲染后的 TODO.md：frontmatter 折叠成一行元信息，「## Doing」「## Todo」「## Done」按文件顺序是三个节；每行任务保留文件里的 token 顺序——勾选框、正文、#标签、!优先级、^排序键（淡）、<!--t:id-->（等宽淡灰）、🔗 物证；点 ◐ 在下一行展开进度条与 ↳ 说明，回车写入。右侧可选检查器给选中行的结构化字段。",
+      "risk": "熟悉而有效：这是 Markdown 工具最常落的形态；把文件原样渲染意味着密度由文件决定，200 行的清单会很长，节折叠与筛选必须到位。",
+      "wireframe": {
+        "cols": 12,
+        "rows": 10,
+        "regions": [
+          { "label": "工具栏", "x": 0, "y": 0, "w": 12, "h": 1 },
+          { "label": "文件树侧栏", "x": 0, "y": 1, "w": 2, "h": 9 },
+          { "label": "渲染后的 TODO.md（## 节 · 任务行 · 行内展开）", "x": 2, "y": 1, "w": 7, "h": 9, "accent": true },
+          { "label": "检查器（选中行）", "x": 9, "y": 1, "w": 3, "h": 9 }
+        ]
+      }
+    },
+    {
+      "id": "challenger-one-bit-desktop",
+      "label": "一位元桌面",
+      "verdict": "competitive",
+      "lineage": "媒介原生 · 早期一位元 Mac 桌面（System 1–6）",
+      "thesis": "每个视图是一扇窗：黑白像素、抖动灰、行军蚁选区，拖动任务时它拖着一个虚线轮廓。",
+      "palette": ["#FFFFFF", "#000000", "#808080", "#007AFF"],
+      "materials": ["纯黑白像素，有序抖动只用于禁用态", "SF Pro Display 粗体标题（Chicago 的现代对应）", "1px 黑色窗口镶边与标题条", "行军蚁选区：steps() 动画", "深浅两套：反相即深色"],
+      "viewport": "工作区是一个桌面平面：目标、象限、随记、扫描与历史各是一扇可重叠的窗，双击侧栏项以缩放矩形动画打开；目标窗里是三张并排的列表窗（推进中 / 待办 / 已完成），选中行反相成实心黑，拖动显示虚线轮廓，落到另一窗即移动列。",
+      "case": "Mac 血统让开发者立刻识别，抖动禁用态与行军蚁选区是可信的原生语法（识别度赢）；但重叠窗口与一位元材料在 1180px 里读不了密集中文任务，也偏离你钉住的现代 macOS 惯例，清晰度输给事件流。",
+      "risk": "翻译不到位就是 System 6 戏服；翻译到位后与现代 macOS 的距离只剩抖动与蚂蚁线。",
+      "hero": "https://impeccable.style/worlds/cards/medium-native-one-bit-desktop-hero.webp",
+      "board": "https://impeccable.style/worlds/cards/medium-native-one-bit-desktop.webp",
+      "wireframe": {
+        "cols": 12,
+        "rows": 10,
+        "regions": [
+          { "label": "菜单栏", "x": 0, "y": 0, "w": 12, "h": 1 },
+          { "label": "桌面：侧栏图标", "x": 0, "y": 1, "w": 2, "h": 9 },
+          { "label": "窗：推进中", "x": 2, "y": 1, "w": 4, "h": 6, "accent": true },
+          { "label": "窗：待办", "x": 5, "y": 3, "w": 4, "h": 7 },
+          { "label": "窗：已完成", "x": 9, "y": 2, "w": 3, "h": 5 }
+        ]
+      }
+    },
+    {
+      "id": "challenger-nixie",
+      "label": "尼克西管计数器",
+      "verdict": "declined",
+      "lineage": "信号与仪器 · 实验室的尼克西管计数器",
+      "thesis": "数量就是界面：每个指标一组玻璃管，橙色数字在管内悬浮，计数变化是一次物理深度的变化。",
+      "palette": ["#0D0D0F", "#FF7A1A", "#3A3A3E", "#C9C9CC"],
+      "materials": ["玻璃管内的霓虹橙数字", "发黑钢机箱", "蚀刻大写标签"],
+      "viewport": "一排管组显示推进中 / 待办 / 逾期计数，任务表在其下。",
+      "case": "融合失败：任务是文字不是数量，「数量即界面」扛不起任务清单；实验室仪器对开发者不是工作身份（两轴皆输）。",
+      "kept": "计数变化是看得见的物理事件。",
+      "risk": "沦为装饰性仪表。",
+      "hero": "https://impeccable.style/worlds/cards/signals-instruments-nixie-laboratory-counter-hero.webp"
+    },
+    {
+      "id": "challenger-star-atlas",
+      "label": "星图",
+      "verdict": "declined",
+      "lineage": "记号与图表系统 · 天体星图",
+      "thesis": "重要性是圆点直径：星等坡道固定，红色手电琥珀只用于批注。",
+      "palette": ["#0B1A3A", "#F2F2E9", "#C8352B", "#8FA3C7"],
+      "materials": ["深海军蓝图底", "粉笔白星点", "夜视红批注"],
+      "viewport": "任务按优先级星等散布在坐标网格上。",
+      "case": "融合失败：星图对开发者不是工作场景；深蓝图底与跟随系统的浅色外观冲突，四档优先级的圆点差异过于细微（两轴皆输）。",
+      "kept": "层级由一条固定量级坡道承载，不靠字体。",
+      "risk": "隐喻压过任务。",
+      "hero": "https://impeccable.style/worlds/cards/notation-diagram-systems-star-atlas-hero.webp"
+    },
+    {
+      "id": "challenger-civic-prospectus",
+      "label": "市政简报",
+      "verdict": "declined",
+      "lineage": "晚期现代主义企业风格 · 市政机构简报",
+      "thesis": "骨白底上几乎没有颜色，一条青紫丝带与一枚紫色按钮花掉全部色彩，一族几何无衬线两个字重扛全部论证。",
+      "palette": ["#F7F7FA", "#1B1547", "#6B5CE7", "#7FD8D0", "#E6E7EE"],
+      "materials": ["骨白面板", "渲染丝带（WebGL）", "发丝分隔线"],
+      "viewport": "黏性顶栏 + 分带的长页，丝带占右侧出血。",
+      "case": "融合失败：这是一套说服型宣传页拓扑，对四视图应用没有结构；紫色主色与跟随系统强调色的约定冲突（两轴皆输）。",
+      "kept": "一族字体两个字重扛全部层级。",
+      "risk": "读成产品官网而非工具。",
+      "hero": "https://impeccable.style/worlds/cards/civic-bureau-prospectus-late-modern-hero.webp"
+    },
+    {
+      "id": "challenger-cyclorama",
+      "label": "天幕晨光",
+      "verdict": "declined",
+      "lineage": "舞台灯光 · 从黑夜到白昼的无缝天幕",
+      "thesis": "内容按地平线带从暗到亮堆叠：夜、初光、黎明、白昼、暗场是五个命名状态。",
+      "palette": ["#050507", "#1B3FA8", "#E38AA6", "#FFFFFF"],
+      "materials": ["深不见底的天幕黑", "钴蓝地平带", "灯光图谱模板大写"],
+      "viewport": "逾期 → 今天 → 7 天像从夜到昼的横带。",
+      "case": "融合失败：舞台灯光叙事与任务对账无关；按时间相位分带遮住文件里的列，渐变底与 macOS 惯例冲突（两轴皆输）。",
+      "kept": "每个状态都有标签与图案，颜色永远不是唯一信号。",
+      "risk": "氛围替代了结构。",
+      "hero": "https://impeccable.style/worlds/cards/stagecraft-theater-lighting-cyclorama-dawn-hero.webp"
+    },
+    {
+      "id": "challenger-streetwear",
+      "label": "工业街头服",
+      "verdict": "declined",
+      "lineage": "织物与时尚 · 引号命名与危险条纹的工业街头服语法",
+      "thesis": "每个区域用它字面的名字加引号标出，危险条纹斜穿在要紧的东西下面，活跃项留着橙色扎带。",
+      "palette": ["#FFFFFF", "#111111", "#FF6A00", "#E5E5E5"],
+      "materials": ["白棉与黑尼龙", "45° 危险条纹", "安全橙扎带标签"],
+      "viewport": "所有节标题带引号，禁用区盖上斜条纹。",
+      "case": "融合失败：街头服文化不是开发者的工作身份；引号命名与斜条纹在密集任务文字上是噪音（两轴皆输）。",
+      "kept": "禁用与只读穿条纹：不可用是一眼看到的事实。",
+      "risk": "读成品牌戏服。",
+      "hero": "https://impeccable.style/worlds/cards/textiles-weave-drape-fashion-industrial-quote-grammar-hero.webp"
+    }
+  ],
+  "reroll": { "registers": ["safer", "bolder"] },
+  "buildPath": { "value": "code", "toggle": false },
+  "canon": true,
+  "canonCard": {
+    "label": "提醒事项 / Things 式清单",
+    "thesis": "品类标准照标准打：macOS 源列表侧栏 + 大标题清单 + 圆形勾选，按 Apple 提醒事项与 Things 3 的工艺执行。",
+    "palette": ["#FFFFFF", "#F2F2F7", "#1C1C1E", "#007AFF"],
+    "materials": ["源列表侧栏", "大标题 Large Title", "圆形勾选框", "分组 inset 列表", "深浅两套跟随系统"],
+    "viewport": "侧栏列出四个视图与智能列表（逾期 / 今天 / 7 天）；主区大标题「目标」下是分组清单：推进中、待办各列、已完成折叠在底部；每行圆形勾选 + 正文 + 截止，详情用弹出式检查器。",
+    "risk": "与品类里的每个清单应用无法区分——这是它的本意。",
+    "wireframe": {
+      "cols": 12,
+      "rows": 10,
+      "regions": [
+        { "label": "工具栏", "x": 0, "y": 0, "w": 12, "h": 1 },
+        { "label": "源列表 + 智能列表", "x": 0, "y": 1, "w": 3, "h": 9 },
+        { "label": "大标题「目标」", "x": 3, "y": 1, "w": 9, "h": 1 },
+        { "label": "分组清单：推进中 / 待办 / 已完成（折叠）", "x": 3, "y": 2, "w": 9, "h": 8, "accent": true }
+      ]
+    }
+  },
+  "steer": true
+}

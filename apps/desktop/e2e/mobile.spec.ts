@@ -130,6 +130,8 @@ test('touch menu can restore a completed task to the top of Todo', async ({ page
 });
 
 test('read-only mode disables task, capture, import, and restore writes', async ({ page }) => {
+  const captureRequests: string[] = [];
+  page.on('request', (request) => { if (new URL(request.url()).pathname.includes('/api/v1/captures')) captureRequests.push(request.url()); });
   await useReadOnlyBackend(page);
   await page.goto('/');
 
@@ -147,9 +149,11 @@ test('read-only mode disables task, capture, import, and restore writes', async 
   await expect(card.getByLabel('上次失败于 2026-08-31')).toBeVisible();
 
   await page.getByRole('button', { name: '随记', exact: true }).click();
-  await expect(page.getByLabel('记下一件还没想清楚的事')).toBeDisabled();
-  await expect(page.getByRole('button', { name: /删除 Capture/ }).first()).toBeDisabled();
-  await expect(page.getByRole('button', { name: /分拣为任务/ }).first()).toBeDisabled();
+  await expect(page.getByRole('status').filter({ hasText: 'HTTP 项目服务不开放个人随记' })).toBeVisible();
+  await expect(page.getByLabel('记下一件还没想清楚的事')).toHaveCount(0);
+  await expect(page.getByRole('button', { name: /删除 Capture/ })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: /分拣为任务/ })).toHaveCount(0);
+  expect(captureRequests).toEqual([]);
 
   await page.getByRole('button', { name: '扫描与历史', exact: true }).click();
   const previewImport = page.getByRole('button', { name: '预览导入' });

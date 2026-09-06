@@ -16,7 +16,7 @@ export function quadrantGroups(snapshot: DesktopSnapshot): QuadrantGroup[] {
   for (const task of snapshot.tasks) {
     while (ancestors.length) {
       const parent = ancestors[ancestors.length - 1].task;
-      if (parent.column === task.column && parent.indent_level < task.indent_level) break;
+      if (parent.source_path === task.source_path && parent.column === task.column && parent.indent_level < task.indent_level) break;
       ancestors.pop();
     }
     const node: QuadrantGroup = { task, children: [] };

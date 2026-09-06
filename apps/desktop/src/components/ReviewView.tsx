@@ -21,6 +21,7 @@ interface PendingRewrite {
   title: string;
   leftLabel: string;
   rightLabel: string;
+  version?: number;
 }
 
 interface ReviewViewProps {
@@ -41,7 +42,10 @@ export function ReviewView({ snapshot, readOnly, onApplied }: ReviewViewProps) {
   const [error, setError] = React.useState<string | null>(null);
   const [prompt, setPrompt] = React.useState<string | null>(null);
 
-  const column = snapshot?.columns[0]?.id ?? 'todo';
+  const column = snapshot?.columns[0]?.local_id ?? snapshot?.columns[0]?.id ?? 'todo';
+  const sourcePath = snapshot?.selected_source ?? null;
+  const alive = React.useRef(true);
+  React.useEffect(() => { alive.current = true; return () => { alive.current = false; }; }, []);
 
   const guard = React.useCallback(async (key: Busy, run: () => Promise<void>) => {
     setBusy(key);
@@ -58,13 +62,13 @@ export function ReviewView({ snapshot, readOnly, onApplied }: ReviewViewProps) {
   const runScan = () =>
     guard('scan', async () => {
       setPending(null);
-      setScan(await desktop.scanRepository(markdown, comments, null));
+      setScan(await desktop.scanRepository(markdown, comments, null, sourcePath));
     });
 
   const previewImport = () => {
     if (readOnly) return Promise.resolve();
     return guard('import', async () => {
-      const preview = await desktop.scanRepository(markdown, comments, column);
+      const preview = await desktop.scanRepository(markdown, comments, column, sourcePath);
       setScan(preview);
       if (!preview.rewrite) return;
       setPending({
@@ -79,16 +83,17 @@ export function ReviewView({ snapshot, readOnly, onApplied }: ReviewViewProps) {
 
   const loadHistory = () =>
     guard('history', async () => {
-      setHistory(await desktop.historyList());
+      setHistory(await desktop.historyList(sourcePath));
     });
 
   const previewRestore = (version: number) => {
     if (readOnly) return Promise.resolve();
     return guard('history', async () => {
-      const rewrite = await desktop.historyPreview(version);
+      const rewrite = await desktop.historyPreview(version, sourcePath);
       setPending({
         rewrite,
         op: 'restore',
+        version,
         title: `恢复到 v${version}`,
         leftLabel: `v${version}（还原点）`,
         rightLabel: '当前 TODO.md',
@@ -99,17 +104,18 @@ export function ReviewView({ snapshot, readOnly, onApplied }: ReviewViewProps) {
   const confirm = () => {
     if (readOnly || !pending) return;
     void guard('apply', async () => {
-      const next = await desktop.applyRewrite(pending.rewrite, pending.op);
+      const next = await desktop.applyRewrite(pending.rewrite, pending.op, sourcePath, column, pending.version, snapshot?.project_path);
+      if (!alive.current) return;
       onApplied(next);
       setPending(null);
       setScan(null);
-      setHistory(await desktop.historyList());
+      setHistory(await desktop.historyList(sourcePath));
     });
   };
 
   const showPrompt = () =>
     guard('scan', async () => {
-      setPrompt(await desktop.alignmentPrompt());
+      setPrompt(await desktop.alignmentPrompt(sourcePath));
     });
 
   if (!snapshot) {

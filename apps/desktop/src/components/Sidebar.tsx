@@ -54,8 +54,7 @@ export function Sidebar({
         className="project-switcher"
         type="button"
         onClick={onChooseProject}
-        disabled={readOnly}
-        title={readOnly ? '只读 Web 模式使用服务端当前项目' : '切换当前项目'}
+        title={readOnly ? '查看项目连接方式（当前服务只读）' : '打开或切换项目'}
       >
         <span className="project-switcher__icon"><Icon name="folder" /></span>
         <span className="project-switcher__copy">
@@ -67,7 +66,7 @@ export function Sidebar({
 
       <nav className="primary-nav" aria-label="主要视图">
         <span className="primary-nav__label">工作视图</span>
-        {navItems.map((item, index) => {
+        {navItems.map((item) => {
           const count = countFor(item.id);
           return (
             <button
@@ -79,7 +78,6 @@ export function Sidebar({
               title={item.label}
               onClick={() => onChangeView(item.id)}
             >
-              <span className="primary-nav__index">0{index + 1}</span>
               <Icon name={item.icon} />
               <span className="primary-nav__text">{item.label}</span>
               {count !== null && count > 0 && <span className="primary-nav__count">{count}</span>}

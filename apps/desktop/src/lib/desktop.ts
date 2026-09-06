@@ -2,6 +2,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { open } from '@tauri-apps/plugin-dialog';
+import { sourceKey, sourceQuery } from './taskSources';
 import {
   api,
   apiBase,
@@ -15,6 +16,8 @@ export type TaskPriority = 1 | 2 | 3 | 4 | null;
 export type PriorityScope = 'task' | 'subtree';
 
 export interface DesktopColumn {
+  source_path?: string;
+  local_id?: string;
   id: string;
   name: string;
   done: boolean;
@@ -32,6 +35,9 @@ export type EvidenceAvailability =
   | { status: 'unavailable'; reason: string };
 
 export interface DesktopTask {
+  source_path?: string;
+  local_id?: string | null;
+  source_writable?: boolean;
   id: string | null;
   body: string;
   completed: boolean;
@@ -126,7 +132,25 @@ export interface TodayView {
   next: DesktopTask[];
 }
 
+export interface TaskSource {
+  completion_policy?: CompletionPolicy;
+  path: string;
+  status: 'managed' | 'unmanaged' | 'error';
+  writable: boolean;
+  preview: string;
+  error?: string | null;
+  revision: string;
+  task_count: number;
+}
+
+export interface AdoptPreview extends ProposedRewrite {
+  source_path: string;
+}
+
 export interface DesktopSnapshot {
+  sources?: TaskSource[];
+  selected_source?: string | null;
+  warnings?: string[];
   project_path: string;
   revision: string;
   completion_policy: CompletionPolicy;
@@ -439,21 +463,39 @@ function normalizeSnapshot(raw: unknown): DesktopSnapshot {
   if (typeof value.project_path !== 'string' || typeof value.revision !== 'string') {
     throw new DesktopBridgeError('桌面后端返回的 Snapshot 不完整');
   }
-  const tasks = Array.isArray(value.tasks) ? value.tasks.map(normalizeTask) : [];
+  const sources = Array.isArray(value.sources) ? value.sources : undefined;
+  const projectTask = (rawTask: unknown): DesktopTask => {
+    const raw = rawTask as Partial<DesktopTask>;
+    const task = normalizeTask(raw);
+    const source = typeof raw.source_path === 'string' ? raw.source_path : undefined;
+    if (source === undefined) return { ...task, ...(sources ? { source_writable: false } : {}) };
+    const entry = sources?.find((item) => item.path === source);
+    const localId = raw.local_id ?? task.id;
+    return {
+      ...task, source_path: source, local_id: localId,
+      id: localId === null ? null : sourceKey(source, localId),
+      column: task.column === null ? null : sourceKey(source, task.column),
+      parent_id: task.parent_id === null ? null : sourceKey(source, task.parent_id),
+      source_writable: entry?.status === 'managed' && entry.writable,
+    };
+  };
+  const tasks = Array.isArray(value.tasks) ? value.tasks.map(projectTask) : [];
   const byId = new Map(tasks.filter((task) => task.id).map((task) => [task.id, task]));
   const normalizeGroup = (items: unknown): DesktopTask[] =>
     Array.isArray(items)
-      ? items.map(normalizeTask).map((task) => (task.id ? byId.get(task.id) ?? task : task))
+      ? items.map(projectTask).map((task) => (task.id ? byId.get(task.id) ?? task : task))
       : [];
   return {
     project_path: value.project_path,
+    ...(sources ? { sources, selected_source: value.selected_source ?? null, warnings: value.warnings ?? [] } : {}),
     revision: value.revision,
     completion_policy: value.completion_policy === 'strict' ? 'strict' : 'normal',
     columns: Array.isArray(value.columns)
       ? value.columns.map((column) => {
           const item = column as Partial<DesktopColumn>;
           return {
-            id: String(item.id ?? ''),
+            id: sourceKey(item.source_path, String(item.id ?? '')),
+            ...(item.source_path === undefined ? {} : { source_path: item.source_path, local_id: String(item.id ?? '') }),
             name: String(item.name ?? item.id ?? ''),
             done: Boolean(item.done),
           };
@@ -697,6 +739,7 @@ export const desktop = {
   },
 
   async status(): Promise<DesktopStatus> {
+    if (useHttp()) return { startup_ms: null, shortcut_status: { status: 'error', message: '浏览器不提供全局快捷键，请使用桌面版。' } };
     if (!isTauriRuntime()) {
       return {
         startup_ms: 86,
@@ -706,9 +749,9 @@ export const desktop = {
     return normalizeStatus(await call<unknown>('desktop_status'));
   },
 
-  async snapshot(): Promise<DesktopSnapshot> {
-    if (isTauriRuntime()) return normalizeSnapshot(await call<unknown>('snapshot'));
-    if (useHttp()) return normalizeSnapshot(await api<unknown>('/snapshot'));
+  async snapshot(sourcePath: string | null = null): Promise<DesktopSnapshot> {
+    if (isTauriRuntime()) return normalizeSnapshot(await call<unknown>(sourcePath === null ? 'snapshot' : 'project_snapshot', sourcePath === null ? undefined : { sourcePath }));
+    if (useHttp()) return normalizeSnapshot(await api<unknown>(sourceQuery('/snapshot', sourcePath)));
     if (mockMode === 'no-project') throw new DesktopBridgeError('no project is open');
     if (mockMode === 'load-error') throw new DesktopBridgeError('frontmatter parse failed near todo-spec');
     return mockSnapshot();
@@ -716,8 +759,7 @@ export const desktop = {
 
   async openProject(path: string): Promise<DesktopSnapshot> {
     if (isTauriRuntime()) return normalizeSnapshot(await call<unknown>('open_project', { path }));
-    mockMode = 'default';
-    return mockSnapshot();
+    throw new DesktopBridgeError('浏览器不能打开本机目录，请使用桌面端或连接目标仓库的 todo serve 项目服务。');
   },
 
   /**
@@ -728,16 +770,17 @@ export const desktop = {
     markdown: boolean,
     comments: boolean,
     importInto: string | null,
+    sourcePath: string | null = null,
   ): Promise<ScanPreview> {
     if (useHttp()) {
       const report = await api<ScanReport>(
-        `/scan?markdown=${markdown}&comments=${comments}`,
+        sourceQuery(`/scan?markdown=${markdown}&comments=${comments}`, sourcePath),
       );
       const empty = report.loose_checkboxes.length + report.code_comments.length === 0;
       if (!importInto || empty) return { report, rewrite: null };
-      const rewrite = await api<ProposedRewrite>('/scan/import', {
+      const rewrite = await api<ProposedRewrite>(sourceQuery('/scan/import', sourcePath), {
         method: 'POST',
-        body: { column: importInto, markdown, comments },
+        body: { column: importInto, markdown, comments, source_path: sourcePath },
       });
       return { report, rewrite };
     }
@@ -746,24 +789,20 @@ export const desktop = {
       markdown,
       comments,
       importInto,
+      sourcePath,
     });
   },
 
   /** Writes a rewrite the user has confirmed. Refused if the file moved on. */
-  async applyRewrite(rewrite: ProposedRewrite, op: string): Promise<DesktopSnapshot> {
+  async applyRewrite(rewrite: ProposedRewrite, op: string, sourcePath: string | null = null, column = 'todo', version?: number, projectPath?: string): Promise<DesktopSnapshot> {
     if (useHttp()) {
       // The server recomputes the rewrite and checks the echoed hash, so a stale
       // confirmation is refused rather than silently applied.
-      const path = op === 'restore' ? null : '/scan/import';
-      if (path) {
-        return normalizeSnapshot(
-          await api<unknown>(path, {
-            method: 'POST',
-            body: { column: 'todo', confirm_base_hash: rewrite.base_hash },
-          }),
-        );
-      }
-      throw new DesktopBridgeError('请从历史列表发起恢复');
+      const path = op === 'restore' ? (version === undefined ? null : `/history/${version}/restore`) : '/scan/import';
+      if (!path) throw new DesktopBridgeError('请从历史列表发起恢复');
+      return normalizeSnapshot(await api<unknown>(sourceQuery(path, sourcePath), {
+        method: 'POST', body: { column, source_path: sourcePath, confirm_base_hash: rewrite.base_hash },
+      }));
     }
     if (!isTauriRuntime()) return mockSnapshot();
     return normalizeSnapshot(
@@ -771,41 +810,48 @@ export const desktop = {
         proposed: rewrite.proposed,
         baseHash: rewrite.base_hash,
         op,
+        sourcePath,
+        projectPath,
       }),
     );
   },
 
-  async historyList(): Promise<HistoryEntry[]> {
-    if (useHttp()) return await api<HistoryEntry[]>('/history');
+  async historyList(sourcePath: string | null = null): Promise<HistoryEntry[]> {
+    if (useHttp()) return await api<HistoryEntry[]>(sourceQuery('/history', sourcePath));
     if (!isTauriRuntime()) return mockHistory();
-    return await call<HistoryEntry[]>('history_list');
+    return await call<HistoryEntry[]>('history_list', { sourcePath });
   },
 
-  async historyPreview(version: number): Promise<ProposedRewrite> {
-    if (useHttp()) return await api<ProposedRewrite>(`/history/${version}/diff`);
+  async historyPreview(version: number, sourcePath: string | null = null): Promise<ProposedRewrite> {
+    if (useHttp()) return await api<ProposedRewrite>(sourceQuery(`/history/${version}/diff`, sourcePath));
     if (!isTauriRuntime()) return mockRewrite();
-    return await call<ProposedRewrite>('history_preview', { version });
+    return await call<ProposedRewrite>('history_preview', { version, sourcePath });
   },
 
-  async alignmentPrompt(): Promise<string> {
+  async alignmentPrompt(sourcePath: string | null = null): Promise<string> {
     if (useHttp()) {
-      const response = await fetch(`${apiBase()}/align/prompt`);
+      const response = await fetch(sourceQuery(`${apiBase()}/align/prompt`, sourcePath));
+      if (!response.ok) throw new DesktopBridgeError('读取对齐提示词失败');
       return await response.text();
     }
     if (!isTauriRuntime()) return '# 任务：核对 TODO 与代码现实\n\n（mock 模式下的占位提示词）\n';
-    return await call<string>('alignment_prompt');
+    return await call<string>('alignment_prompt', { sourcePath });
   },
 
   async chooseAndOpenProject(): Promise<DesktopSnapshot | null> {
     if (!isTauriRuntime()) {
-      mockMode = 'default';
-      return mockSnapshot();
+      throw new DesktopBridgeError('浏览器不能打开本机目录，请使用桌面端或连接目标仓库的 todo serve 项目服务。');
     }
-    const selected = await open({ directory: true, multiple: false, title: '选择包含 TODO.md 的项目' });
+    const selected = await open({ directory: true, multiple: false, title: '选择项目根目录' });
     return typeof selected === 'string' ? this.openProject(selected) : null;
   },
 
-  async mutate(intent: DesktopMutation): Promise<DesktopSnapshot> {
+  async mutate(intent: DesktopMutation, sourcePath: string | null = null, projectMode = false, projectPath?: string): Promise<DesktopSnapshot> {
+    if (isTauriRuntime()) return normalizeSnapshot(await call<unknown>(projectMode || sourcePath !== null ? 'project_mutate' : 'mutate', projectMode || sourcePath !== null ? { sourcePath, intent, projectPath } : { intent }));
+    if (useHttp() && projectMode) {
+      if (!httpCapabilities?.writable) throw new DesktopBridgeError('服务端处于只读模式，无法修改任务');
+      return normalizeSnapshot(await api<unknown>('/mutate', { method: 'POST', body: { source_path: sourcePath, intent } }));
+    }
     if (useHttp()) {
       // Refuse locally rather than letting each write fail at the server: the UI
       // already knows the backend is read-only and can say so once.
@@ -845,11 +891,25 @@ export const desktop = {
         await api<unknown>(route.path, { method: 'POST', body: route.payload }),
       );
     }
-    if (!isTauriRuntime()) return mockMutate(intent);
-    return normalizeSnapshot(await call<unknown>('mutate', { intent }));
+    return mockMutate(intent);
+  },
+
+  async previewAdopt(sourcePath: string): Promise<AdoptPreview> {
+    if (httpCapabilities?.writable === false) throw new DesktopBridgeError('服务端只读，不能接管文件');
+    if (isTauriRuntime()) return call<AdoptPreview>('preview_adopt', { sourcePath });
+    if (useHttp()) return api<AdoptPreview>('/sources/adopt/preview', { method: 'POST', body: { source_path: sourcePath } });
+    throw new DesktopBridgeError('演示模式不能接管真实文件。');
+  },
+
+  async applyAdopt(sourcePath: string, baseHash: string, projectPath?: string): Promise<DesktopSnapshot> {
+    if (httpCapabilities?.writable === false) throw new DesktopBridgeError('服务端只读，不能接管文件');
+    if (isTauriRuntime()) return normalizeSnapshot(await call<unknown>('apply_adopt', { sourcePath, baseHash, projectPath }));
+    if (useHttp()) return normalizeSnapshot(await api<unknown>('/sources/adopt', { method: 'POST', body: { source_path: sourcePath, base_hash: baseHash } }));
+    throw new DesktopBridgeError('演示模式不能接管真实文件。');
   },
 
   async captureList(): Promise<Capture[]> {
+    if (useHttp()) return [];
     if (!isTauriRuntime()) return mockCaptures.map((capture) => ({ ...capture }));
     const result = await call<unknown>('capture_list');
     if (!Array.isArray(result)) throw new DesktopBridgeError('capture_list 没有返回 Capture 列表');
@@ -857,6 +917,7 @@ export const desktop = {
   },
 
   async captureAppend(text: string): Promise<CaptureAppendResult> {
+    if (useHttp()) throw new DesktopBridgeError('HTTP 项目服务不开放个人随记，请使用桌面版。');
     if (!isTauriRuntime()) {
       const capture: Capture = {
         id: `cap-mock-${String(mockCaptureSequence++).padStart(2, '0')}`,
@@ -878,6 +939,7 @@ export const desktop = {
   },
 
   async captureDelete(id: string): Promise<Capture[]> {
+    if (useHttp()) throw new DesktopBridgeError('HTTP 项目服务不开放个人随记，请使用桌面版。');
     if (!isTauriRuntime()) {
       mockCaptures = mockCaptures.filter((capture) => capture.id !== id);
       return mockCaptures.map((capture) => ({ ...capture }));
@@ -887,7 +949,8 @@ export const desktop = {
     return captures.map(normalizeCapture);
   },
 
-  async captureTriage(id: string, column: string): Promise<TriageResult> {
+  async captureTriage(id: string, column: string, sourcePath: string | null = null, projectPath?: string): Promise<TriageResult> {
+    if (useHttp()) throw new DesktopBridgeError('HTTP 项目服务不开放个人随记，请使用桌面版。');
     if (!isTauriRuntime()) {
       const capture = mockCaptures.find((item) => item.id === id);
       if (!capture) throw new DesktopBridgeError('Capture 已不存在');
@@ -926,7 +989,7 @@ export const desktop = {
       emitMock({ type: 'snapshot', snapshot: result.snapshot! });
       return result;
     }
-    const raw = (await call<unknown>('capture_triage', { id, column })) as Record<string, unknown>;
+    const raw = await call<Record<string, unknown>>('capture_triage', { id, column, sourcePath, projectPath });
     const taggedResult = (raw.result ?? {}) as Record<string, unknown>;
     if (typeof taggedResult.task_id !== 'string' || !taggedResult.task_id) {
       throw new DesktopBridgeError('capture_triage.result 缺少 task_id');

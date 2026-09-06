@@ -222,6 +222,15 @@ impl DesktopBackend {
         self.derive(&parse_file(path)?)
     }
 
+    pub(crate) fn snapshot_document(
+        &mut self,
+        path: &Path,
+        document: &Document,
+    ) -> Result<DesktopSnapshot> {
+        self.project = Some(path.to_path_buf());
+        self.derive(document)
+    }
+
     pub fn mutate(&self, intent: DesktopIntent) -> Result<DesktopSnapshot> {
         let (document, _) = self.apply_intent(intent)?;
         self.derive(&document)

@@ -1,0 +1,72 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-09-05T19:59:37.827Z",
+  "title": "Design System: ToDo / 市政简报",
+  "extensions": {
+    "colorMeta": {
+      "paper": {"role":"neutral","displayName":"骨白纸地","tonalRamp":["oklch(15% 0.004 285)","oklch(26% 0.004 285)","oklch(38% 0.004 285)","oklch(49% 0.004 285)","oklch(61% 0.004 285)","oklch(72% 0.004 285)","oklch(84% 0.004 285)","oklch(95% 0.004 285)"]},
+      "panel": {"role":"neutral","displayName":"白纸面板","tonalRamp":["oklch(15% 0 0)","oklch(26% 0 0)","oklch(38% 0 0)","oklch(49% 0 0)","oklch(61% 0 0)","oklch(72% 0 0)","oklch(84% 0 0)","oklch(95% 0 0)"]},
+      "ink": {"role":"neutral","displayName":"墨蓝","tonalRamp":["oklch(15% 0.08 285)","oklch(26% 0.08 285)","oklch(38% 0.08 285)","oklch(49% 0.08 285)","oklch(61% 0.08 285)","oklch(72% 0.08 285)","oklch(84% 0.08 285)","oklch(95% 0.08 285)"]},
+      "violet": {"role":"primary","displayName":"工作紫","tonalRamp":["oklch(15% 0.2 285)","oklch(26% 0.2 285)","oklch(38% 0.2 285)","oklch(49% 0.2 285)","oklch(61% 0.2 285)","oklch(72% 0.2 285)","oklch(84% 0.2 285)","oklch(95% 0.2 285)"]},
+      "violet-wash": {"role":"primary","displayName":"淡紫洗色","tonalRamp":["oklch(15% 0.025 290)","oklch(26% 0.025 290)","oklch(38% 0.025 290)","oklch(49% 0.025 290)","oklch(61% 0.025 290)","oklch(72% 0.025 290)","oklch(84% 0.025 290)","oklch(95% 0.025 290)"]},
+      "danger": {"role":"secondary","displayName":"危险文字","tonalRamp":["oklch(15% 0.18 28)","oklch(26% 0.18 28)","oklch(38% 0.18 28)","oklch(49% 0.18 28)","oklch(61% 0.18 28)","oklch(72% 0.18 28)","oklch(84% 0.18 28)","oklch(95% 0.18 28)"]},
+      "danger-fill": {"role":"secondary","displayName":"固定失败底色","tonalRamp":["oklch(15% 0.18 28)","oklch(26% 0.18 28)","oklch(38% 0.18 28)","oklch(49% 0.18 28)","oklch(61% 0.18 28)","oklch(72% 0.18 28)","oklch(84% 0.18 28)","oklch(95% 0.18 28)"]},
+      "night": {"role":"neutral","displayName":"夜版纸地","tonalRamp":["oklch(15% 0.04 285)","oklch(26% 0.04 285)","oklch(38% 0.04 285)","oklch(49% 0.04 285)","oklch(61% 0.04 285)","oklch(72% 0.04 285)","oklch(84% 0.04 285)","oklch(95% 0.04 285)"]},
+      "panel-dark": {"role":"neutral","displayName":"夜版面板","tonalRamp":["oklch(15% 0.06 285)","oklch(26% 0.06 285)","oklch(38% 0.06 285)","oklch(49% 0.06 285)","oklch(61% 0.06 285)","oklch(72% 0.06 285)","oklch(84% 0.06 285)","oklch(95% 0.06 285)"]},
+      "ink-dark": {"role":"neutral","displayName":"夜版主文字","tonalRamp":["oklch(15% 0.02 290)","oklch(26% 0.02 290)","oklch(38% 0.02 290)","oklch(49% 0.02 290)","oklch(61% 0.02 290)","oklch(72% 0.02 290)","oklch(84% 0.02 290)","oklch(95% 0.02 290)"]},
+      "violet-dark": {"role":"primary","displayName":"夜版工作紫","tonalRamp":["oklch(15% 0.16 285)","oklch(26% 0.16 285)","oklch(38% 0.16 285)","oklch(49% 0.16 285)","oklch(61% 0.16 285)","oklch(72% 0.16 285)","oklch(84% 0.16 285)","oklch(95% 0.16 285)"]},
+      "danger-dark": {"role":"secondary","displayName":"夜版危险文字","tonalRamp":["oklch(15% 0.14 25)","oklch(26% 0.14 25)","oklch(38% 0.14 25)","oklch(49% 0.14 25)","oklch(61% 0.14 25)","oklch(72% 0.14 25)","oklch(84% 0.14 25)","oklch(95% 0.14 25)"]}
+    },
+    "typographyMeta": {"body":{"displayName":"系统正文","purpose":"SF 系统 sans，正文 400，强调 500。"},"identifier":{"displayName":"系统等宽","purpose":"ID、日期、物证与快捷键；计数使用 tabular-nums。"}},
+    "shadows": [
+      {"name":"card","value":"0 8px 20px -14px rgba(27, 21, 71, 0.28)","purpose":"普通任务悬停；夜版 0 8px 20px -14px rgba(0, 0, 0, 0.6)。"},
+      {"name":"drag","value":"0 18px 36px -16px rgba(27, 21, 71, 0.38)","purpose":"拖动；夜版 0 18px 36px -16px rgba(0, 0, 0, 0.7)。"},
+      {"name":"menu","value":"0 12px 32px -10px rgba(27, 21, 71, 0.28), 0 2px 6px -2px rgba(27, 21, 71, 0.12)","purpose":"菜单与状态浮层；夜版 0 12px 32px -10px rgba(0, 0, 0, 0.7), 0 0 0 1px rgba(255, 255, 255, 0.05)。"},
+      {"name":"dialog","value":"0 28px 64px -24px rgba(27, 21, 71, 0.42), 0 8px 20px -12px rgba(27, 21, 71, 0.18)","purpose":"对话框；夜版 0 28px 64px -24px rgba(0, 0, 0, 0.8), 0 0 0 1px rgba(255, 255, 255, 0.05)。遮罩浅 rgba(27,21,71,0.42)，深 rgba(5,4,16,0.64)。"},
+      {"name":"lacquer","value":"0 22px 44px -24px rgba(27, 21, 71, 0.55), 0 4px 12px -6px rgba(27, 21, 71, 0.25)","purpose":"浅色焦点；夜版 0 8px 18px -12px rgba(0, 0, 0, 0.45), 0 0 0 1px rgba(140, 128, 240, 0.3)。"}
+    ],
+    "motion": [
+      {"name":"ease-out","value":"cubic-bezier(0.25, 1, 0.5, 1)","purpose":"常规颜色/边线/阴影过渡 0.3s；工具显示与勾选 0.2s。"},
+      {"name":"workspace-rise","value":"0.8s cubic-bezier(0.165, 0.84, 0.44, 1)","purpose":"工作区挂载 opacity 0→1、translateY(24px)→0。"},
+      {"name":"view-in","value":"0.24s cubic-bezier(0.25, 1, 0.5, 1)","purpose":"视图与面板 6px 上升；菜单 0.12s 淡入，状态条 0.3s 从 -8px 入场，速记 0.2s 从 -4px 入场。加载 shimmer 1.4s linear infinite，只用于加载。"},
+      {"name":"reduced-motion","value":"0.001ms","purpose":"CSS 动画与过渡缩短至 0.001ms，动画一次，scroll-behavior:auto。Ribbon 忽略指针，仍绘制静态 WebGL 帧。"},
+      {"name":"ribbon-pointer","value":"0.16","purpose":"Ribbon.tsx 指针指数插值；bend 误差 <0.004 且坐标误差 <0.002 后停止 RAF。影响范围含画布外 160px；DPR 上限 2，phase=0.3，夜版 glow=1。非持续漂浮。无 WebGL/编译失败用静态 CSS fallback；contextlost 后维持 fallback 至下次挂载，不自动恢复 GL。"}
+    ],
+    "breakpoints": [{"name":"tray","value":"1000px"},{"name":"compact-sidebar","value":"980px"},{"name":"icon-sidebar","value":"760px"},{"name":"quadrant-menu","value":"720px"},{"name":"bottom-navigation","value":"719px"},{"name":"short-desktop-height","value":"620px"}]
+  },
+  "components": [
+    {
+      "name":"实心主按钮","kind":"button","refersTo":"button-primary","description":"solid-action；浅深外观均保持实心紫与白字。",
+      "html":"<button type=\"button\" class=\"ds-primary\">选择项目</button>",
+      "css":".ds-primary{font-family:var(--font,-apple-system,BlinkMacSystemFont,system-ui,sans-serif);min-height:36px;padding:0 16px;color:var(--primary-ink,#fff);background:var(--primary-fill,#6b5ce7);border:1px solid transparent;border-radius:var(--radius-control,8px);font-size:13.5px;font-weight:500;transition:background .3s var(--ease-out,cubic-bezier(.25,1,.5,1))}.ds-primary:hover:not(:disabled){background:var(--primary-fill-hover,#5a4bd6)}.ds-primary:focus-visible{outline:2px solid var(--violet,#6b5ce7);outline-offset:2px}.ds-primary:disabled{color:var(--ink-3,#6c7189);background:var(--panel-2,#f1f1f6)}@media(prefers-color-scheme:dark){.ds-primary:hover:not(:disabled){background:var(--primary-fill-hover,#7c6ef0)}.ds-primary:focus-visible{outline-color:var(--violet,#8c80f0)}.ds-primary:disabled{color:var(--ink-3,#8b89a8);background:var(--panel-2,#1e1a40)}}@media(prefers-reduced-motion:reduce){.ds-primary{transition-duration:.001ms}}"
+    },
+    {
+      "name":"模型输入","kind":"input","refersTo":"input","description":"provider-field；加强发丝与局部焦点洗色。",
+      "html":"<label class=\"ds-field\">当前模型<input placeholder=\"输入或选择模型 ID\" /></label>",
+      "css":".ds-field{display:grid;gap:6px;font:12.5px var(--font,-apple-system,BlinkMacSystemFont,system-ui,sans-serif);color:var(--ink-2,#4b5165)}.ds-field input{min-height:38px;padding:0 11px;font:14px var(--font,-apple-system,BlinkMacSystemFont,system-ui,sans-serif);color:var(--ink,#1b1547);background:var(--bg,#f7f7fa);border:1px solid var(--hairline-2,#d3d4e0);border-radius:var(--radius-control,8px);outline:0;transition:border-color .3s var(--ease-out,cubic-bezier(.25,1,.5,1)),box-shadow .3s var(--ease-out,cubic-bezier(.25,1,.5,1))}.ds-field input:focus{border-color:var(--violet,#6b5ce7);box-shadow:0 0 0 3px var(--violet-wash,#eeebfc)}.ds-field input::placeholder{color:var(--ink-3,#6c7189)}@media(prefers-color-scheme:dark){.ds-field{color:var(--ink-2,#b4b2cc)}.ds-field input{color:var(--ink,#eceaf7);background:var(--bg,#0f0d22);border-color:var(--hairline-2,#3a3568)}.ds-field input:focus{border-color:var(--violet,#8c80f0);box-shadow:0 0 0 3px var(--violet-wash,rgba(140,128,240,.16))}.ds-field input::placeholder{color:var(--ink-3,#8b89a8)}}@media(prefers-reduced-motion:reduce){.ds-field input{transition-duration:.001ms}}"
+    },
+    {
+      "name":"源列表选中项","kind":"nav","refersTo":"nav-selected","description":"primary-nav；保留图标、文字、aria-current。",
+      "html":"<nav aria-label=\"主要视图\"><button type=\"button\" class=\"ds-nav\" aria-current=\"page\"><svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.5\" aria-hidden=\"true\"><circle cx=\"12\" cy=\"12\" r=\"9\"/><circle cx=\"12\" cy=\"12\" r=\"4.5\"/><path d=\"M12 3v3M12 18v3M3 12h3M18 12h3\"/></svg><span>目标</span></button></nav>",
+      "css":".ds-nav{display:grid;grid-template-columns:18px minmax(0,1fr);align-items:center;gap:10px;width:100%;min-height:34px;padding:6px 9px;text-align:left;color:var(--violet,#6b5ce7);background:var(--violet-wash,#eeebfc);border:0;border-radius:var(--radius-control,8px);font:500 13.5px var(--font,-apple-system,BlinkMacSystemFont,system-ui,sans-serif);transition:color .3s var(--ease-out,cubic-bezier(.25,1,.5,1)),background .3s var(--ease-out,cubic-bezier(.25,1,.5,1))}.ds-nav svg{width:16px;height:16px}.ds-nav:hover{color:var(--violet,#6b5ce7);background:var(--violet-wash,#eeebfc)}.ds-nav:focus-visible{outline:2px solid var(--violet,#6b5ce7);outline-offset:2px}@media(prefers-color-scheme:dark){.ds-nav,.ds-nav:hover{color:var(--violet,#8c80f0);background:var(--violet-wash,rgba(140,128,240,.16))}.ds-nav:focus-visible{outline-color:var(--violet,#8c80f0)}}@media(prefers-reduced-motion:reduce){.ds-nav{transition-duration:.001ms}}"
+    },
+    {
+      "name":"任务标签","kind":"chip","refersTo":"tag","description":"非交互的 task-tag；不伪造悬停和焦点。",
+      "html":"<span class=\"ds-tag\">#evidence</span>",
+      "css":".ds-tag{display:inline-flex;align-items:center;gap:5px;padding:2px 7px;color:var(--violet,#6b5ce7);background:var(--violet-wash,#eeebfc);border:1px solid transparent;border-radius:var(--radius-chip,5px);font:11px/1.4 var(--font,-apple-system,BlinkMacSystemFont,system-ui,sans-serif);font-variant-numeric:tabular-nums}@media(prefers-color-scheme:dark){.ds-tag{color:var(--violet,#8c80f0);background:var(--violet-wash,rgba(140,128,240,.16))}}"
+    },
+    {
+      "name":"任务与漆面变体","kind":"card","refersTo":"task-card","description":"普通卡与 focus 材料示例；仅静态结构，不模拟写入行为。键盘 focus ring 与漆面焦点是两个概念。",
+      "html":"<article class=\"ds-card\" tabindex=\"0\" aria-label=\"Project Task 示例\"><span class=\"ds-id\">m2v7qx</span><p>完善首次使用说明</p></article><article class=\"ds-card ds-focus\" tabindex=\"0\" aria-label=\"推进中 Project Task 示例\"><span class=\"ds-id\">f18c2a</span><p>补齐 evidence diff 摘要</p></article>",
+      "css":".ds-card{position:relative;margin:12px 0;padding:12px 14px;color:var(--ink,#1b1547);background:var(--panel,#fff);border:1px solid var(--hairline,#e6e7ee);border-radius:var(--radius-panel,12px);font:14px/1.45 var(--font,-apple-system,BlinkMacSystemFont,system-ui,sans-serif);transition:box-shadow .3s var(--ease-out,cubic-bezier(.25,1,.5,1)),border-color .3s var(--ease-out,cubic-bezier(.25,1,.5,1))}.ds-card p{margin:10px 0 0}.ds-id{color:var(--ink-3,#6c7189);font:11px var(--mono,ui-monospace,'SF Mono',Menlo,monospace);letter-spacing:.02em}.ds-card:hover{border-color:var(--hairline-2,#d3d4e0);box-shadow:var(--shadow-card,0 8px 20px -14px rgba(27,21,71,.28))}.ds-card:focus-visible{outline:2px solid var(--violet,#6b5ce7);outline-offset:2px}.ds-focus{overflow:hidden;padding:18px 20px 16px;color:var(--lacquer-ink,#f2f1fa);background:var(--lacquer,linear-gradient(180deg,#2a2266 0%,#1b1547 55%,#171240 100%));border-color:transparent;box-shadow:var(--lacquer-shadow,0 22px 44px -24px rgba(27,21,71,.55),0 4px 12px -6px rgba(27,21,71,.25))}.ds-focus:before{position:absolute;inset:0 0 auto;height:46%;content:'';background:linear-gradient(180deg,rgba(255,255,255,.09),transparent);pointer-events:none}.ds-focus>*{position:relative}.ds-focus .ds-id{color:var(--lacquer-ink-2,#b9b4e0)}.ds-focus p{margin-top:12px;font-size:19px;font-weight:500;line-height:1.38;letter-spacing:-.012em}.ds-focus:hover{border-color:transparent;box-shadow:var(--lacquer-shadow,0 22px 44px -24px rgba(27,21,71,.55),0 4px 12px -6px rgba(27,21,71,.25))}@media(prefers-color-scheme:dark){.ds-card{color:var(--ink,#eceaf7);background:var(--panel,#171433);border-color:var(--hairline,#2a2652)}.ds-id{color:var(--ink-3,#8b89a8)}.ds-card:hover{border-color:var(--hairline-2,#3a3568);box-shadow:var(--shadow-card,0 8px 20px -14px rgba(0,0,0,.6))}.ds-card:focus-visible{outline-color:var(--violet,#8c80f0)}.ds-focus{color:var(--lacquer-ink,#eceaf7);background:var(--lacquer,linear-gradient(180deg,#25213f 0%,#211d38 60%,#1e1a33 100%));border-color:transparent;box-shadow:var(--lacquer-shadow,0 8px 18px -12px rgba(0,0,0,.45),0 0 0 1px rgba(140,128,240,.3))}.ds-focus .ds-id{color:var(--lacquer-ink-2,#b9b4d2)}.ds-focus:hover{border-color:transparent;box-shadow:var(--lacquer-shadow,0 8px 18px -12px rgba(0,0,0,.45),0 0 0 1px rgba(140,128,240,.3))}}@media(prefers-reduced-motion:reduce){.ds-card{transition-duration:.001ms}}"
+    }
+  ],
+  "narrative": {
+    "northStar": "市政简报",
+    "overview": "一份市政简报做成的工作台：骨白纸面、发丝分带、漆面焦点。采用用户选定的 `civic-bureau-prospectus-late-modern`；系统字体、macOS 惯例与 Linear / Raycast 的 Mac 版工艺标尺优先，不照搬营销页构图。外观跟随系统，夜版焦点卡保持深色，仅比周围面板略亮，以细边框、文字层级和少量紫色突出。",
+    "keyCharacteristics": ["纸面分带、紧凑密度、系统字体两字重。", "展开的推进中任务使用漆面，青、丁香、紫丝带提供材料记忆点。"],
+    "rules": [{"name":"The Semantic Fill Rule","body":"危险文字与危险实心底色是两个角色；夜版提亮文字，不提亮失败按钮底色。","section":"colors"},{"name":"The Paper Bands Rule","body":"区域和任务可以有边界；中间待办列只用标题、数量、间距与发丝线分带。","section":"elevation"}],
+    "dos": ["Do 保留系统字体、两字重与系统浅深外观。", "Do 用发丝分带，保留 ID、物证、键盘入口与真实写入状态。"],
+    "donts": ["Don't 恢复中间待办列的有色圆角盒，或把所有任务与象限染成重点。", "Don't 声称旧规格禁止原生控件，也不要恢复旧系统字体禁令。", "Don't 把截图或局部 ship 当作全面交互与可访问性认证。"]
+  }
+}

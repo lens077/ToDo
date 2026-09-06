@@ -1,25 +1,5 @@
-//! `todo serve` — the HTTP face of the same core the CLI and desktop use.
-//!
-//! This exists so the Web UI and `curl` reach the product without a second
-//! implementation of anything. Handlers are thin: they parse, call `todo-core`,
-//! and serialise. Every safety property therefore holds here for free — writes
-//! go through the same locked writer, land in the same version history, and a
-//! bulk rewrite is still refused unless the caller echoes the base hash it was
-//! shown.
-//!
-//! Binding is loopback by default. A task file is a repository's working state,
-//! and exposing it on every interface by accident is not a mistake the user
-//! should have to notice; `--host` makes that an explicit decision.
-
-use std::{
-    collections::hash_map::DefaultHasher,
-    hash::{Hash, Hasher},
-    net::SocketAddr,
-    path::PathBuf,
-    sync::Arc,
-    time::Duration,
-};
-
+//! HTTP view of a bound project root. Every write resolves a discovered source;
+//! this server never accepts an arbitrary disk path or switches its root remotely.
 use axum::{
     extract::{Path as AxumPath, Query, State},
     http::StatusCode,
@@ -28,9 +8,17 @@ use axum::{
     Router,
 };
 use serde::{Deserialize, Serialize};
+use std::{
+    collections::hash_map::DefaultHasher,
+    hash::{Hash, Hasher},
+    net::SocketAddr,
+    path::PathBuf,
+    sync::Arc,
+    time::Duration,
+};
 use todo_core::{
     diff_lines, import_text, parse_file, review_alignment, scan, DesktopBackend, DesktopIntent,
-    DesktopSnapshot, History, LockedWriter, MoveTarget, PriorityScope, ScanOptions,
+    History, LockedWriter, MoveTarget, PriorityScope, ProjectBackend, ProjectSnapshot, ScanOptions,
 };
 use tower_http::{cors::CorsLayer, services::ServeDir};
 
@@ -38,25 +26,23 @@ use tower_http::{cors::CorsLayer, services::ServeDir};
 struct ServeState {
     path: PathBuf,
     lock_timeout: Duration,
-    /// Read-only mode: every mutating route is refused. Mobile clients are
-    /// expected to run against this, so "view on the phone" cannot become
-    /// "accidentally rewrite the repository from the phone".
     read_only: bool,
-    /// One backend for the process: its evidence cache is shared by every
-    /// clone, so the task file's git history is scanned per commit, not per
-    /// request.
-    backend: DesktopBackend,
 }
-
 impl ServeState {
-    fn backend(&self) -> Result<DesktopBackend, ApiError> {
-        let mut backend = self.backend.clone();
-        backend
-            .open_project(self.path.to_string_lossy().as_ref())
-            .map_err(ApiError::from)?;
+    fn backend(&self) -> Result<ProjectBackend, ApiError> {
+        let mut backend = ProjectBackend::new(self.lock_timeout);
+        backend.open_project(&self.path)?;
         Ok(backend)
     }
-
+    fn source(&self, source: Option<&str>) -> Result<DesktopBackend, ApiError> {
+        Ok(self.backend()?.source_backend(source)?)
+    }
+    fn source_path(&self, source: Option<&str>) -> Result<PathBuf, ApiError> {
+        self.source(source)?
+            .project_path()
+            .map(ToOwned::to_owned)
+            .ok_or_else(|| todo_core::Error::NoProject.into())
+    }
     fn writable(&self) -> Result<(), ApiError> {
         if self.read_only {
             return Err(ApiError {
@@ -67,17 +53,12 @@ impl ServeState {
         Ok(())
     }
 }
-
 struct ApiError {
     status: StatusCode,
     message: String,
 }
-
 impl From<todo_core::Error> for ApiError {
     fn from(error: todo_core::Error) -> Self {
-        // Lock contention and optimistic-lock failures are retryable and must not
-        // be reported as server faults, or a client cannot tell "try again" from
-        // "this is broken".
         let status = match error {
             todo_core::Error::LockTimeout { .. } => StatusCode::SERVICE_UNAVAILABLE,
             todo_core::Error::ConcurrentModification => StatusCode::CONFLICT,
@@ -86,7 +67,8 @@ impl From<todo_core::Error> for ApiError {
             }
             todo_core::Error::NotTaskFile
             | todo_core::Error::NoProject
-            | todo_core::Error::InvalidTaskLine(_) => StatusCode::BAD_REQUEST,
+            | todo_core::Error::InvalidTaskLine(_)
+            | todo_core::Error::InvalidAlignment(_) => StatusCode::BAD_REQUEST,
             _ => StatusCode::INTERNAL_SERVER_ERROR,
         };
         Self {
@@ -95,18 +77,20 @@ impl From<todo_core::Error> for ApiError {
         }
     }
 }
-
 impl IntoResponse for ApiError {
     fn into_response(self) -> axum::response::Response {
         (
             self.status,
-            Json(serde_json::json!({ "ok": false, "error": self.message })),
+            Json(serde_json::json!({"ok":false,"error":self.message})),
         )
             .into_response()
     }
 }
-
 type ApiResult<T> = Result<Json<T>, ApiError>;
+#[derive(Default, Deserialize)]
+struct SourceQuery {
+    source: Option<String>,
+}
 
 pub fn router(
     path: PathBuf,
@@ -115,14 +99,16 @@ pub fn router(
     web_root: Option<PathBuf>,
 ) -> Router {
     let state = ServeState {
-        backend: DesktopBackend::new(lock_timeout),
-        path,
+        path: path.canonicalize().unwrap_or(path),
         lock_timeout,
         read_only,
     };
     let api = Router::new()
         .route("/health", get(health))
         .route("/snapshot", get(snapshot))
+        .route("/mutate", post(project_mutate))
+        .route("/sources/adopt/preview", post(preview_adopt))
+        .route("/sources/adopt", post(apply_adopt))
         .route("/tasks", post(create_task))
         .route("/tasks/{id}/completed", post(set_completed))
         .route("/tasks/{id}/progress", post(set_progress))
@@ -137,9 +123,7 @@ pub fn router(
         .route("/align/prompt", get(align_prompt))
         .route("/align/review", post(align_review))
         .with_state(Arc::new(state))
-        // The Web UI may be served from a different origin during development.
         .layer(CorsLayer::permissive());
-
     match web_root {
         Some(root) => Router::new()
             .nest("/api/v1", api)
@@ -147,7 +131,6 @@ pub fn router(
         None => Router::new().nest("/api/v1", api),
     }
 }
-
 pub async fn run(
     path: PathBuf,
     addr: SocketAddr,
@@ -158,86 +141,118 @@ pub async fn run(
     let app = router(path.clone(), lock_timeout, read_only, web_root);
     let listener = tokio::net::TcpListener::bind(addr)
         .await
-        .map_err(|error| format!("could not bind {addr}: {error}"))?;
-    let bound = listener.local_addr().map_err(|error| error.to_string())?;
+        .map_err(|e| format!("could not bind {addr}: {e}"))?;
+    let bound = listener.local_addr().map_err(|e| e.to_string())?;
     eprintln!(
-        "todo serve → http://{bound}/api/v1  (project: {})",
+        "todo serve → http://{bound}/api/v1  (project root: {})",
         path.display()
     );
     if read_only {
         eprintln!("read-only: mutating endpoints return 403");
     }
     axum::serve(listener, app)
-        .with_graceful_shutdown(shutdown())
+        .with_graceful_shutdown(async {
+            let _ = tokio::signal::ctrl_c().await;
+        })
         .await
-        .map_err(|error| error.to_string())
+        .map_err(|e| e.to_string())
 }
-
-async fn shutdown() {
-    let _ = tokio::signal::ctrl_c().await;
+async fn health(State(state): State<Arc<ServeState>>) -> Json<serde_json::Value> {
+    Json(
+        serde_json::json!({"ok":true,"read_only":state.read_only,"project":state.path.display().to_string(),"project_sources":true,"captures":false}),
+    )
 }
-
-#[derive(Serialize)]
-struct Health {
-    ok: bool,
-    read_only: bool,
-    project: String,
-}
-
-async fn health(State(state): State<Arc<ServeState>>) -> Json<Health> {
-    Json(Health {
-        ok: true,
-        read_only: state.read_only,
-        project: state.path.display().to_string(),
-    })
-}
-
-async fn snapshot(State(state): State<Arc<ServeState>>) -> ApiResult<DesktopSnapshot> {
-    Ok(Json(state.backend()?.snapshot().map_err(ApiError::from)?))
-}
-
-fn mutate(state: &ServeState, intent: DesktopIntent) -> ApiResult<DesktopSnapshot> {
-    state.writable()?;
+async fn snapshot(
+    State(state): State<Arc<ServeState>>,
+    Query(query): Query<SourceQuery>,
+) -> ApiResult<ProjectSnapshot> {
     let backend = state.backend()?;
-    Ok(Json(backend.mutate(intent).map_err(ApiError::from)?))
+    Ok(Json(match query.source {
+        Some(source) => backend.snapshot_source(&source)?,
+        None => backend.snapshot()?,
+    }))
+}
+#[derive(Deserialize)]
+struct ProjectMutation {
+    source_path: Option<String>,
+    intent: DesktopIntent,
+}
+async fn project_mutate(
+    State(state): State<Arc<ServeState>>,
+    Json(input): Json<ProjectMutation>,
+) -> ApiResult<ProjectSnapshot> {
+    mutate(&state, input.source_path.as_deref(), input.intent)
+}
+fn mutate(
+    state: &ServeState,
+    source: Option<&str>,
+    intent: DesktopIntent,
+) -> ApiResult<ProjectSnapshot> {
+    state.writable()?;
+    Ok(Json(state.backend()?.mutate(source, intent)?))
+}
+#[derive(Deserialize)]
+struct AdoptInput {
+    source_path: String,
+    base_hash: Option<String>,
+}
+async fn preview_adopt(
+    State(state): State<Arc<ServeState>>,
+    Json(input): Json<AdoptInput>,
+) -> ApiResult<todo_core::AdoptionPreview> {
+    state.writable()?;
+    Ok(Json(state.backend()?.preview_adopt(&input.source_path)?))
+}
+async fn apply_adopt(
+    State(state): State<Arc<ServeState>>,
+    Json(input): Json<AdoptInput>,
+) -> ApiResult<ProjectSnapshot> {
+    state.writable()?;
+    let hash = input.base_hash.ok_or_else(|| ApiError {
+        status: StatusCode::BAD_REQUEST,
+        message: "review an adoption diff and supply base_hash before confirming".into(),
+    })?;
+    Ok(Json(
+        state.backend()?.apply_adopt(&input.source_path, &hash)?,
+    ))
 }
 
+// Legacy per-task endpoints retain their single-source contract. Multi-source
+// callers must name a source; an ID is never searched globally to guess a file.
 #[derive(Deserialize)]
 struct NewTask {
     body: String,
-    #[serde(default)]
     column: Option<String>,
+    source_path: Option<String>,
 }
-
 async fn create_task(
     State(state): State<Arc<ServeState>>,
     Json(input): Json<NewTask>,
-) -> ApiResult<DesktopSnapshot> {
+) -> ApiResult<ProjectSnapshot> {
     mutate(
         &state,
+        input.source_path.as_deref(),
         DesktopIntent::AddTask {
             body: input.body,
             column: input.column,
         },
     )
 }
-
 #[derive(Deserialize)]
 struct Completed {
     completed: bool,
-    #[serde(default)]
     note: Option<String>,
-    #[serde(default)]
     evidence: Option<todo_core::EvidenceRange>,
+    source_path: Option<String>,
 }
-
 async fn set_completed(
     State(state): State<Arc<ServeState>>,
     AxumPath(id): AxumPath<String>,
     Json(input): Json<Completed>,
-) -> ApiResult<DesktopSnapshot> {
+) -> ApiResult<ProjectSnapshot> {
     mutate(
         &state,
+        input.source_path.as_deref(),
         DesktopIntent::SetCompleted {
             id,
             completed: input.completed,
@@ -246,75 +261,63 @@ async fn set_completed(
         },
     )
 }
-
 #[derive(Deserialize)]
 struct MoveInput {
     column: String,
-    #[serde(default)]
     note: Option<String>,
-    #[serde(default)]
     evidence: Option<todo_core::EvidenceRange>,
+    source_path: Option<String>,
 }
-
 async fn move_task(
     State(state): State<Arc<ServeState>>,
     AxumPath(id): AxumPath<String>,
     Json(input): Json<MoveInput>,
-) -> ApiResult<DesktopSnapshot> {
+) -> ApiResult<ProjectSnapshot> {
     mutate(
         &state,
+        input.source_path.as_deref(),
         DesktopIntent::MoveTask {
             id,
             column: input.column,
-            // Cross-column moves are surfaced as state transitions in the UI;
-            // the changed task must be the first item the user sees.
             target: MoveTarget::ColumnStart,
             note: input.note,
             evidence: input.evidence,
         },
     )
 }
-
 #[derive(Deserialize)]
 struct PriorityInput {
     #[serde(default)]
     priority: PriorityValue,
     #[serde(default)]
     scope: PriorityScope,
+    source_path: Option<String>,
 }
-
 #[derive(Default)]
 enum PriorityValue {
     #[default]
     Missing,
     Value(Option<u8>),
 }
-
 impl<'de> Deserialize<'de> for PriorityValue {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         Option::<u8>::deserialize(deserializer).map(Self::Value)
     }
 }
-
 async fn set_priority(
     State(state): State<Arc<ServeState>>,
     AxumPath(id): AxumPath<String>,
     Json(input): Json<PriorityInput>,
-) -> ApiResult<DesktopSnapshot> {
-    let priority = match input.priority {
-        PriorityValue::Value(priority) => priority,
-        PriorityValue::Missing => {
-            return Err(ApiError {
-                status: StatusCode::BAD_REQUEST,
-                message: "priority must be 1-4 or null".into(),
-            });
-        }
+) -> ApiResult<ProjectSnapshot> {
+    let PriorityValue::Value(priority) = input.priority else {
+        return Err(ApiError {
+            status: StatusCode::BAD_REQUEST,
+            message: "priority must be 1-4 or null".into(),
+        });
     };
     mutate(
         &state,
+        input.source_path.as_deref(),
         DesktopIntent::SetPriority {
             id,
             priority,
@@ -322,21 +325,17 @@ async fn set_priority(
         },
     )
 }
-
 #[derive(Deserialize)]
 struct ProgressInput {
     percent: u8,
-    #[serde(default)]
     note: Option<String>,
+    source_path: Option<String>,
 }
-
-/// Applies the same 1-99 rule the CLI enforces, for the same reason: 0 and 100
-/// would become second spellings of "not started" and "done".
 async fn set_progress(
     State(state): State<Arc<ServeState>>,
     AxumPath(id): AxumPath<String>,
     Json(input): Json<ProgressInput>,
-) -> ApiResult<DesktopSnapshot> {
+) -> ApiResult<ProjectSnapshot> {
     state.writable()?;
     let note = input.note.ok_or_else(|| ApiError {
         status: StatusCode::BAD_REQUEST,
@@ -344,6 +343,7 @@ async fn set_progress(
     })?;
     mutate(
         &state,
+        input.source_path.as_deref(),
         DesktopIntent::SetPartial {
             id,
             percent: input.percent,
@@ -351,65 +351,62 @@ async fn set_progress(
         },
     )
 }
-
 #[derive(Deserialize)]
 struct FailInput {
-    #[serde(default)]
     note: Option<String>,
+    source_path: Option<String>,
 }
-
 async fn set_failed(
     State(state): State<Arc<ServeState>>,
     AxumPath(id): AxumPath<String>,
     Json(input): Json<FailInput>,
-) -> ApiResult<DesktopSnapshot> {
+) -> ApiResult<ProjectSnapshot> {
     state.writable()?;
     let note = input.note.ok_or_else(|| ApiError {
         status: StatusCode::BAD_REQUEST,
         message: "failed attempt requires a note".into(),
     })?;
-    mutate(&state, DesktopIntent::SetFailed { id, note })
+    mutate(
+        &state,
+        input.source_path.as_deref(),
+        DesktopIntent::SetFailed { id, note },
+    )
 }
-
 #[derive(Deserialize)]
 struct ScanQuery {
     #[serde(default = "yes")]
     markdown: bool,
     #[serde(default = "yes")]
     comments: bool,
+    source: Option<String>,
 }
-
 fn yes() -> bool {
     true
 }
-
 async fn run_scan(
     State(state): State<Arc<ServeState>>,
     Query(query): Query<ScanQuery>,
 ) -> ApiResult<todo_core::ScanReport> {
-    let document = parse_file(&state.path).map_err(ApiError::from)?;
-    let root = state
-        .path
-        .parent()
-        .filter(|parent| !parent.as_os_str().is_empty())
-        .unwrap_or_else(|| std::path::Path::new("."));
+    let backend = state.backend()?;
+    let path = state.source_path(query.source.as_deref())?;
+    let document = parse_file(&path)?;
     let options = ScanOptions {
         markdown: query.markdown,
         comments: query.comments,
-        task_file: state.path.clone(),
+        task_file: path,
     };
-    Ok(Json(
-        scan(root, &document, &options).map_err(ApiError::from)?,
-    ))
+    Ok(Json(scan(
+        backend.project_path().ok_or(todo_core::Error::NoProject)?,
+        &document,
+        &options,
+    )?))
 }
-
 #[derive(Serialize)]
 struct RewritePreview {
     diff: todo_core::TextDiff,
     proposed: String,
     base_hash: String,
 }
-
 #[derive(Deserialize)]
 struct ImportInput {
     #[serde(default = "todo_column")]
@@ -418,39 +415,31 @@ struct ImportInput {
     markdown: bool,
     #[serde(default = "yes")]
     comments: bool,
-    /// Echo of the hash from a previous preview. Absent means "preview only".
-    #[serde(default)]
     confirm_base_hash: Option<String>,
+    source_path: Option<String>,
 }
-
 fn todo_column() -> String {
     "todo".into()
 }
-
-/// Preview, then apply — never both in one unconfirmed call.
-///
-/// Without `confirm_base_hash` this returns the diff and writes nothing. With it,
-/// the hash must still match the file on disk, so a client cannot confirm one
-/// rewrite and have a different one applied.
 async fn import_scan(
     State(state): State<Arc<ServeState>>,
     Json(input): Json<ImportInput>,
 ) -> Result<axum::response::Response, ApiError> {
-    let document = parse_file(&state.path).map_err(ApiError::from)?;
-    let root = state
-        .path
-        .parent()
-        .filter(|parent| !parent.as_os_str().is_empty())
-        .unwrap_or_else(|| std::path::Path::new("."));
+    let backend = state.backend()?;
+    let path = state.source_path(input.source_path.as_deref())?;
+    let document = parse_file(&path)?;
     let options = ScanOptions {
         markdown: input.markdown,
         comments: input.comments,
-        task_file: state.path.clone(),
+        task_file: path.clone(),
     };
-    let report = scan(root, &document, &options).map_err(ApiError::from)?;
-    let proposed = import_text(&document, &report, &input.column).map_err(ApiError::from)?;
+    let report = scan(
+        backend.project_path().ok_or(todo_core::Error::NoProject)?,
+        &document,
+        &options,
+    )?;
+    let proposed = import_text(&document, &report, &input.column)?;
     let base_hash = content_hash(&document.source);
-
     match input.confirm_base_hash {
         None => Ok(Json(RewritePreview {
             diff: diff_lines(&document.source, &proposed),
@@ -460,92 +449,78 @@ async fn import_scan(
         .into_response()),
         Some(confirmed) => {
             state.writable()?;
-            if confirmed != base_hash {
-                return Err(ApiError {
-                    status: StatusCode::CONFLICT,
-                    message: "the file changed since the preview; review the new diff and retry"
-                        .into(),
-                });
-            }
-            let writer = LockedWriter::new(&state.path, state.lock_timeout);
-            writer
-                .replace_all("scan-import", &proposed)
-                .map_err(ApiError::from)?;
-            Ok(Json(state.backend()?.snapshot().map_err(ApiError::from)?).into_response())
+            LockedWriter::new(&path, state.lock_timeout).transform_labeled(
+                "scan-import",
+                |current| {
+                    if content_hash(&current.source) != confirmed || confirmed != base_hash {
+                        return Err(todo_core::Error::ConcurrentModification);
+                    }
+                    Ok(proposed)
+                },
+            )?;
+            Ok(Json(backend.snapshot()?).into_response())
         }
     }
 }
-
-async fn history(State(state): State<Arc<ServeState>>) -> ApiResult<Vec<todo_core::HistoryEntry>> {
-    let mut entries = History::for_file(&state.path)
-        .entries()
-        .map_err(ApiError::from)?;
+async fn history(
+    State(state): State<Arc<ServeState>>,
+    Query(query): Query<SourceQuery>,
+) -> ApiResult<Vec<todo_core::HistoryEntry>> {
+    let path = state.source_path(query.source.as_deref())?;
+    let mut entries = History::for_file(&path).entries_for(&path)?;
     entries.reverse();
     Ok(Json(entries))
 }
-
 async fn history_diff(
     State(state): State<Arc<ServeState>>,
     AxumPath(version): AxumPath<u64>,
+    Query(query): Query<SourceQuery>,
 ) -> ApiResult<RewritePreview> {
-    let previous = History::for_file(&state.path)
-        .read(version)
-        .map_err(ApiError::from)?;
-    let document = parse_file(&state.path).map_err(ApiError::from)?;
+    let path = state.source_path(query.source.as_deref())?;
+    let previous = History::for_file(&path).read_for(&path, version)?;
+    let document = parse_file(&path)?;
     Ok(Json(RewritePreview {
         diff: diff_lines(&previous, &document.source),
         base_hash: content_hash(&document.source),
         proposed: previous,
     }))
 }
-
 #[derive(Deserialize)]
 struct RestoreInput {
     confirm_base_hash: String,
+    source_path: Option<String>,
 }
-
 async fn history_restore(
     State(state): State<Arc<ServeState>>,
     AxumPath(version): AxumPath<u64>,
     Json(input): Json<RestoreInput>,
-) -> ApiResult<DesktopSnapshot> {
+) -> ApiResult<ProjectSnapshot> {
     state.writable()?;
-    let document = parse_file(&state.path).map_err(ApiError::from)?;
-    if content_hash(&document.source) != input.confirm_base_hash {
-        return Err(ApiError {
-            status: StatusCode::CONFLICT,
-            message: "the file changed since the preview; review the new diff and retry".into(),
-        });
-    }
-    let content = History::for_file(&state.path)
-        .read(version)
-        .map_err(ApiError::from)?;
-    let writer = LockedWriter::new(&state.path, state.lock_timeout);
-    writer
-        .replace_all("restore", &content)
-        .map_err(ApiError::from)?;
-    Ok(Json(state.backend()?.snapshot().map_err(ApiError::from)?))
+    let path = state.source_path(input.source_path.as_deref())?;
+    let content = History::for_file(&path).read_for(&path, version)?;
+    LockedWriter::new(&path, state.lock_timeout).transform_labeled("restore", |current| {
+        if content_hash(&current.source) != input.confirm_base_hash {
+            return Err(todo_core::Error::ConcurrentModification);
+        }
+        Ok(content)
+    })?;
+    Ok(Json(state.backend()?.snapshot()?))
 }
-
 async fn align_prompt() -> String {
     todo_core::ALIGNMENT_PROMPT.to_string()
 }
-
 #[derive(Deserialize)]
 struct ReviewInput {
     raw: String,
+    source_path: Option<String>,
 }
-
 async fn align_review(
     State(state): State<Arc<ServeState>>,
     Json(input): Json<ReviewInput>,
 ) -> ApiResult<todo_core::AlignmentReview> {
-    let document = parse_file(&state.path).map_err(ApiError::from)?;
-    Ok(Json(
-        review_alignment(&document, &input.raw).map_err(ApiError::from)?,
-    ))
+    let path = state.source_path(input.source_path.as_deref())?;
+    Ok(Json(review_alignment(&parse_file(&path)?, &input.raw)?))
 }
-
 fn content_hash(source: &str) -> String {
     let mut hasher = DefaultHasher::new();
     source.hash(&mut hasher);

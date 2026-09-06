@@ -2,6 +2,7 @@ import * as React from 'react';
 import type { DragEvent } from 'react';
 import type { DesktopColumn, DesktopTask, TaskPriority } from '../lib/desktop';
 import { formatDueDate, shortId } from '../lib/format';
+import { splitColumns } from '../lib/goal';
 import { Icon } from './Icon';
 import { TaskContextMenu, type TaskMoveTargets } from './TaskContextMenu';
 
@@ -159,6 +160,12 @@ export function TaskCard({
   allowCurrentPriority = false,
   children,
 }: TaskCardProps) {
+  readOnly = readOnly || task.source_writable === false;
+  if (task.source_path !== undefined) {
+    columns = columns.filter((column) => column.source_path === task.source_path);
+    const local = splitColumns(columns);
+    moveTargets = { todo: local.backlog[0] ?? null, doing: local.focus, done: local.done[0] ?? null };
+  }
   const [inline, setInline] = React.useState<InlineOutcome | null>(null);
   const [contextMenu, setContextMenu] = React.useState<{
     x: number;
@@ -290,7 +297,8 @@ export function TaskCard({
         >
           {task.completed && <Icon name="check" />}
         </button>
-        <span className="task-id">{shortId(task.id)}</span>
+        <span className="task-id">{shortId(task.local_id ?? task.id)}</span>
+        {task.source_path !== undefined && <span className="task-source" title={task.source_path}>{task.source_path}{readOnly ? ' · 只读' : ''}</span>}
         {focus && task.progress !== null && !task.completed && (
           <span className="task-card__progress-label" aria-label={`已完成 ${task.progress}%`}>◐ {task.progress}%</span>
         )}

@@ -5,6 +5,7 @@ import { formatCaptureTime, shortId } from '../lib/format';
 import { Icon } from './Icon';
 
 interface CaptureViewProps {
+  triageUnavailable?: boolean;
   snapshot: DesktopSnapshot | null;
   captures: Capture[];
   capturesLoading: boolean;
@@ -102,6 +103,7 @@ export function CaptureView({
   onAppend,
   onDelete,
   onTriage,
+  triageUnavailable = false,
 }: CaptureViewProps) {
   const [draft, setDraft] = React.useState('');
   const submit = async () => {
@@ -113,13 +115,18 @@ export function CaptureView({
   return (
     <section className="capture-view" aria-labelledby="capture-title">
       <header className="view-heading view-heading--capture">
-        <div>
-          <p className="eyebrow">PERSONAL INBOX / {String(captures.length).padStart(2, '0')}</p>
+        <div className="view-heading__title">
           <h1 id="capture-title">随记，不急着承诺</h1>
+          <p className="view-heading__meta">
+            <span>{captures.length} 条 Capture</span>
+            <span aria-hidden="true">·</span>
+            <span>个人收件箱</span>
+          </p>
         </div>
         <p className="view-heading__note">Capture 是个人原始文本；分拣后才成为当前项目的工作。</p>
       </header>
 
+      {triageUnavailable && <p className="source-unavailable">分拣依赖单个可写来源，请先在「任务来源」选择已管理文件。个人随记仍可记录。</p>}
       <form
         className="inline-capture"
         onSubmit={(event) => {
@@ -170,7 +177,7 @@ export function CaptureView({
               <div className="capture-item-wrap" style={{ '--capture-index': index } as React.CSSProperties} key={capture.id}>
                 <CaptureItem
                   capture={capture}
-                  columns={snapshot?.columns ?? []}
+                  columns={triageUnavailable ? [] : snapshot?.columns ?? []}
                   busy={busyKeys.has(`capture:${capture.id}`)}
                   readOnly={readOnly}
                   partial={partialTriages[capture.id]}

@@ -1,4 +1,5 @@
 import * as React from 'react';
+import { requireSource, sourceMutation } from '../lib/taskSources';
 import {
   desktop,
   DesktopBridgeError,
@@ -88,13 +89,36 @@ export function useDesktop() {
   const snapshotEpoch = React.useRef(0);
   const snapshotReadSequence = React.useRef(0);
   const mutationQueue = React.useRef<Promise<void>>(Promise.resolve());
+  const contextSequence = React.useRef(0);
+  const selectedSourceRef = React.useRef<string | null>(null);
+  const newTaskSourceRef = React.useRef<string | null>(null);
+  const [newTaskSource, setNewTaskSourceState] = React.useState<string | null>(null);
+  const [sourceBusy, setSourceBusy] = React.useState(false);
+
+  const remember = (key: string, value: string | null) => {
+    try { localStorage.setItem(key, JSON.stringify(value)); } catch { /* Session choice still works. */ }
+  };
+  const recalled = (key: string): string | null => {
+    try { const value: unknown = JSON.parse(localStorage.getItem(key) ?? 'null'); return typeof value === 'string' ? value : null; } catch { return null; }
+  };
+  const setNewTaskSource = React.useCallback((source: string | null) => {
+    newTaskSourceRef.current = source;
+    setNewTaskSourceState(source);
+    if (snapshotRef.current) remember(`todo.new-source:${snapshotRef.current.project_path}`, source);
+  }, []);
 
   const applySnapshot = React.useCallback((next: DesktopSnapshot, authoritative = false) => {
     // A revision is a content hash: moving back to a previous priority can
     // legitimately produce a previously seen hash, even a numerically lower one.
     if (authoritative) snapshotEpoch.current += 1;
     const current = snapshotRef.current;
-    if (current?.project_path === next.project_path && current.revision === next.revision) return false;
+    if (current?.project_path === next.project_path && current.revision === next.revision && current.selected_source === next.selected_source) return false;
+    if (current?.project_path !== next.project_path) {
+      const saved = recalled(`todo.new-source:${next.project_path}`);
+      const valid = next.sources?.some((item) => item.path === saved && item.status === 'managed' && item.writable) ? saved : null;
+      newTaskSourceRef.current = valid;
+      setNewTaskSourceState(valid);
+    }
     snapshotRef.current = next;
     setSnapshot(next);
     setStatus((value) => ({
@@ -109,16 +133,25 @@ export function useDesktop() {
   const refreshSnapshot = React.useCallback(async function readLatest(initial = false): Promise<void> {
     const request = ++snapshotReadSequence.current;
     const epoch = snapshotEpoch.current;
+    const context = contextSequence.current;
     try {
-      const next = await desktop.snapshot();
-      if (request !== snapshotReadSequence.current) return;
+      let next = await desktop.snapshot(selectedSourceRef.current);
+      if (request !== snapshotReadSequence.current || context !== contextSequence.current) return;
+      if (initial && next.sources) {
+        const saved = recalled(`todo.selected-source:${next.project_path}`);
+        if (saved && next.sources.some((item) => item.path === saved)) {
+          next = await desktop.snapshot(saved);
+          if (request !== snapshotReadSequence.current || context !== contextSequence.current) return;
+          selectedSourceRef.current = saved;
+        }
+      }
       // A write completed while this read was in flight. Re-read rather than
       // apply its pre-write result or lose a concurrent external invalidation.
       if (epoch !== snapshotEpoch.current) return readLatest(initial);
       applySnapshot(next);
       setBanner(null);
     } catch (error) {
-      if (request !== snapshotReadSequence.current) return;
+      if (request !== snapshotReadSequence.current || context !== contextSequence.current) return;
       if (epoch !== snapshotEpoch.current) return readLatest(initial);
       const bridgeError = error instanceof DesktopBridgeError ? error : new DesktopBridgeError(String(error));
       if (initial && !snapshotRef.current) {
@@ -212,41 +245,84 @@ export function useDesktop() {
     }
   }, []);
 
+  const selectSource = React.useCallback(async (source: string | null) => {
+    const context = ++contextSequence.current;
+    ++snapshotReadSequence.current;
+    const previous = selectedSourceRef.current;
+    selectedSourceRef.current = source;
+    setSourceBusy(true);
+    try {
+      const next = await desktop.snapshot(source);
+      if (context !== contextSequence.current) return;
+      applySnapshot(next, true);
+      remember(`todo.selected-source:${next.project_path}`, source);
+      setBanner(null);
+    } catch (error) {
+      if (context !== contextSequence.current) return;
+      selectedSourceRef.current = previous;
+      setBanner(bannerFor(error));
+    } finally {
+      if (context === contextSequence.current) setSourceBusy(false);
+    }
+  }, [applySnapshot]);
+
+  const acceptWrite = React.useCallback(async (next: DesktopSnapshot, context: number) => {
+    if (context !== contextSequence.current) return;
+    const selected = selectedSourceRef.current;
+    const displayed = next.sources && selected !== null ? await desktop.snapshot(selected) : next;
+    if (context !== contextSequence.current) return;
+    applySnapshot(displayed, true);
+  }, [applySnapshot]);
+
   const runMutation = React.useCallback(
     async (key: string, intent: DesktopMutation): Promise<boolean> => {
+      const context = contextSequence.current;
+      const snapshot = snapshotRef.current;
       try {
+        if (!snapshot || sourceBusy) throw new Error('来源正在切换，请稍后重试。');
+        const mapped = sourceMutation(snapshot, intent, newTaskSourceRef.current);
         await withBusy(key, () => {
           const write = mutationQueue.current.then(async () => {
+            if (context !== contextSequence.current) throw new Error('项目或来源已切换，本次操作未执行。');
             snapshotEpoch.current += 1;
-            const authoritative = await desktop.mutate(intent);
-            applySnapshot(authoritative, true);
+            const authoritative = await desktop.mutate(mapped.intent, mapped.source_path, Boolean(snapshot.sources), snapshot.project_path);
+            await acceptWrite(authoritative, context);
           });
           mutationQueue.current = write.catch(() => undefined);
           return write;
         });
+        if (context !== contextSequence.current) return false;
         setBanner(null);
         return true;
       } catch (error) {
+        if (context !== contextSequence.current) return false;
         setBanner(bannerFor(error));
         const kind = error instanceof DesktopBridgeError ? error.kind : 'unknown';
         if (kind === 'conflict') void refreshSnapshot();
         return false;
       }
     },
-    [applySnapshot, refreshSnapshot, withBusy],
+    [acceptWrite, refreshSnapshot, withBusy, sourceBusy],
   );
 
   const chooseProject = React.useCallback(async () => {
+    const context = ++contextSequence.current;
+    ++snapshotReadSequence.current;
+    setSourceBusy(true);
     try {
       snapshotEpoch.current += 1;
       const opened = await withBusy('project', () => desktop.chooseAndOpenProject());
-      if (!opened) return;
+      if (!opened || context !== contextSequence.current) return;
+      selectedSourceRef.current = opened.selected_source ?? null;
       applySnapshot(opened, true);
       setBanner(null);
       setPhase('ready');
     } catch (error) {
+      if (context !== contextSequence.current) return;
       setBanner(bannerFor(error));
       if (!snapshotRef.current) setPhase('load-error');
+    } finally {
+      if (context === contextSequence.current) setSourceBusy(false);
     }
   }, [applySnapshot, withBusy]);
 
@@ -287,9 +363,18 @@ export function useDesktop() {
 
   const triageCapture = React.useCallback(
     async (id: string, column: string): Promise<TriageResult | null> => {
+      const context = contextSequence.current;
       try {
-        const result = await withBusy(`capture:${id}`, () => desktop.captureTriage(id, column));
-        if (result.snapshot) applySnapshot(result.snapshot, true);
+        const snapshot = snapshotRef.current;
+        if (!snapshot || sourceBusy) throw new Error('请先选择来源文件。');
+        const source = selectedSourceRef.current;
+        requireSource(snapshot, source);
+        const target = snapshot.columns.find((item) => item.id === column);
+        if (!target || (snapshot.sources && target.source_path !== source)) throw new Error('请选择同一来源内的列。');
+        const result = await withBusy(`capture:${id}`, () => desktop.captureTriage(id, target.local_id ?? target.id, source, snapshot.project_path));
+        if (context !== contextSequence.current) return null;
+        if (result.snapshot) await acceptWrite(result.snapshot, context);
+        if (context !== contextSequence.current) return null;
         if (result.captures) {
           setCaptures(result.captures);
         } else if (result.status === 'completed') {
@@ -327,12 +412,35 @@ export function useDesktop() {
         return null;
       }
     },
-    [applySnapshot, withBusy],
+    [acceptWrite, withBusy, sourceBusy],
   );
+
+  const adoptSource = React.useCallback(async (path: string, baseHash: string): Promise<boolean> => {
+    const context = contextSequence.current;
+    const root = snapshotRef.current?.project_path;
+    const entry = snapshotRef.current?.sources?.find((item) => item.path === path);
+    if (!entry || entry.status !== 'unmanaged' || selectedSourceRef.current !== path || sourceBusy) return false;
+    try {
+      const next = await withBusy(`adopt:${path}`, () => desktop.applyAdopt(path, baseHash, root));
+      await acceptWrite(next, context);
+      if (context !== contextSequence.current) return false;
+      setBanner(null);
+      return true;
+    } catch (error) {
+      if (context !== contextSequence.current) return false;
+      setBanner(bannerFor(error));
+      throw error;
+    }
+  }, [acceptWrite, sourceBusy, withBusy]);
 
   return {
     phase,
     snapshot,
+    sourceBusy,
+    selectSource,
+    newTaskSource,
+    setNewTaskSource,
+    adoptSource,
     status,
     captures,
     capturesLoading,
@@ -344,7 +452,8 @@ export function useDesktop() {
     // Adopts a snapshot from a write that bypassed `mutate`, such as a confirmed
     // rewrite. Authoritative: the caller already wrote the file.
     applySnapshot: (next: DesktopSnapshot) => {
-      applySnapshot(next, true);
+      if (next.project_path !== snapshotRef.current?.project_path) return;
+      void acceptWrite(next, contextSequence.current);
     },
     clearBanner: () => setBanner(null),
     addTask: (body: string, column: string | null) =>

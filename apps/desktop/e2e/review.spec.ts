@@ -155,3 +155,29 @@ test('provider settings persist locally without logging the API key', async ({ p
   await expect(page.getByRole('dialog').getByLabel('API 密钥')).toHaveValue(apiKey);
   expect(consoleMessages.join('\n')).not.toContain(apiKey);
 });
+
+test('layout density switches the shell between normal, medium and efficient and survives reload', async ({ page }) => {
+  const shell = page.locator('.app-shell');
+  await expect(shell).toHaveAttribute('data-density', 'normal');
+  await expect(page.locator('.ribbon--heading')).toHaveCount(1);
+  const heading = page.getByRole('heading', { name: '目标' });
+  const normalSize = await heading.evaluate((el) => parseFloat(getComputedStyle(el).fontSize));
+
+  await page.getByRole('button', { name: '设置', exact: true }).click();
+  const settings = page.getByRole('dialog', { name: '设置' });
+  await settings.getByRole('radio', { name: '效率' }).check();
+  await expect(shell).toHaveAttribute('data-density', 'efficient');
+  await expect(page.locator('.ribbon--heading')).toHaveCount(0);
+  const efficientSize = await heading.evaluate((el) => parseFloat(getComputedStyle(el).fontSize));
+  expect(efficientSize).toBeLessThan(normalSize);
+  await expect(page.locator('.goal-region--doing .task-card--focus').first()).toBeVisible();
+
+  await settings.getByRole('radio', { name: '中等' }).check();
+  await expect(shell).toHaveAttribute('data-density', 'medium');
+  await expect(page.locator('.ribbon--heading')).toHaveCount(1);
+  await page.keyboard.press('Escape');
+  await expect(settings).toBeHidden();
+
+  await page.reload();
+  await expect(page.locator('.app-shell')).toHaveAttribute('data-density', 'medium');
+});

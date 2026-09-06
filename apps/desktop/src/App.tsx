@@ -6,6 +6,7 @@ import { ConfirmCompleteDialog } from './components/ConfirmCompleteDialog';
 import { EmptyState } from './components/EmptyState';
 import { GoalView } from './components/GoalView';
 import { PriorityScopeDialog } from './components/PriorityScopeDialog';
+import { ProjectPickerDialog } from './components/ProjectPickerDialog';
 import { QuadrantView } from './components/QuadrantView';
 import { ProviderSettings } from './components/ProviderSettings';
 import { ReviewView } from './components/ReviewView';
@@ -14,8 +15,11 @@ import { Sidebar, type MainView } from './components/Sidebar';
 import { StatusBanner } from './components/StatusBanner';
 import { useDesktop } from './hooks/useDesktop';
 import { useAppSettings } from './lib/appSettings';
-import { transportCapabilities, type DesktopTask, type TaskPriority } from './lib/desktop';
+import { desktop, transportCapabilities, type DesktopTask, type TaskPriority } from './lib/desktop';
 import { quadrantGroups } from './lib/quadrant';
+import { SourceControls, SourcePreview } from './components/SourceControls';
+import { SourceEnrollmentDialog } from './components/SourceEnrollmentDialog';
+import { commitSourceEnrollment, filterSnapshotBySources, useSourceEnrollment } from './lib/sourceEnrollment';
 
 interface PriorityRequest {
   task: DesktopTask;
@@ -35,6 +39,7 @@ export function App() {
   // one surface, so "what should I do now" is answered without navigating.
   const [activeView, setActiveView] = React.useState<MainView>('goal');
   const [settingsOpen, setSettingsOpen] = React.useState(false);
+  const [projectPickerOpen, setProjectPickerOpen] = React.useState(false);
   const [providerSettingsOpen, setProviderSettingsOpen] = React.useState(false);
   const [completionRequest, setCompletionRequest] = React.useState<CompletionRequest | null>(null);
   const completionRequestRef = React.useRef<CompletionRequest | null>(null);
@@ -42,13 +47,49 @@ export function App() {
   const [confirmTask, setConfirmTask] = React.useState<DesktopTask | null>(null);
   const [appSettings] = useAppSettings();
   const model = useDesktop();
-  const readOnly = transportCapabilities()?.writable === false;
+  const serverReadOnly = transportCapabilities()?.writable === false;
+  const readOnly = serverReadOnly || model.sourceBusy;
+
+  // Discovery reports every TODO.md under the root; the board shows the ones
+  // the person enrolled. The full snapshot stays with the model (writes,
+  // adoption and the enrollment sheet need it); views read the filtered one.
+  const enrollment = useSourceEnrollment(model.snapshot);
+  const [enrollmentOpen, setEnrollmentOpen] = React.useState(false);
+  const snapshot = React.useMemo(
+    () => (model.snapshot ? filterSnapshotBySources(model.snapshot, enrollment.enrolled) : null),
+    [model.snapshot, enrollment.enrolled],
+  );
+  const discovered = model.snapshot?.sources ?? [];
+  const showEnrollment = Boolean(model.snapshot?.sources && (enrollmentOpen || enrollment.needsDecision));
+  React.useEffect(() => {
+    // A remembered selection that is no longer enrolled falls back to the
+    // aggregate view rather than showing an empty board for a hidden file.
+    const selectedPath = model.snapshot?.selected_source;
+    if (enrollment.enrolled && selectedPath && !enrollment.enrolled.has(selectedPath)) void model.selectSource(null);
+    if (enrollment.enrolled && model.newTaskSource && !enrollment.enrolled.has(model.newTaskSource)) model.setNewTaskSource(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [enrollment.enrolled, model.snapshot?.selected_source, model.newTaskSource]);
+
+  const selected = snapshot?.sources?.find((source) => source.path === snapshot?.selected_source);
+  const sourceContextKey = JSON.stringify([snapshot?.project_path, snapshot?.selected_source]);
+  const sourceBoundUnavailable = Boolean(snapshot?.sources && (!selected || selected.status !== 'managed'));
+  React.useEffect(() => {
+    completionRequestRef.current?.settleMove?.(false);
+    completionRequestRef.current = null;
+    setCompletionRequest(null);
+    setConfirmTask(null);
+    setPriorityRequest(null);
+  }, [sourceContextKey, model.sourceBusy]);
+  const chooseProject = () => {
+    if (desktop.isTauri) void model.chooseProject();
+    else setProjectPickerOpen(true);
+  };
   // The badge counts what needs attention today: overdue plus due-today work.
-  const unrankedCount = model.snapshot
-    ? quadrantGroups(model.snapshot).filter((group) => group.task.priority === null).length
+  const unrankedCount = snapshot
+    ? quadrantGroups(snapshot).filter((group) => group.task.priority === null).length
     : 0;
-  const goalCount = model.snapshot
-    ? model.snapshot.today.overdue.length + model.snapshot.today.today.length
+  const goalCount = snapshot
+    ? snapshot.today.overdue.length + snapshot.today.today.length
     : 0;
 
   const openCompletion = React.useCallback((request: CompletionRequest) => {
@@ -65,8 +106,9 @@ export function App() {
   const setCompleted = React.useCallback((id: string, completed: boolean) => {
     if (!completed) return model.setCompleted(id, false);
     const task = model.snapshot?.tasks.find((item) => item.id === id);
-    if (!task) return Promise.resolve(false);
-    if (model.snapshot?.completion_policy === 'strict') {
+    if (!task || task.source_writable === false) return Promise.resolve(false);
+    const policy = model.snapshot?.sources?.find((source) => source.path === task.source_path)?.completion_policy ?? model.snapshot?.completion_policy;
+    if (policy === 'strict') {
       // Strict completion needs a note and an evidence decision; that is the
       // one outcome that still earns a full outcome dialog.
       openCompletion({ task });
@@ -84,10 +126,12 @@ export function App() {
   const moveTask = React.useCallback((id: string, column: string): Promise<boolean> => {
     const task = model.snapshot?.tasks.find((item) => item.id === id);
     const destination = model.snapshot?.columns.find((item) => item.id === column);
-    if (!task || !destination) return Promise.resolve(false);
+    if (!task || !destination || task.source_writable === false) return Promise.resolve(false);
+    if (task.source_path !== destination.source_path) return model.moveTask(id, column);
     const enteringDone = destination.done && !task.completed;
+    const policy = model.snapshot?.sources?.find((source) => source.path === task.source_path)?.completion_policy ?? model.snapshot?.completion_policy;
     const needsOutcome = enteringDone && (
-      model.snapshot?.completion_policy === 'strict'
+      policy === 'strict'
       || task.progress !== null
       || task.failed_on !== null
     );
@@ -148,7 +192,7 @@ export function App() {
   }, [completionRequest, model]);
 
   return (
-    <div className="app-shell">
+    <div className="app-shell" data-density={appSettings.density}>
       <Sidebar
         activeView={activeView}
         status={model.status}
@@ -157,20 +201,25 @@ export function App() {
         unrankedCount={unrankedCount}
         readOnly={readOnly}
         onChangeView={setActiveView}
-        onChooseProject={() => void model.chooseProject()}
+        onChooseProject={chooseProject}
         onOpenSettings={() => setSettingsOpen(true)}
       />
 
       <div className={`workspace${readOnly ? ' is-read-only' : ''}`}>
         <CommandBar
-          snapshot={model.snapshot}
+          snapshot={snapshot}
           projectBusy={model.busyKeys.has('project')}
           addBusy={model.busyKeys.has('task:new')}
           readOnly={readOnly}
-          onChooseProject={() => void model.chooseProject()}
+          onChooseProject={chooseProject}
           onRefresh={() => void model.refreshSnapshot()}
           onOpenProviderSettings={() => setProviderSettingsOpen(true)}
           onAddTask={model.addTask}
+          newTaskSource={model.newTaskSource}
+          onNewTaskSource={(path) => {
+            model.setNewTaskSource(path);
+            if (path && snapshot?.selected_source && path !== snapshot.selected_source) void model.selectSource(path);
+          }}
         />
 
         {readOnly && (
@@ -189,10 +238,23 @@ export function App() {
           />
         )}
 
-        <main className="workspace__content">
-          {activeView === 'capture' ? (
+        <main className={`workspace__content${snapshot?.sources ? ' has-sources' : ''}`}>
+          {snapshot?.sources && (
+            <SourceControls
+              snapshot={snapshot}
+              busy={model.sourceBusy || model.busyKeys.has('project')}
+              discoveredCount={discovered.length}
+              pendingCount={enrollment.pending.length}
+              onSelect={(path) => void model.selectSource(path)}
+              onAdjustEnrollment={() => setEnrollmentOpen(true)}
+            />
+          )}
+          <div className="source-content" key={sourceContextKey}>
+          {activeView === 'capture' && transportCapabilities() ? (
+            <p className="source-unavailable" role="status">HTTP 项目服务不开放个人随记，请使用桌面版。不会显示或写入模拟随记。</p>
+          ) : activeView === 'capture' ? (
             <CaptureView
-              snapshot={model.snapshot}
+              snapshot={snapshot}
               captures={model.captures}
               capturesLoading={model.capturesLoading}
               busyKeys={model.busyKeys}
@@ -201,12 +263,16 @@ export function App() {
               onAppend={model.appendCapture}
               onDelete={model.deleteCapture}
               onTriage={model.triageCapture}
+              triageUnavailable={sourceBoundUnavailable || Boolean(selected && !selected.writable)}
             />
           ) : activeView === 'review' ? (
-            <ReviewView snapshot={model.snapshot} readOnly={readOnly} onApplied={model.applySnapshot} />
-          ) : activeView === 'quadrant' && model.snapshot ? (
+            sourceBoundUnavailable ? <p className="source-unavailable">扫描、历史与对齐提示词依赖单个来源。请先在「任务来源」选择已管理文件。</p> :
+            <ReviewView snapshot={snapshot} readOnly={readOnly || Boolean(selected && !selected.writable)} onApplied={model.applySnapshot} />
+          ) : selected && selected.status !== 'managed' ? (
+            <SourcePreview key={`${sourceContextKey}:${selected.revision}`} source={selected} readOnly={serverReadOnly || model.sourceBusy} onAdopt={model.adoptSource} />
+          ) : activeView === 'quadrant' && snapshot ? (
             <QuadrantView
-              snapshot={model.snapshot}
+              snapshot={snapshot}
               busyKeys={model.busyKeys}
               readOnly={readOnly}
               onSetCompleted={setCompleted}
@@ -215,9 +281,9 @@ export function App() {
               onMove={(id, column) => void moveTask(id, column)}
               onSetPriority={(id, priority) => model.setPriority(id, priority, 'subtree')}
             />
-          ) : model.snapshot ? (
+          ) : snapshot ? (
             <GoalView
-              snapshot={model.snapshot}
+              snapshot={snapshot}
               busyKeys={model.busyKeys}
               readOnly={readOnly}
               onSetCompleted={setCompleted}
@@ -229,13 +295,35 @@ export function App() {
           ) : (
             <EmptyState
               phase={model.phase === 'ready' ? 'load-error' : model.phase}
-              onChooseProject={() => void model.chooseProject()}
+              onChooseProject={chooseProject}
               onRetry={() => void model.refreshSnapshot()}
             />
           )}
+          </div>
         </main>
       </div>
 
+      {projectPickerOpen && <ProjectPickerDialog onClose={() => setProjectPickerOpen(false)} />}
+      {showEnrollment && model.snapshot && (
+        <SourceEnrollmentDialog
+          key={model.snapshot.project_path}
+          projectPath={model.snapshot.project_path}
+          sources={discovered}
+          enrolled={enrollment.enrolled}
+          pending={new Set(enrollment.pending.map((source) => source.path))}
+          firstRun={enrollment.needsDecision}
+          onCancel={() => {
+            // Dismissing the first-run sheet is the same as 全部录入: the board
+            // stays complete and 「调整录入…」 remains one click away.
+            if (enrollment.needsDecision) commitSourceEnrollment(model.snapshot!.project_path, discovered.map((source) => source.path), []);
+            setEnrollmentOpen(false);
+          }}
+          onConfirm={(paths) => {
+            commitSourceEnrollment(model.snapshot!.project_path, paths, discovered.map((source) => source.path));
+            setEnrollmentOpen(false);
+          }}
+        />
+      )}
       {priorityRequest && (
         <PriorityScopeDialog
           task={priorityRequest.task}

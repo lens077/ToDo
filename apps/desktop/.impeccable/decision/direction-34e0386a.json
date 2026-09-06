@@ -1,0 +1,183 @@
+{
+  "title": "选择 ToDo 主界面的视觉世界",
+  "question": "掷骰把「分栏浏览器」分配为本轮方向。所有卡片都在你钉住的 macOS 惯例之内：系统字体、跟随系统深浅外观、以 Linear / Raycast 的工艺为标尺。保留指派项、选一个备选、照品类标准打，或重新掷骰。",
+  "options": [
+    {
+      "id": "assigned",
+      "label": "分栏浏览器",
+      "kicker": "THE ROLL",
+      "lineage": "macOS Finder 分栏视图 · Miller columns（NeXT 1989 → Mac OS X）",
+      "thesis": "TODO.md 是一份文件，就用 Mac 浏览文件的方式浏览它：每个列是一栏，选中一项向右展开详情。",
+      "palette": ["#FFFFFF", "#1E1E1E", "#F5F5F7", "#007AFF", "#FF9500", "#34C759"],
+      "materials": ["SF Pro / SF Mono 系统字体", "侧栏毛玻璃 vibrancy", "分栏 + 1px 系统分隔线", "AccentColor 跟随系统强调色", "深浅两套跟随系统"],
+      "viewport": "标题栏与工具栏合一：左侧项目切换器、中间 ⌘K 快速新增、右侧对账与模型入口。左侧半透明源列表列出四个视图与文件同步状态。工作区是一排 Finder 式分栏：推进中 → 待办各列 → 已完成，每栏顶部小标题带计数，推进中前 N 项展开成完整卡、其余为紧凑行；选中任一项，最右侧展开「详情」栏——正文、截止、优先级、标签、↳ 说明、🔗 物证、还原点——像 Finder 的预览栏。拖动任务跨栏即移动列，与 Finder 拖文件同一手势。",
+      "risk": "1180px 默认窗口里侧栏 + 三栏 + 详情栏很挤；详情栏与侧栏都必须可收起，否则四栏挤成窄条。",
+      "raised": [
+        { "from": "challenger-cutting-bench", "raise": "状态是记号不是色相：完成 = 勾 + 删除线，推进中 = 行首旗标，未定级 = 挂在托盘，逾期 = 日期前的 ⚠——用户把系统强调色换成任何颜色、或在灰度下，状态仍可读。" },
+        { "from": "challenger-starship", "raise": "警示态不靠小徽标：逾期与失败把整行文字色与前导记号一起换成系统红/橙；文件冲突时整个工作区进入带横幅的只读态。" },
+        { "from": "challenger-sneaker", "raise": "一套固定标签网格统治每一行：正文 · 截止 · 优先级 · 标签 · 短 ID 各占固定列位，像 Finder 列表视图的列，不同栏里的行对齐到同一网格。" },
+        { "from": "challenger-deep-dive", "raise": "一条纵轴统治全部行：所有栏共享同一行高与基线，滚动任一栏，其余栏的行依然对齐。" }
+      ],
+      "wireframe": {
+        "cols": 12,
+        "rows": 10,
+        "regions": [
+          { "label": "工具栏：项目 · ⌘K 新增 · 对账", "x": 0, "y": 0, "w": 12, "h": 1 },
+          { "label": "源列表侧栏", "x": 0, "y": 1, "w": 2, "h": 9 },
+          { "label": "推进中（展开 1–5 项）", "x": 2, "y": 1, "w": 3, "h": 9, "accent": true },
+          { "label": "待办（每个活动列一栏）", "x": 5, "y": 1, "w": 3, "h": 9 },
+          { "label": "已完成", "x": 8, "y": 1, "w": 2, "h": 9 },
+          { "label": "详情（选中项）", "x": 10, "y": 1, "w": 2, "h": 9 }
+        ]
+      }
+    },
+    {
+      "id": "model-pick",
+      "label": "Git 审阅台",
+      "kicker": "IMPECCABLE’S PICK",
+      "lineage": "Mac 原生 Git 客户端与 diff 工具 · Tower / Fork / Kaleidoscope",
+      "thesis": "对账就是审阅：任务列表像提交记录，物证区间像 diff，完成一项像提交一次。",
+      "palette": ["#FFFFFF", "#1E1E1E", "#007AFF", "#E6F7EA", "#FDECEC", "#8E8E93"],
+      "materials": ["SF Pro + SF Mono 短 ID 如缩短的 SHA", "三栏：源列表 · 记录 · 检查器", "diff 底色：增绿 / 删红", "工具栏分段控件", "深浅两套跟随系统"],
+      "viewport": "左侧源列表：项目 · 各列（像分支）· 逾期 / 今天 / 7 天筛选。中栏是任务记录表：每行 = 勾选 · 正文 · 截止 · 优先级 · 标签 · 短 ID，推进中置顶带旗标，分组头像提交日期分隔。右侧检查器分段：任务 / 物证 / 历史——物证页把 🔗from..to 展开成提交列表，历史页列还原点并可预览 diff。",
+      "risk": "熟悉而有效：这是开发者 Mac 应用最常落的形态，辨识度只能来自细节；「提交 / diff」的隐喻不能压过任务本身。",
+      "wireframe": {
+        "cols": 12,
+        "rows": 10,
+        "regions": [
+          { "label": "工具栏：项目 · ⌘K 新增 · 对账", "x": 0, "y": 0, "w": 12, "h": 1 },
+          { "label": "源列表：列 · 筛选", "x": 0, "y": 1, "w": 2, "h": 9 },
+          { "label": "任务记录表（行 = 勾选 · 正文 · 截止 · 优先级 · 标签 · ID）", "x": 2, "y": 1, "w": 6, "h": 9 },
+          { "label": "检查器：任务 / 物证 / 历史", "x": 8, "y": 1, "w": 4, "h": 9, "accent": true }
+        ]
+      }
+    },
+    {
+      "id": "challenger-monochrome",
+      "label": "单一中性刻度",
+      "verdict": "competitive",
+      "lineage": "数字设计正典 · 单色产品页（一条灰阶 + 一处强调）",
+      "thesis": "整个应用只有一条从近白到近黑的中性刻度，强调色全应用不超过四处；每个任务旁紧贴它的物证。",
+      "palette": ["#FCFCFC", "#EDEDED", "#8A8A8E", "#1C1C1E", "#007AFF"],
+      "materials": ["9 级中性灰刻度", "强调色仅用于主按钮 · 选中 · 焦点环 · 进度", "幽灵按钮 + 发丝边框", "任务 → 物证成对排列", "深浅两套跟随系统"],
+      "viewport": "侧栏与工作区同一中性底，只靠发丝线分隔。目标视图是单列任务表，推进中在顶部以稍深的底承托；每行右侧紧贴一枚等宽的物证区间（🔗 abc123..def456）或「无物证」——断言与证明成对出现。",
+      "case": "融合顺畅：Linear / Raycast 用户一眼认出这条刻度语言（识别度赢）；但「断言 + 证明」的拓扑来自营销页，对四视图导航与多列工作区没有天然结构，清晰度输给分栏。",
+      "risk": "克制到极致时，深浅两套外观之间只剩灰度差，视图之间缺少方位感。",
+      "hero": "https://impeccable.style/worlds/cards/digital-design-canon-monochrome-product-marketing-hero.webp",
+      "board": "https://impeccable.style/worlds/cards/digital-design-canon-monochrome-product-marketing.webp",
+      "wireframe": {
+        "cols": 12,
+        "rows": 10,
+        "regions": [
+          { "label": "工具栏", "x": 0, "y": 0, "w": 12, "h": 1 },
+          { "label": "侧栏（同一中性底）", "x": 0, "y": 1, "w": 2, "h": 9 },
+          { "label": "推进中（稍深承托带）", "x": 2, "y": 1, "w": 10, "h": 2, "accent": true },
+          { "label": "单列任务表 · 右侧紧贴物证", "x": 2, "y": 3, "w": 10, "h": 7 }
+        ]
+      }
+    },
+    {
+      "id": "challenger-hypercard",
+      "label": "HyperCard 堆栈",
+      "verdict": "competitive",
+      "lineage": "经典 Mac 原生 · HyperCard 鞋盒堆栈（1987）",
+      "thesis": "浏览与编辑是同一个对象：每张任务卡在原地就能改，翻到下一张沿着可见的按钮走。",
+      "palette": ["#FFFFFF", "#000000", "#8E8E93", "#007AFF"],
+      "materials": ["纯黑白，点阵抖动只留给空状态", "SF Pro Display 粗体（Chicago 的现代对应）", "固定比例卡片 + 1px 系统描边", "翻卡过渡（View Transitions）", "深浅两套跟随系统"],
+      "viewport": "工作区是一叠固定比例的卡片：推进中那张置顶且完整展开，卡面就是编辑器——正文、进度条、一行说明直接可编辑；卡底一排可见按钮：部分完成 · 记录失败 · 完成 · 下一张。待办与已完成像堆栈里的后几张，露出卡边。侧栏保持 macOS 源列表。",
+      "case": "Mac 血统让开发者立刻识别，且「原地编辑、阅读即书写」正是产品原则（识别度赢）；但一次只看一张的堆栈拓扑让「同时看到推进中、待办、已完成」失去全览，清晰度输给分栏。",
+      "risk": "一位元材料若不翻译成现代 macOS 描边与系统字体，会读成复古玩具而非工作工具。",
+      "hero": "https://impeccable.style/worlds/cards/medium-native-hypercard-stack-shoebox-hero.webp",
+      "board": "https://impeccable.style/worlds/cards/medium-native-hypercard-stack-shoebox.webp",
+      "wireframe": {
+        "cols": 12,
+        "rows": 10,
+        "regions": [
+          { "label": "工具栏", "x": 0, "y": 0, "w": 12, "h": 1 },
+          { "label": "源列表侧栏", "x": 0, "y": 1, "w": 2, "h": 9 },
+          { "label": "当前卡（原地编辑）", "x": 2, "y": 1, "w": 7, "h": 6, "accent": true },
+          { "label": "堆栈露边：待办", "x": 2, "y": 7, "w": 7, "h": 3 },
+          { "label": "已完成堆", "x": 9, "y": 1, "w": 3, "h": 9 }
+        ]
+      }
+    },
+    {
+      "id": "challenger-starship",
+      "label": "工业飞船终端",
+      "verdict": "declined",
+      "lineage": "流行文化 · 用过的未来飞船乘员终端",
+      "thesis": "一行查询、一页页打出来的答案，琥珀色在条纹危险板下闪烁。",
+      "palette": ["#0B0F0B", "#33FF66", "#FFB000", "#E8E4D8"],
+      "materials": ["磷光 CRT", "琥珀警示", "模板喷码"],
+      "viewport": "一条查询行，屏幕逐字打印任务页。",
+      "case": "融合失败：开发者认识终端，但「用过的未来」戏服与逐字打印的翻页拓扑违背 macOS 惯例与可扫读性（两轴皆输）。",
+      "kept": "警示态的决绝：危险不靠小徽标，整片换色。",
+      "risk": "读成角色扮演而非工作工具。",
+      "hero": "https://impeccable.style/worlds/cards/pop-culture-shelf-industrial-starship-terminal-hero.webp"
+    },
+    {
+      "id": "challenger-cutting-bench",
+      "label": "剪辑台选片轨",
+      "verdict": "declined",
+      "lineage": "操作界面 · 胶片剪辑台的打孔选片轨",
+      "thesis": "任务是轨上的帧，停下的地方折一面胶带旗，放下的挂在下方钉上。",
+      "palette": ["#000000", "#FF6A13", "#FFFFFF"],
+      "materials": ["胶片颗粒", "打孔轨", "油脂笔记号"],
+      "viewport": "一条横贯的打孔轨，帧按固定节距排列，托盘挂在轨下。",
+      "case": "融合失败：剪辑台对开发者是异域；横向固定节距与单一字号的窄体大写读不了中文任务（两轴皆输）。",
+      "kept": "状态是记号不是色相：勾、旗、挂、划，灰度下依然可读。",
+      "risk": "橙黑颗粒与 macOS 惯例正面冲突。",
+      "hero": "https://impeccable.style/worlds/cards/operate-a-cutting-bench-select-rail-hero.webp"
+    },
+    {
+      "id": "challenger-sneaker",
+      "label": "球鞋盒墙",
+      "verdict": "declined",
+      "lineage": "织物与时尚 · 球鞋档案的纸盒堆墙",
+      "thesis": "任务是墙上的盒，选中滑出半截，掀盖看详情。",
+      "palette": ["#B5531C", "#111111", "#F7F3EC"],
+      "materials": ["瓦楞纸板", "剪影线稿", "等宽尺码串"],
+      "viewport": "一面盒端标签墙，选中的盒滑出，盖子铰开。",
+      "case": "融合失败：球鞋档案对开发者无共鸣；三维掀盖看详情是 Operate 表面上的戏剧（两轴皆输）。",
+      "kept": "一套固定标签网格统治每一行。",
+      "risk": "纸板橙与 macOS 惯例冲突。",
+      "hero": "https://impeccable.style/worlds/cards/textiles-weave-drape-fashion-sneaker-box-stacks-hero.webp"
+    },
+    {
+      "id": "challenger-deep-dive",
+      "label": "中光层深潜",
+      "verdict": "declined",
+      "lineage": "河海 · 火山岛壁的技术深潜",
+      "thesis": "一条纵向深度轴统治每一行，越深越暗，一条温跃层青带标出当前深度。",
+      "palette": ["#061A33", "#0B3D6B", "#8FE3FF", "#F4FBFF"],
+      "materials": ["渐深墨蓝", "海雪颗粒", "潜水电脑数字"],
+      "viewport": "一条纵向深度剖面，观察钉在各自深度上。",
+      "case": "融合失败：潜水叙事与任务对账不相干；按深度渐变的底色与 macOS 惯例冲突，隐喻遮住列（两轴皆输）。",
+      "kept": "一条纵轴统治全部行：所有栏共享一条基线。",
+      "risk": "隐喻压过任务。",
+      "hero": "https://impeccable.style/worlds/cards/rivers-tides-ocean-depths-mesophotic-deep-dive-hero.webp"
+    }
+  ],
+  "reroll": { "registers": ["safer", "bolder"] },
+  "buildPath": { "value": "code", "toggle": false },
+  "canon": true,
+  "canonCard": {
+    "label": "提醒事项 / Things 式清单",
+    "thesis": "品类标准照标准打：macOS 源列表侧栏 + 大标题清单 + 圆形勾选，按 Apple 提醒事项与 Things 3 的工艺执行。",
+    "palette": ["#FFFFFF", "#F2F2F7", "#1C1C1E", "#007AFF"],
+    "materials": ["源列表侧栏", "大标题 Large Title", "圆形勾选框", "分组 inset 列表", "深浅两套跟随系统"],
+    "viewport": "侧栏列出四个视图与智能列表（逾期 / 今天 / 7 天）；主区大标题「目标」下是分组清单：推进中、待办各列、已完成折叠在底部；每行圆形勾选 + 正文 + 截止，详情用弹出式检查器。",
+    "risk": "与品类里的每个清单应用无法区分——这是它的本意。",
+    "wireframe": {
+      "cols": 12,
+      "rows": 10,
+      "regions": [
+        { "label": "工具栏", "x": 0, "y": 0, "w": 12, "h": 1 },
+        { "label": "源列表 + 智能列表", "x": 0, "y": 1, "w": 3, "h": 9 },
+        { "label": "大标题「目标」", "x": 3, "y": 1, "w": 9, "h": 1 },
+        { "label": "分组清单：推进中 / 待办 / 已完成（折叠）", "x": 3, "y": 2, "w": 9, "h": 8, "accent": true }
+      ]
+    }
+  },
+  "steer": true
+}

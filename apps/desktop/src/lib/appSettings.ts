@@ -1,6 +1,24 @@
 import * as React from 'react';
 
 /**
+ * How much room the interface gives each thing.
+ *
+ * - `normal`: the paper world as designed — heading, ribbon, roomy cards.
+ * - `medium`: the same composition on a tighter grid; nothing removed.
+ * - `efficient`: for people who live in the app all day. Ornament goes
+ *   (ribbon, entrance rise, centred empties), every band and card packs
+ *   closer, and the content column starts at the left edge instead of
+ *   floating in margins.
+ */
+export type LayoutDensity = 'normal' | 'medium' | 'efficient';
+
+export const LAYOUT_DENSITIES: ReadonlyArray<{ value: LayoutDensity; label: string; note: string }> = [
+  { value: 'normal', label: '正常', note: '默认布局，留白与丝带齐全。' },
+  { value: 'medium', label: '中等', note: '同样的构图，间距收紧一档。' },
+  { value: 'efficient', label: '效率', note: '去掉装饰与居中留白，信息密度最高。' },
+];
+
+/**
  * Per-machine interface preferences. Nothing here is product data: it never
  * enters TODO.md and a cleared browser profile only restores the defaults.
  */
@@ -10,18 +28,25 @@ export interface AppSettings {
    * click on a checkbox is a file write, and undoing it is another one.
    */
   confirmCompletion: boolean;
+  density: LayoutDensity;
 }
 
 export const APP_SETTINGS_STORAGE_KEY = 'todo.app-settings.v1';
 
 export const defaultAppSettings: AppSettings = {
   confirmCompletion: true,
+  density: 'normal',
 };
+
+function isDensity(value: unknown): value is LayoutDensity {
+  return value === 'normal' || value === 'medium' || value === 'efficient';
+}
 
 function normalize(value: unknown): AppSettings {
   const raw = value && typeof value === 'object' ? (value as Partial<AppSettings>) : {};
   return {
     confirmCompletion: typeof raw.confirmCompletion === 'boolean' ? raw.confirmCompletion : defaultAppSettings.confirmCompletion,
+    density: isDensity(raw.density) ? raw.density : defaultAppSettings.density,
   };
 }
 

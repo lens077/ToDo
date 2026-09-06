@@ -4,9 +4,21 @@
 
 ## Language
 
+**Project Root**:
+用户选择的项目目录，是任务来源发现和项目内操作的边界；不要求它本身是 Git 仓库根。
+_Avoid_: Task file, Git root
+
+**Task Source**:
+项目目录内承载任务的原始文件。不同来源各自保有任务身份、完成策略和内容；汇总视图不取代原文件。
+_Avoid_: Import copy, merged task file
+
 **Project Task**:
-属于一个代码仓库、以该仓库 Markdown 文件为权威来源的可执行工作。
+属于项目中某个 Task Source 的可执行工作，由该原文件记录。任务身份由来源相对路径与文件内稳定 ID 共同确定，同名 ID 不跨来源合并。
 _Avoid_: Todo item, card, ticket
+
+**Adoption**:
+用户检查预览差异并明确确认，将发现的只读来源转为可管理任务文件的过程。发现文件本身不意味着同意接管。
+_Avoid_: Automatic import, background migration
 
 **Capture**:
 个人快速记录的原始文本，尚未承诺执行，也尚未归属任何项目。Capture 没有完成状态。

@@ -12,6 +12,7 @@
 /.playwright-cli/
 /.agent-teams/
 /.scratch/
+**/.impeccable/config.local.json
 *.log
 .DS_Store
 
@@ -31,3 +32,8 @@
 
 # rendered icon sources (regenerate with `pnpm --filter @todo/desktop icon`)
 apps/desktop/icon/out/
+
+# Impeccable local review captures (screenshots, decision bars)
+**/.impeccable/review/
+**/.impeccable/decision/bars/
+**/.impeccable/build/

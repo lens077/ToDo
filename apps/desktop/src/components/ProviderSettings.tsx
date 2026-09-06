@@ -74,7 +74,6 @@ export function ProviderSettings({ onClose }: ProviderSettingsProps) {
       >
         <header className="provider-panel__header">
           <div>
-            <p className="eyebrow">SEMANTIC REVIEW / BYOK</p>
             <h2 id="provider-settings-title">模型提供方设置</h2>
           </div>
           <span className="provider-panel__local">仅存于此设备</span>
@@ -125,7 +124,6 @@ export function ProviderSettings({ onClose }: ProviderSettingsProps) {
           <section className="provider-catalog" aria-labelledby="provider-catalog-title">
             <header className="provider-catalog__header">
               <div>
-                <p className="eyebrow">MODEL CATALOG</p>
                 <h3 id="provider-catalog-title">模型目录</h3>
               </div>
               <button

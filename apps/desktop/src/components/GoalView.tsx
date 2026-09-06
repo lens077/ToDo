@@ -11,7 +11,9 @@ import {
   type DueFilter,
   type GoalLayoutState,
 } from '../lib/goal';
+import { useAppSettings } from '../lib/appSettings';
 import { Icon } from './Icon';
+import { Ribbon } from './Ribbon';
 import { TaskCard, type TaskCardActions } from './TaskCard';
 
 interface GoalViewProps extends Omit<TaskCardActions, 'onSetCompleted' | 'onMove'> {
@@ -87,8 +89,16 @@ function useDropTargets(
     [onMove, readOnly, snapshot.columns, snapshot.tasks],
   );
 
-  const dropProps = (columnId: string | null) => ({
+  const resolveColumn = (id: string | null, taskId: string | null, role?: 'focus' | 'backlog' | 'done') => {
+    if (!role || !snapshot.sources) return id;
+    const task = snapshot.tasks.find((item) => item.id === taskId);
+    if (!task || task.source_writable === false) return null;
+    const own = splitColumns(snapshot.columns.filter((column) => column.source_path === task.source_path));
+    return (role === 'focus' ? own.focus : own[role][0])?.id ?? null;
+  };
+  const dropProps = (id: string | null, role?: 'focus' | 'backlog' | 'done') => ({
     onDragOver: (event: React.DragEvent) => {
+      const columnId = resolveColumn(id, draggedId, role);
       if (!draggedId || !columnId) return;
       event.preventDefault();
       event.dataTransfer.dropEffect = 'move';
@@ -100,6 +110,7 @@ function useDropTargets(
     onDrop: (event: React.DragEvent) => {
       event.preventDefault();
       const taskId = draggedId ?? event.dataTransfer.getData('text/plain');
+      const columnId = resolveColumn(id, taskId, role);
       setDraggedId(null);
       setDropColumn(null);
       if (taskId && columnId) void moveTask(taskId, columnId);
@@ -162,6 +173,7 @@ export function GoalView({
   onSetPriority,
 }: GoalViewProps) {
   const [layout, updateLayout] = useGoalLayout();
+  const [{ density }] = useAppSettings();
   const [dueFilter, setDueFilter] = React.useState<DueFilter>('all');
   const columns = React.useMemo(() => splitColumns(snapshot.columns), [snapshot.columns]);
   const bands = React.useMemo(() => dueBands(snapshot), [snapshot]);
@@ -174,7 +186,7 @@ export function GoalView({
   // be un-ticked or dragged into the done column), not hidden in the queue.
   const isDoneColumn = (id: string | null) => columns.done.some((column) => column.id === id);
   const open = (tasks: DesktopTask[]) => tasks.filter((task) => !task.completed && !isDoneColumn(task.column));
-  const focusTasks = open(tasksIn(columns.focus));
+  const focusTasks = open(snapshot.tasks.filter((task) => columns.focusColumns.some((column) => column.id === task.column)));
   const orphanTasks = open(snapshot.tasks.filter((task) => task.column === null));
   const doneTasks = snapshot.tasks.filter((task) => task.completed || isDoneColumn(task.column));
   const backlogTotal = columns.backlog.reduce((sum, column) => sum + open(tasksIn(column)).length, 0) + orphanTasks.length;
@@ -213,9 +225,12 @@ export function GoalView({
   if (snapshot.tasks.length === 0) {
     return (
       <section className="view-empty view-empty--tasks" aria-labelledby="empty-goal-title">
-        <p className="view-empty__kicker">TODO.md 已连接</p>
-        <h2 id="empty-goal-title">还没有 Project Task</h2>
-        <p>从顶部快速新增第一项。它会写回当前项目，而不是留在界面缓存里。</p>
+        <h2 id="empty-goal-title">还没有 Project Task<span>{snapshot.sources ? snapshot.sources.length === 0 ? '项目目录已打开' : '来源已连接' : 'TODO.md 已连接'}</span></h2>
+        <p>{snapshot.sources?.length === 0
+          ? '未发现 TODO.md / TODO / TODO.txt。请放入任务文件后刷新；不会自动创建文件。'
+          : snapshot.sources
+            ? '请选择可写来源后新增第一项。未接管的清单需先预览接管差异。'
+            : '从顶部快速新增第一项。它会写回当前项目，而不是留在界面缓存里。'}</p>
       </section>
     );
   }
@@ -224,15 +239,16 @@ export function GoalView({
     'goal-layout',
     layout.todoCollapsed ? 'is-todo-collapsed' : '',
     layout.doneCollapsed ? 'is-done-collapsed' : '',
-    columns.done.length === 0 ? 'has-no-done' : '',
+    columns.done.length === 0 && doneTasks.length === 0 ? 'has-no-done' : '',
   ].filter(Boolean).join(' ');
 
-  const focusName = columns.focus?.name ?? '推进中';
+  const focusName = columns.focusColumns.length > 1 ? '推进中' : columns.focus?.name ?? '推进中';
   const doneName = columns.done.length === 1 ? columns.done[0].name : '已完成';
 
   return (
     <section className="goal-view" aria-labelledby="goal-title">
       <header className="view-heading view-heading--goal">
+        {density !== 'efficient' && <Ribbon className="ribbon--heading" />}
         <div className="view-heading__title">
           <h1 id="goal-title">目标</h1>
           <p className="view-heading__meta">
@@ -274,7 +290,7 @@ export function GoalView({
         <section
           className={`goal-region goal-region--doing${drop.isDropTarget(columns.focus?.id ?? null) ? ' is-drop-target' : ''}`}
           aria-labelledby="goal-doing-title"
-          {...drop.dropProps(columns.focus?.id ?? null)}
+          {...drop.dropProps(columns.focus?.id ?? null, 'focus')}
         >
           <header className="goal-region__header">
             <div className="goal-region__title">
@@ -327,14 +343,14 @@ export function GoalView({
                 <ul>
                   {queued.map((task) => (
                     <li key={task.id ?? task.body}>
-                      <span className="focus-queue__body">{task.body}</span>
+                      <span className="focus-queue__body">{task.body}{task.source_path && <small className="task-source"> · {task.source_path}</small>}</span>
                       {task.progress !== null && <span className="task-partial">◐ {task.progress}%</span>}
-                      {!readOnly && task.id && columns.focus && (
+                      {!readOnly && task.source_writable !== false && task.id && columns.focus && (
                         <button
                           type="button"
                           className="focus-queue__promote"
                           disabled={busyKeys.has(`task:${task.id}`)}
-                          onClick={() => void drop.moveTask(task.id!, columns.focus!.id, true)}
+                          onClick={() => { const own = columns.focusColumns.find((column) => column.source_path === task.source_path); if (own) void drop.moveTask(task.id!, own.id, true); }}
                         >
                           提到最前
                         </button>
@@ -353,7 +369,7 @@ export function GoalView({
           id="goal-todo-region"
           className={`goal-region goal-region--todo${layout.todoCollapsed ? ' is-collapsed' : ''}${layout.todoCollapsed && drop.isDropTarget(columns.backlog[0]?.id ?? null) ? ' is-drop-target' : ''}`}
           aria-labelledby="goal-todo-title"
-          {...(layout.todoCollapsed ? drop.dropProps(columns.backlog[0]?.id ?? null) : {})}
+          {...(layout.todoCollapsed ? drop.dropProps(columns.backlog[0]?.id ?? null, 'backlog') : {})}
         >
           <header className="goal-region__header">
             <div className="goal-region__title">
@@ -390,7 +406,7 @@ export function GoalView({
                   >
                     {columns.backlog.length > 1 && (
                       <header className="todo-lane__header">
-                        <h3>{column.name}</h3>
+                        <h3>{column.name}{column.source_path && <small className="task-source"> · {column.source_path}</small>}</h3>
                         <span>{total}</span>
                       </header>
                     )}
@@ -437,12 +453,12 @@ export function GoalView({
         </section>
 
         {/* ── Finished ──────────────────────────────────────────────── */}
-        {columns.done.length > 0 && (
+        {(columns.done.length > 0 || doneTasks.length > 0) && (
           <aside
             id="goal-done-region"
-            className={`goal-region goal-region--done${layout.doneCollapsed ? ' is-collapsed' : ''}${drop.isDropTarget(columns.done[0].id) ? ' is-drop-target' : ''}`}
+            className={`goal-region goal-region--done${layout.doneCollapsed ? ' is-collapsed' : ''}${drop.isDropTarget(columns.done[0]?.id ?? null) ? ' is-drop-target' : ''}`}
             aria-labelledby="goal-done-title"
-            {...drop.dropProps(columns.done[0].id)}
+            {...drop.dropProps(columns.done[0]?.id ?? null, 'done')}
           >
             <header className="goal-region__header">
               <div className="goal-region__title">
@@ -463,7 +479,7 @@ export function GoalView({
                 {doneTasks.length > 0 ? (
                   doneTasks.map((task, index) => (
                     <div className="task-card-wrap" style={{ '--task-index': index } as React.CSSProperties} key={task.id ?? `done-${index}`}>
-                      {!isDoneColumn(task.column) && (
+                      {columns.done.length > 0 && !isDoneColumn(task.column) && (
                         <span className="done-list__stray">仍在「{columnName(task.column) ?? '未归列'}」，拖动或打开菜单归档到「{doneName}」</span>
                       )}
                       <TaskCard {...cardActions(task, 'compact')} {...drop.cardDragProps} />

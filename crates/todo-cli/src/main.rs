@@ -427,7 +427,7 @@ fn run(cli: &Cli) -> Result<u8, Error> {
                 .map_err(|error| Error::InvalidAlignment(error.to_string()))?;
             runtime
                 .block_on(serve::run(
-                    path.clone(),
+                    PathBuf::from("."),
                     addr,
                     Duration::from_millis(cli.lock_timeout_ms),
                     *read_only,

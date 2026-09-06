@@ -9,6 +9,7 @@ mod llm;
 mod lock;
 mod model;
 mod parse;
+mod project;
 mod projection;
 mod prompt;
 mod reconcile;
@@ -26,6 +27,7 @@ pub use llm::{LlmConfig, LlmProvider, LlmSemanticReconciler};
 pub use lock::{FileLockGuard, LockedWriter};
 pub use model::*;
 pub use parse::{parse, parse_file};
+pub use project::*;
 pub use projection::{
     project_document, ProjectedTask, Projection, ProjectionSnapshot, UpdateStats, SCHEMA_HASH,
 };
