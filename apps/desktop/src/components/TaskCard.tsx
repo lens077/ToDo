@@ -27,6 +27,8 @@ interface TaskCardProps extends TaskCardActions {
   onDragStart?: (taskId: string) => void;
   onDragEnd?: () => void;
   isInFocus?: boolean;
+  allowCurrentPriority?: boolean;
+  children?: React.ReactNode;
 }
 
 type InlineOutcome = 'partial' | 'failed';
@@ -154,6 +156,8 @@ export function TaskCard({
   onMove,
   onSetPriority,
   isInFocus = false,
+  allowCurrentPriority = false,
+  children,
 }: TaskCardProps) {
   const [inline, setInline] = React.useState<InlineOutcome | null>(null);
   const [contextMenu, setContextMenu] = React.useState<{
@@ -162,7 +166,7 @@ export function TaskCard({
     restoreFocus: HTMLElement | null;
   } | null>(null);
   const focus = variant === 'focus';
-  const movable = Boolean(task.id && columns.length > 1 && !busy && !readOnly);
+  const movable = Boolean(task.id && (columns.length > 1 || onSetPriority) && !busy && !readOnly);
   const dueTone = task.due && !task.completed && task.due < localDateKey() ? 'overdue' : 'normal';
   const canRecord = Boolean(task.id) && !readOnly && !task.completed;
   const supportsPriority = Boolean(task.id && onSetPriority && !busy && !readOnly);
@@ -255,7 +259,7 @@ export function TaskCard({
         openMenuAt(event.clientX, event.clientY, event.currentTarget);
       }}
       onKeyDown={(event) => {
-        if (inline) return;
+        if (inline || event.target !== event.currentTarget) return;
         if (supportsPriority && /^[0-4]$/.test(event.key) && !event.metaKey && !event.ctrlKey && !event.altKey) {
           event.preventDefault();
           onSetPriority?.(task.id!, event.key === '0' ? null : Number(event.key) as TaskPriority);
@@ -364,6 +368,8 @@ export function TaskCard({
         />
       )}
 
+      {children}
+
       {contextMenu && task.id && (
         <TaskContextMenu
           task={task}
@@ -374,6 +380,7 @@ export function TaskCard({
           onClose={closeMenu}
           onMove={(columnId) => onMove(task.id!, columnId)}
           onSetPriority={onSetPriority ? (priority) => onSetPriority(task.id!, priority) : undefined}
+          allowCurrentPriority={allowCurrentPriority}
         />
       )}
 

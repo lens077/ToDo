@@ -1,6 +1,5 @@
 import * as React from 'react';
 import {
-  compareRevisions,
   desktop,
   DesktopBridgeError,
   type Capture,
@@ -86,22 +85,16 @@ export function useDesktop() {
   const [busyKeys, setBusyKeys] = React.useState<Set<string>>(() => new Set());
   const [partialTriages, setPartialTriages] = React.useState<Record<string, PartialTriageState>>({});
   const snapshotRef = React.useRef<DesktopSnapshot | null>(null);
-  const staleRevisions = React.useRef(new Set<string>());
+  const snapshotEpoch = React.useRef(0);
+  const snapshotReadSequence = React.useRef(0);
+  const mutationQueue = React.useRef<Promise<void>>(Promise.resolve());
 
   const applySnapshot = React.useCallback((next: DesktopSnapshot, authoritative = false) => {
+    // A revision is a content hash: moving back to a previous priority can
+    // legitimately produce a previously seen hash, even a numerically lower one.
+    if (authoritative) snapshotEpoch.current += 1;
     const current = snapshotRef.current;
-    if (current?.revision === next.revision || staleRevisions.current.has(next.revision)) return false;
-    if (current) {
-      const comparison = compareRevisions(next.revision, current.revision);
-      if (comparison !== null && comparison < 0) return false;
-      if (authoritative || comparison === null || comparison > 0) {
-        staleRevisions.current.add(current.revision);
-        if (staleRevisions.current.size > 64) {
-          const oldest = staleRevisions.current.values().next().value;
-          if (oldest) staleRevisions.current.delete(oldest);
-        }
-      }
-    }
+    if (current?.project_path === next.project_path && current.revision === next.revision) return false;
     snapshotRef.current = next;
     setSnapshot(next);
     setStatus((value) => ({
@@ -112,6 +105,30 @@ export function useDesktop() {
     setPhase('ready');
     return true;
   }, []);
+
+  const refreshSnapshot = React.useCallback(async function readLatest(initial = false): Promise<void> {
+    const request = ++snapshotReadSequence.current;
+    const epoch = snapshotEpoch.current;
+    try {
+      const next = await desktop.snapshot();
+      if (request !== snapshotReadSequence.current) return;
+      // A write completed while this read was in flight. Re-read rather than
+      // apply its pre-write result or lose a concurrent external invalidation.
+      if (epoch !== snapshotEpoch.current) return readLatest(initial);
+      applySnapshot(next);
+      setBanner(null);
+    } catch (error) {
+      if (request !== snapshotReadSequence.current) return;
+      if (epoch !== snapshotEpoch.current) return readLatest(initial);
+      const bridgeError = error instanceof DesktopBridgeError ? error : new DesktopBridgeError(String(error));
+      if (initial && !snapshotRef.current) {
+        setPhase(bridgeError.kind === 'no_project' ? 'no-project' : 'load-error');
+        if (bridgeError.kind === 'no_project') return;
+      }
+      setBanner(bannerFor(bridgeError));
+      if (bridgeError.kind === 'parse') setStatus((value) => ({ ...value, syncState: 'error' }));
+    }
+  }, [applySnapshot]);
 
   const loadCaptures = React.useCallback(async () => {
     setCapturesLoading(true);
@@ -132,8 +149,9 @@ export function useDesktop() {
       .subscribe((event) => {
         if (cancelled) return;
         if (event.type === 'snapshot') {
-          applySnapshot(event.snapshot);
-          setBanner(null);
+          // Notification payloads may arrive out of order. A fresh read, not
+          // the content hash or arrival order, determines the current state.
+          void refreshSnapshot();
         } else {
           setBanner(bannerFor(event.error));
           setStatus((value) => ({ ...value, syncState: 'error' }));
@@ -170,27 +188,16 @@ export function useDesktop() {
         setBanner(bannerFor(error));
       }
 
-      try {
-        const initialSnapshot = await desktop.snapshot();
-        if (!cancelled) applySnapshot(initialSnapshot, true);
-      } catch (error) {
-        if (cancelled) return;
-        const bridgeError = error instanceof DesktopBridgeError ? error : new DesktopBridgeError(String(error));
-        if (bridgeError.kind === 'no_project') {
-          setPhase('no-project');
-        } else {
-          setPhase('load-error');
-          setBanner(bannerFor(error));
-        }
-      }
+      if (!cancelled) await refreshSnapshot(true);
     })();
     void loadCaptures();
 
     return () => {
       cancelled = true;
+      snapshotReadSequence.current += 1;
       unsubscribe?.();
     };
-  }, [applySnapshot, loadCaptures]);
+  }, [refreshSnapshot, loadCaptures]);
 
   const withBusy = React.useCallback(async <T,>(key: string, operation: () => Promise<T>): Promise<T> => {
     setBusyKeys((current) => new Set(current).add(key));
@@ -205,24 +212,17 @@ export function useDesktop() {
     }
   }, []);
 
-  const refreshSnapshot = React.useCallback(async () => {
-    try {
-      const next = await desktop.snapshot();
-      applySnapshot(next, true);
-      setBanner(null);
-    } catch (error) {
-      setBanner(bannerFor(error));
-      const kind = error instanceof DesktopBridgeError ? error.kind : 'unknown';
-      if (kind === 'parse') setStatus((value) => ({ ...value, syncState: 'error' }));
-    }
-  }, [applySnapshot]);
-
   const runMutation = React.useCallback(
     async (key: string, intent: DesktopMutation): Promise<boolean> => {
       try {
-        await withBusy(key, async () => {
-          const authoritative = await desktop.mutate(intent);
-          applySnapshot(authoritative, true);
+        await withBusy(key, () => {
+          const write = mutationQueue.current.then(async () => {
+            snapshotEpoch.current += 1;
+            const authoritative = await desktop.mutate(intent);
+            applySnapshot(authoritative, true);
+          });
+          mutationQueue.current = write.catch(() => undefined);
+          return write;
         });
         setBanner(null);
         return true;
@@ -238,6 +238,7 @@ export function useDesktop() {
 
   const chooseProject = React.useCallback(async () => {
     try {
+      snapshotEpoch.current += 1;
       const opened = await withBusy('project', () => desktop.chooseAndOpenProject());
       if (!opened) return;
       applySnapshot(opened, true);

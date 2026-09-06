@@ -15,6 +15,7 @@ import { StatusBanner } from './components/StatusBanner';
 import { useDesktop } from './hooks/useDesktop';
 import { useAppSettings } from './lib/appSettings';
 import { transportCapabilities, type DesktopTask, type TaskPriority } from './lib/desktop';
+import { quadrantGroups } from './lib/quadrant';
 
 interface PriorityRequest {
   task: DesktopTask;
@@ -43,8 +44,9 @@ export function App() {
   const model = useDesktop();
   const readOnly = transportCapabilities()?.writable === false;
   // The badge counts what needs attention today: overdue plus due-today work.
-  const doneColumnIds = new Set(model.snapshot?.columns.filter((column) => column.done).map((column) => column.id) ?? []);
-  const unrankedCount = model.snapshot?.tasks.filter((task) => !task.completed && !doneColumnIds.has(task.column ?? '') && task.priority === null).length ?? 0;
+  const unrankedCount = model.snapshot
+    ? quadrantGroups(model.snapshot).filter((group) => group.task.priority === null).length
+    : 0;
   const goalCount = model.snapshot
     ? model.snapshot.today.overdue.length + model.snapshot.today.today.length
     : 0;
@@ -103,7 +105,7 @@ export function App() {
     const root = model.snapshot.tasks.findIndex((item) => item.id === task.id);
     let descendants = 0;
     for (let index = root + 1; index < model.snapshot.tasks.length; index += 1) {
-      if (model.snapshot.tasks[index].indent_level <= task.indent_level) break;
+      if (model.snapshot.tasks[index].column !== task.column || model.snapshot.tasks[index].indent_level <= task.indent_level) break;
       descendants += 1;
     }
     if (descendants === 0) void model.setPriority(task.id, priority);
@@ -211,8 +213,7 @@ export function App() {
               onSetPartial={model.setPartial}
               onSetFailed={model.setFailed}
               onMove={(id, column) => void moveTask(id, column)}
-              onSetPriority={(id, priority) => { const task = model.snapshot?.tasks.find((item) => item.id === id); if (task) requestPriority(task, priority); }}
-              onRequestPriority={requestPriority}
+              onSetPriority={(id, priority) => model.setPriority(id, priority, 'subtree')}
             />
           ) : model.snapshot ? (
             <GoalView

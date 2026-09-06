@@ -359,6 +359,22 @@ mod tests {
     use super::*;
 
     #[test]
+    fn main_webview_uses_html_drag_and_drop() {
+        let config: tauri::Config =
+            serde_json::from_str(include_str!("../tauri.conf.json")).unwrap();
+        let main = config
+            .app
+            .windows
+            .iter()
+            .find(|window| window.label == "main")
+            .expect("main window must be configured");
+        assert!(
+            !main.drag_drop_enabled,
+            "task cards use HTML drag-and-drop, not Tauri's native file-drop handler"
+        );
+    }
+
+    #[test]
     fn setup_status_persists_success_and_error_details() {
         assert_eq!(
             status_after_setup(Duration::from_millis(37), Ok(())),

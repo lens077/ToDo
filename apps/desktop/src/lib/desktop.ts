@@ -989,13 +989,3 @@ export function shortProjectName(path: string): string {
   const normalized = path.replace(/\\/g, '/').replace(/\/TODO\.md$/i, '');
   return normalized.split('/').filter(Boolean).at(-1) ?? '当前项目';
 }
-
-export function compareRevisions(left: string, right: string): number | null {
-  if (left === right) return 0;
-  const numeric = /^\d+$/.test(left) && /^\d+$/.test(right);
-  if (numeric) return BigInt(left) > BigInt(right) ? 1 : -1;
-  const leftMock = /^mock-(\d+)$/.exec(left);
-  const rightMock = /^mock-(\d+)$/.exec(right);
-  if (leftMock && rightMock) return Number(leftMock[1]) > Number(rightMock[1]) ? 1 : -1;
-  return null;
-}

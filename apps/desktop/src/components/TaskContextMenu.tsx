@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { createPortal } from 'react-dom';
+import { createPortal, flushSync } from 'react-dom';
 import type { DesktopColumn, DesktopTask, TaskPriority } from '../lib/desktop';
 import { Icon } from './Icon';
 
@@ -17,6 +17,7 @@ interface TaskContextMenuProps {
   y: number;
   onMove: (columnId: string) => void;
   onSetPriority?: (priority: TaskPriority) => void;
+  allowCurrentPriority?: boolean;
   onClose: (restoreFocus?: boolean) => void;
 }
 
@@ -74,6 +75,7 @@ export function TaskContextMenu({
   y,
   onMove,
   onSetPriority,
+  allowCurrentPriority = false,
   onClose,
 }: TaskContextMenuProps) {
   const menuRef = React.useRef<HTMLDivElement>(null);
@@ -81,8 +83,12 @@ export function TaskContextMenu({
   const priorityTriggerRef = React.useRef<HTMLButtonElement>(null);
   const priorityRef = React.useRef<HTMLDivElement>(null);
   const submenuRef = React.useRef<HTMLDivElement>(null);
-  const [submenuOpen, setSubmenuOpen] = React.useState(false);
-  const [priorityOpen, setPriorityOpen] = React.useState(false);
+  const [submenu, setSubmenu] = React.useState<{
+    kind: 'move' | 'priority';
+    focusFirst: boolean;
+  } | null>(null);
+  const submenuOpen = submenu?.kind === 'move';
+  const priorityOpen = submenu?.kind === 'priority';
   const [submenuTop, setSubmenuTop] = React.useState(-7);
   const [position, setPosition] = React.useState({ x, y });
   const actions = React.useMemo(
@@ -140,17 +146,27 @@ export function TaskContextMenu({
     };
   }, [onClose]);
 
-  const runMove = (columnId: string) => {
-    onClose(false);
-    onMove(columnId);
+  React.useLayoutEffect(() => {
+    const panel = submenu?.kind === 'move' ? submenuRef.current : priorityRef.current;
+    if (submenu?.focusFirst && panel) enabledItems(panel)[0]?.focus();
+  }, [submenu]);
+
+  const focusIsInSubmenu = () => Boolean(
+    submenuRef.current?.contains(document.activeElement)
+    || priorityRef.current?.contains(document.activeElement),
+  );
+  const canHoverSubmenus = () => window.matchMedia('(min-width: 721px) and (hover: hover)').matches;
+  const activate = (event: React.MouseEvent, action: () => void) => {
+    event.stopPropagation();
+    // A dialog opened by the action must not capture focus from a mounted menu.
+    flushSync(() => onClose(false));
+    action();
   };
-  const openSubmenu = (focusFirst = false) => {
-    setSubmenuOpen(true);
-    if (focusFirst) {
-      requestAnimationFrame(() => {
-        if (submenuRef.current) enabledItems(submenuRef.current)[0]?.focus();
-      });
-    }
+  const runMove = (event: React.MouseEvent, columnId: string) => {
+    activate(event, () => onMove(columnId));
+  };
+  const openSubmenu = (kind: 'move' | 'priority', focusFirst = false) => {
+    setSubmenu({ kind, focusFirst: focusFirst || focusIsInSubmenu() });
   };
 
   const handleKeyDown = (event: React.KeyboardEvent) => {
@@ -165,25 +181,25 @@ export function TaskContextMenu({
     } else if ((event.key === 'ArrowDown' || event.key === 'ArrowUp') && menu) {
       event.preventDefault();
       focusRelative(menu, event.target as Element, event.key === 'ArrowDown' ? 1 : -1);
+      if (menu === menuRef.current) setSubmenu(null);
     } else if ((event.key === 'Home' || event.key === 'End') && menu) {
       event.preventDefault();
+      if (menu === menuRef.current) setSubmenu(null);
       const items = enabledItems(menu);
       (event.key === 'Home' ? items[0] : items.at(-1))?.focus();
     } else if (event.key === 'ArrowRight' && event.target === priorityTriggerRef.current) {
       event.preventDefault();
-      setPriorityOpen(true);
-      setSubmenuOpen(false);
-      requestAnimationFrame(() => priorityRef.current && enabledItems(priorityRef.current)[0]?.focus());
+      openSubmenu('priority', true);
     } else if (event.key === 'ArrowLeft' && priorityRef.current?.contains(event.target as Node)) {
       event.preventDefault();
-      setPriorityOpen(false);
+      setSubmenu(null);
       priorityTriggerRef.current?.focus();
     } else if (event.key === 'ArrowRight' && event.target === submenuTriggerRef.current) {
       event.preventDefault();
-      openSubmenu(true);
+      openSubmenu('move', true);
     } else if (event.key === 'ArrowLeft' && submenuRef.current?.contains(event.target as Node)) {
       event.preventDefault();
-      setSubmenuOpen(false);
+      setSubmenu(null);
       submenuTriggerRef.current?.focus();
     }
   };
@@ -198,6 +214,8 @@ export function TaskContextMenu({
       aria-label={`“${task.body}”的任务菜单`}
       style={{ left: position.x, top: position.y }}
       onKeyDown={handleKeyDown}
+      onPointerDown={(event) => event.stopPropagation()}
+      onClick={(event) => event.stopPropagation()}
       onContextMenu={(event) => {
         event.preventDefault();
         event.stopPropagation();
@@ -209,8 +227,12 @@ export function TaskContextMenu({
           key={action.column.id}
           type="button"
           role="menuitem"
-          onPointerEnter={() => { setSubmenuOpen(false); setPriorityOpen(false); }}
-          onClick={() => runMove(action.column.id)}
+          onPointerEnter={(event) => {
+            if (!canHoverSubmenus()) return;
+            if (focusIsInSubmenu()) event.currentTarget.focus();
+            setSubmenu(null);
+          }}
+          onClick={(event) => runMove(event, action.column.id)}
         >
           <Icon name={action.icon} />
           <span>{action.label}</span>
@@ -219,13 +241,29 @@ export function TaskContextMenu({
       {actions.length > 0 && <span className="task-context-menu__rule" role="separator" />}
       {onSetPriority && (
         <>
-          <button ref={priorityTriggerRef} type="button" role="menuitem" aria-haspopup="menu" aria-expanded={priorityOpen} onClick={() => { setPriorityOpen((open) => !open); setSubmenuOpen(false); }}>
+          <button
+            ref={priorityTriggerRef}
+            type="button"
+            role="menuitem"
+            aria-haspopup="menu"
+            aria-expanded={priorityOpen}
+            onClick={() => {
+              if (priorityOpen) setSubmenu(null);
+              else openSubmenu('priority', true);
+            }}
+          >
             <Icon name="grid" /><span>优先级…</span><Icon name="chevron-right" className="task-context-menu__chevron" />
           </button>
           {priorityOpen && (
             <div ref={priorityRef} className="task-context-menu task-context-menu__submenu task-context-menu__priority" role="menu" aria-label="设置优先级">
               {([1, 2, 3, 4, null] as TaskPriority[]).map((priority) => (
-                <button type="button" role="menuitem" key={priority ?? 0} disabled={task.priority === priority} onClick={() => { onClose(false); onSetPriority(priority); }}>
+                <button
+                  type="button"
+                  role="menuitem"
+                  key={priority ?? 0}
+                  disabled={task.priority === priority && !allowCurrentPriority}
+                  onClick={(event) => activate(event, () => onSetPriority(priority))}
+                >
                   <span className={`priority-dot priority-dot--${priority ?? 0}`} />
                   <span>{priority === null ? '清除优先级' : `!${priority} ${['最高', '高', '中', '低'][priority - 1]}`}</span>
                   <kbd>{priority ?? 0}</kbd>
@@ -241,8 +279,11 @@ export function TaskContextMenu({
         role="menuitem"
         aria-haspopup="menu"
         aria-expanded={submenuOpen}
-        onClick={() => openSubmenu(true)}
-        onPointerEnter={() => openSubmenu()}
+        onClick={() => openSubmenu('move', true)}
+        onPointerEnter={() => {
+          // Reflowing narrow sheets can put this trigger under a stationary pointer.
+          if (canHoverSubmenus()) openSubmenu('move');
+        }}
       >
         <Icon name="move" />
         <span>移动到…</span>
@@ -265,7 +306,7 @@ export function TaskContextMenu({
                 role="menuitem"
                 key={column.id}
                 disabled={current}
-                onClick={() => runMove(column.id)}
+                onClick={(event) => runMove(event, column.id)}
               >
                 <span
                   className={`column-dot column-dot--${column.done ? 'done' : 'active'}`}

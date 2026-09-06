@@ -85,7 +85,21 @@ test.describe('web transport', () => {
     await freshPage.close();
   });
 
-  test('parent priority asks for scope and subtree update is atomic', async ({ page }) => {
+  test('quadrant keeps mixed-priority descendants inside their parent group without writing', async ({ page }) => {
+    test.skip(!fixturePath, 'E2E_TODO_PATH is required');
+    const before = await taskFile();
+    await page.goto('/');
+    await page.getByRole('button', { name: '象限' }).click();
+    const group = page.locator('[data-group-root="parent1"]');
+    await expect(group).toBeVisible();
+    await expect(group.locator('[data-task-id="child01"]')).toBeVisible();
+    await expect(group.locator('[data-task-id="child02"]')).toBeVisible();
+    await expect(group.locator('[data-task-id="child01"]')).toHaveAttribute('draggable', 'false');
+    await expect(page.getByRole('region', { name: '!2 高' }).locator('[data-group-root="parent1"]')).toBeVisible();
+    expect(await taskFile()).toBe(before);
+  });
+
+  test('quadrant group drag updates the whole subtree atomically without a scope menu', async ({ page }) => {
     test.skip(!fixturePath, 'E2E_TODO_PATH is required');
     await page.goto('/');
     await page.getByRole('button', { name: '象限' }).click();
@@ -93,11 +107,12 @@ test.describe('web transport', () => {
 
     const parent = page.getByRole('article', { name: /发布桌面版/ });
     await parent.dragTo(page.getByRole('region', { name: '!1 最高' }));
-    const dialog = page.getByRole('dialog', { name: '这个任务包含子任务' });
-    await expect(dialog.getByRole('button', { name: '仅修改这一项' })).toBeVisible();
-    await expect(dialog.getByRole('button', { name: '同时修改 2 个子任务' })).toBeVisible();
-    await dialog.getByRole('button', { name: '同时修改 2 个子任务' }).click();
-    await expect(page.getByRole('region', { name: '!1 最高' }).getByText('发布桌面版')).toBeVisible();
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+    const highest = page.getByRole('region', { name: '!1 最高' });
+    await expect(highest.locator('[data-group-root="parent1"]')).toBeVisible();
+    await expect(highest.getByText('发布桌面版', { exact: true })).toBeVisible();
+    await expect(highest.getByText('构建 macOS 安装包', { exact: true })).toBeVisible();
+    await expect(highest.getByText('编写安装说明', { exact: true })).toBeVisible();
 
     const after = await taskFile();
     expect(taskLine(after, 'parent1')).toBe(taskLine(before, 'parent1').replace('!2', '!1'));
@@ -107,35 +122,133 @@ test.describe('web transport', () => {
   });
 
 
-  test('parent can update only itself while children keep their priorities', async ({ page }) => {
+  test('narrow quadrant menu updates a whole group in one write', async ({ page }) => {
     test.skip(!fixturePath, 'E2E_TODO_PATH is required');
+    await page.setViewportSize({ width: 640, height: 950 });
     await page.goto('/');
     await page.getByRole('button', { name: '象限' }).click();
     const before = await taskFile();
-
-    await page.getByRole('article', { name: /发布桌面版/ }).dragTo(page.getByRole('region', { name: '!3 中' }));
-    const dialog = page.getByRole('dialog', { name: '这个任务包含子任务' });
-    await dialog.getByRole('button', { name: '仅修改这一项' }).click();
-    await expect(page.getByRole('region', { name: '!3 中' }).getByText('发布桌面版')).toBeVisible();
-
+    const historyBefore = await (await page.request.get('/api/v1/history')).json();
+    const parent = page.locator('[data-task-id="parent1"]');
+    await parent.getByRole('button', { name: '打开“发布桌面版”的任务菜单', exact: true }).click();
+    await page.getByRole('menuitem', { name: '优先级…', exact: true }).click();
+    await page.getByRole('menuitem', { name: /^!3 中/ }).click();
+    await expect(page.getByRole('menu')).toHaveCount(0);
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+    await expect(page.getByRole('region', { name: '!3 中' }).locator('[data-group-root="parent1"]')).toBeVisible();
     const after = await taskFile();
-    expect(taskLine(after, 'parent1')).toBe(taskLine(before, 'parent1').replace('!1', '!3'));
-    expect(taskLine(after, 'child01')).toBe(taskLine(before, 'child01'));
-    expect(taskLine(after, 'child02')).toBe(taskLine(before, 'child02'));
+    for (const id of ['parent1', 'child01', 'child02']) {
+      expect(taskLine(after, id)).toBe(taskLine(before, id).replace('!1', '!3'));
+    }
+    const history = await page.request.get('/api/v1/history');
+    expect(history.ok()).toBe(true);
+    expect(await history.json()).toHaveLength(historyBefore.length + 1);
   });
 
-  test('Escape cancels a parent priority change without writing', async ({ page }) => {
+  test('Escape closes a narrow group priority menu without writing', async ({ page }) => {
     test.skip(!fixturePath, 'E2E_TODO_PATH is required');
+    await page.setViewportSize({ width: 640, height: 950 });
     await page.goto('/');
     await page.getByRole('button', { name: '象限' }).click();
     const before = await taskFile();
-
-    await page.getByRole('article', { name: /发布桌面版/ }).dragTo(page.getByRole('region', { name: '!4 低' }));
-    const dialog = page.getByRole('dialog', { name: '这个任务包含子任务' });
-    await expect(dialog).toBeVisible();
+    await page.locator('[data-task-id="parent1"]').getByRole('button', { name: '打开“发布桌面版”的任务菜单', exact: true }).click();
+    const priority = page.getByRole('menuitem', { name: '优先级…', exact: true });
+    await priority.focus();
+    await priority.press('ArrowRight');
+    await expect(page.getByRole('menu', { name: '设置优先级' })).toBeVisible();
     await page.keyboard.press('Escape');
-    await expect(dialog).toBeHidden();
+    await expect(page.getByRole('menu')).toHaveCount(0);
     expect(await taskFile()).toBe(before);
+  });
+
+  test('parent group round trips into whitespace update the UI without changing hierarchy', async ({ page }) => {
+    test.skip(!fixturePath, 'E2E_TODO_PATH is required');
+    const setup = await page.request.post('/api/v1/tasks/parent1/priority', { data: { priority: 2, scope: 'subtree' } });
+    expect(setup.ok()).toBe(true);
+    await page.setViewportSize({ width: 1440, height: 1200 });
+    await page.goto('/');
+    await page.getByRole('button', { name: '象限' }).click();
+    const before = await taskFile();
+    expect(taskLine(before, 'child01')).toMatch(/^    - \[ \]/);
+    const card = page.locator('[data-task-id="parent1"]');
+
+    for (const priority of [1, 2, 1, 2, 1, 2]) {
+      const destination = page.getByRole('region', { name: priority === 1 ? '!1 最高' : '!2 高' });
+      const bounds = await destination.boundingBox();
+      if (!bounds) throw new Error('quadrant is not visible');
+      const targetPosition = { x: bounds.width / 2, y: bounds.height - 18 };
+      const targetIsCell = await page.evaluate(({ x, y }) => {
+        return document.elementFromPoint(x, y)?.closest('section')?.getAttribute('aria-labelledby');
+      }, { x: bounds.x + targetPosition.x, y: bounds.y + targetPosition.y });
+      expect(targetIsCell).toBe(`quadrant-${priority}`);
+      await card.dragTo(destination, { sourcePosition: { x: 180, y: 45 }, targetPosition });
+      let expected = before;
+      for (const id of ['parent1', 'child01', 'child02']) {
+        expected = expected.replace(taskLine(before, id), taskLine(before, id).replace('!2', `!${priority}`));
+      }
+      await expect.poll(taskFile).toBe(expected);
+      const group = destination.locator('[data-group-root="parent1"]');
+      await expect(group).toBeVisible();
+      await expect(group.locator('[data-task-id="child01"]')).toBeVisible();
+      await expect(group.locator('[data-task-id="child02"]')).toBeVisible();
+      await expect(page.getByRole('dialog')).toHaveCount(0);
+    }
+    expect(await taskFile()).toBe(before);
+  });
+
+  test('narrow desktop can drag a whole group between stacked quadrants', async ({ page }) => {
+    test.skip(!fixturePath, 'E2E_TODO_PATH is required');
+    await page.setViewportSize({ width: 640, height: 1800 });
+    await page.goto('/');
+    await page.getByRole('button', { name: '象限' }).click();
+    const before = await taskFile();
+    const destination = page.getByRole('region', { name: '!1 最高' });
+    const parent = page.locator('[data-task-id="parent1"]');
+    expect(await parent.evaluate((node) => getComputedStyle(node).getPropertyValue('-webkit-user-drag'))).toBe('element');
+    await parent.dragTo(destination, { sourcePosition: { x: 150, y: 45 } });
+    const group = destination.locator('[data-group-root="parent1"]');
+    await expect(group).toBeVisible();
+    const after = await taskFile();
+    for (const id of ['parent1', 'child01', 'child02']) {
+      expect(taskLine(after, id)).toBe(taskLine(before, id).replace('!2', '!1'));
+    }
+    expect(await page.locator('body').evaluate((node) => node.scrollWidth <= window.innerWidth)).toBe(true);
+  });
+
+  test('a delayed refresh cannot overwrite a newer priority write', async ({ page }) => {
+    await page.goto('/');
+    await page.getByRole('button', { name: '象限' }).click();
+    let releaseRead!: () => void;
+    const readReleased = new Promise<void>((resolve) => { releaseRead = resolve; });
+    let markReadCaptured!: () => void;
+    const readCaptured = new Promise<void>((resolve) => { markReadCaptured = resolve; });
+    let holdNextRead = true;
+    await page.route('**/api/v1/snapshot', async (route) => {
+      const hold = holdNextRead;
+      holdNextRead = false;
+      const response = await route.fetch();
+      if (hold) {
+        markReadCaptured();
+        await readReleased;
+      }
+      await route.fulfill({ response });
+    });
+    try {
+      await page.getByRole('button', { name: '重新载入 Snapshot' }).click();
+      await readCaptured;
+      const card = page.locator('[data-task-id="parent1"]');
+      await card.focus();
+      await card.press('4');
+      const destination = page.getByRole('region', { name: '!4 低' });
+      await expect(destination.locator('[data-group-root="parent1"]')).toBeVisible();
+      const oldResponse = page.waitForResponse((response) => response.url().endsWith('/api/v1/snapshot'));
+      releaseRead();
+      await oldResponse;
+      await expect(destination.locator('[data-group-root="parent1"]')).toBeVisible();
+    } finally {
+      releaseRead();
+      await page.unrouteAll({ behavior: 'wait' });
+    }
   });
 
   test('strict done persists its note and Git evidence across reload', async ({ page }) => {
