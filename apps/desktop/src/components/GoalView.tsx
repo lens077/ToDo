@@ -223,14 +223,20 @@ export function GoalView({
   });
 
   if (snapshot.tasks.length === 0) {
+    // A managed file with no checkbox lines is read correctly and simply has
+    // nothing to show; say so, rather than implying the connection failed.
+    const managedSources = snapshot.sources?.filter((source) => source.status === 'managed') ?? [];
+    const onlyIndexFiles = managedSources.length > 0 && managedSources.every((source) => source.task_count === 0);
     return (
       <section className="view-empty view-empty--tasks" aria-labelledby="empty-goal-title">
-        <h2 id="empty-goal-title">还没有 Project Task<span>{snapshot.sources ? snapshot.sources.length === 0 ? '项目目录已打开' : '来源已连接' : 'TODO.md 已连接'}</span></h2>
+        <h2 id="empty-goal-title">还没有 Project Task<span>{snapshot.sources ? snapshot.sources.length === 0 ? '项目目录已打开' : onlyIndexFiles ? '文件已读取，其中没有复选框' : '来源已连接' : 'TODO.md 已连接'}</span></h2>
         <p>{snapshot.sources?.length === 0
           ? '未发现 TODO.md / TODO / TODO.txt。请放入任务文件后刷新；不会自动创建文件。'
-          : snapshot.sources
-            ? '请选择可写来源后新增第一项。未接管的清单需先预览接管差异。'
-            : '从顶部快速新增第一项。它会写回当前项目，而不是留在界面缓存里。'}</p>
+          : onlyIndexFiles
+            ? `${managedSources.map((source) => source.path).join('、')} 已接管，但任务只从「- [ ]」复选框行读取，这个文件里一行也没有。若清单拆在其他 Markdown 里，可在「扫描与历史」扫描仓库；或从顶部新增第一项。`
+            : snapshot.sources
+              ? '请选择可写来源后新增第一项。未接管的清单需先预览接管差异。'
+              : '从顶部快速新增第一项。它会写回当前项目，而不是留在界面缓存里。'}</p>
       </section>
     );
   }
