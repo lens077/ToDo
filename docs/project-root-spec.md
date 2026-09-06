@@ -4,7 +4,7 @@
 
 桌面端选择目录作为 Project Root，HTTP `todo serve` 绑定启动时的当前目录。根目录不必含 `TODO.md`，也不必是 Git 根；找不到任务来源时返回空项目。已有 CLI `list/add/done/priority` 等单文件命令继续操作当前目录的 `TODO.md`。
 
-递归发现文件名为 `TODO.md`、`TODO` 或 `TODO.txt` 的文件，匹配不区分大小写；文件来源以相对根目录的 `/` 分隔路径显示。遵守 `.gitignore` 与 `.ignore`，跳过隐藏目录、`node_modules`、`target`、`build`、`dist` 等目录。源码注释 `// TODO` 不属于项目打开时的发现范围；原「扫描与历史」扫描仍是用户另行发起的操作，不自动导入。
+递归发现文件名为 `TODO.md`、`TODO` 或 `TODO.txt` 的文件（匹配不区分大小写），以及任何以 YAML frontmatter 开头且其中含 `todo-spec` 键的 `.md` / `.markdown` 文件（只读文件头 1 KiB 判定；这让项目可以把 `TODO.md` 留作索引，把明细拆到 `docs/todo/*.md` 并逐个声明加入）；文件来源以相对根目录的 `/` 分隔路径显示。遵守 `.gitignore` 与 `.ignore`，跳过隐藏目录、`node_modules`、`target`、`build`、`dist` 等目录。源码注释 `// TODO` 不属于项目打开时的发现范围；原「扫描与历史」扫描仍是用户另行发起的操作，不自动导入。
 
 发现预算：最多 256 个来源、每源 2 MiB、累计读取 16 MiB、遍历 10,000 个条目。超过预算、读取失败或解析错误会产生来源状态或警告，不把失败来源解释为已清空，也不阻断其他有效来源。
 

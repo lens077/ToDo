@@ -219,7 +219,9 @@ fn source_and_byte_limits_warn_without_writing() {
 fn paths_must_be_exact_discovered_relative_paths() {
     let (_temp, root) = project_root();
     put(&root, "TODO.md", &managed("task"));
-    put(&root, "other.md", &managed("not discovered"));
+    // Plain Markdown with no `todo-spec` declaration is not a source, so its
+    // path must be rejected like any other undiscovered one.
+    put(&root, "other.md", "- [ ] not discovered <!--t:aaaaaa-->\n");
     let backend = backend(&root);
     for path in [
         "../TODO.md",
@@ -327,4 +329,87 @@ fn long_files_are_not_a_finding_and_only_unmanaged_previews_are_bounded() {
     assert!(loose.preview_truncated);
     assert!(loose.preview.starts_with("- [ ] loose"));
     assert!(loose.preview.len() <= 16 * 1024);
+}
+
+#[test]
+fn markdown_files_declaring_todo_spec_are_sources_and_plain_markdown_is_not() {
+    let (_temp, root) = project_root();
+    // An index-style TODO.md with no checkboxes, and the real lists split
+    // into docs/todo/*.md that opt in through frontmatter.
+    put(&root, "TODO.md", "---\ntodo-spec: 1\n---\n# 索引\n\n明细见 docs/todo/。\n");
+    put(
+        &root,
+        "docs/todo/交易闭环.md",
+        "---\ntodo-spec: 1\n---\n- [ ] 下单幂等 <!--t:bbbbbb-->\n",
+    );
+    put(
+        &root,
+        "docs/todo/可观测性.md",
+        "\u{feff}---\r\ntitle: 可观测性\r\ntodo-spec: 1\r\n---\r\n- [ ] 指标采集 <!--t:cccccc-->\r\n",
+    );
+    // Frontmatter without the key, prose only, and a key that is not at the
+    // start of the file: none of these are sources.
+    put(&root, "docs/todo/README.md", "---\ntitle: 分类说明\n---\n- [ ] 不是来源\n");
+    put(&root, "docs/notes.md", "# 笔记\n\n- [ ] 也不是来源\n");
+    put(&root, "docs/late.md", "# 标题\n\n---\ntodo-spec: 1\n---\n- [ ] 声明太晚\n");
+    put(&root, "docs/todo/data.json", "{\"todo-spec\": 1}");
+    // Declared by hand, IDs not yet assigned: discovered, but not managed
+    // until adoption writes the IDs.
+    put(
+        &root,
+        "docs/todo/供应链.md",
+        "---\ntodo-spec: 1\n---\n# 供应链\n\n- [ ] SBOM 生成\n- [x] 镜像签名\n",
+    );
+    let snapshot = backend(&root).snapshot().unwrap();
+    let mut paths: Vec<_> = snapshot.sources.iter().map(|s| s.path.as_str()).collect();
+    paths.sort();
+    assert_eq!(
+        paths,
+        vec![
+            "TODO.md",
+            "docs/todo/交易闭环.md",
+            "docs/todo/供应链.md",
+            "docs/todo/可观测性.md"
+        ]
+    );
+    let status = |path: &str| {
+        snapshot
+            .sources
+            .iter()
+            .find(|s| s.path == path)
+            .map(|s| (s.status.as_str(), s.writable))
+            .unwrap()
+    };
+    assert_eq!(status("TODO.md"), ("managed", true));
+    assert_eq!(status("docs/todo/交易闭环.md"), ("managed", true));
+    assert_eq!(status("docs/todo/供应链.md"), ("unmanaged", false));
+    let preview = backend(&root)
+        .preview_adopt("docs/todo/供应链.md")
+        .unwrap();
+    assert_eq!(preview.diff.added, 2, "only the two task lines gain IDs");
+    assert!(preview.proposed.starts_with("---\ntodo-spec: 1\n---\n"));
+    assert_eq!(preview.proposed.matches("<!--t:").count(), 2);
+    let adopted = backend(&root)
+        .apply_adopt("docs/todo/供应链.md", &preview.base_hash)
+        .unwrap();
+    let source = adopted
+        .sources
+        .iter()
+        .find(|s| s.path == "docs/todo/供应链.md")
+        .unwrap();
+    assert_eq!(source.status, "managed");
+    assert!(source.writable);
+    let mut bodies: Vec<_> = snapshot.tasks.iter().map(|t| t.body.as_str()).collect();
+    bodies.sort();
+    assert_eq!(bodies, vec!["SBOM 生成", "下单幂等", "指标采集", "镜像签名"]);
+    assert!(snapshot.warnings.is_empty(), "{:?}", snapshot.warnings);
+    // The single-source view and writes address the opted-in file by its path.
+    let single = backend(&root).snapshot_source("docs/todo/交易闭环.md").unwrap();
+    assert_eq!(single.tasks.len(), 1);
+    backend(&root)
+        .mutate(Some("docs/todo/交易闭环.md"), add())
+        .unwrap();
+    let written = fs::read_to_string(root.join("docs/todo/交易闭环.md")).unwrap();
+    assert!(written.contains("- [ ] new task"));
+    assert!(!fs::read_to_string(root.join("TODO.md")).unwrap().contains("new task"));
 }

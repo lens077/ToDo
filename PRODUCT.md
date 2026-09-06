@@ -43,7 +43,7 @@ web
 ## Capabilities and Constraints
 
 - 术语见 `CONTEXT.md`：Project Root、Task Source、Project Task、Adoption、Capture、Triage、Evidence、Reconciliation Finding、Today View。避免用 todo item / card / ticket / note / sync / error 等替代词。
-- 项目目录递归发现大小写不敏感的 `TODO.md`、`TODO`、`TODO.txt`，显示来源相对路径；任务身份由来源路径与文件内 ID 共同确定。普通文本和未接管清单只读预览，检查 diff 并确认后才接管；源码注释 TODO 不自动导入。忽略规则、大小限制、来源隔离与 API 详见 `docs/project-root-spec.md`。
+- 项目目录递归发现大小写不敏感的 `TODO.md`、`TODO`、`TODO.txt`，以及 frontmatter 声明了 `todo-spec` 的任意 `.md` 文件（拆分清单的显式加入方式），显示来源相对路径；任务身份由来源路径与文件内 ID 共同确定。普通文本和未接管清单只读预览，检查 diff 并确认后才接管；源码注释 TODO 不自动导入。忽略规则、大小限制、来源隔离与 API 详见 `docs/project-root-spec.md`。
 - 来源错误隔离，不因根目录缺少单个 `TODO.md` 而拒绝打开目录。新增和修改必须定位来源；跨来源移动不提供伪事务。历史、扫描、对齐审阅需选来源。HTTP 不开放个人 Capture 存储；该视图提供不可用说明，桌面版保留个人随记与按来源分拣。
 - 格式规范 `docs/format-spec-v1.md`：列由 frontmatter `columns[]` 定义，`type: done` 是唯一列类型；`!1`–`!4` 优先级（中文档位名 最高 / 高 / 中 / 低，2026-09-04 拍板）、`◐` 部分完成、`⚠` 失败、`↳` 说明、`🔗from..to` 物证是文件内的既有 token，界面按原样显示；稳定 ID 是 HTML 注释里的随机 base36。
 - 完成策略 `normal | strict`：严格模式下完成必须留说明并决定物证；部分完成与失败在任何策略下都必须留说明。完成状态、说明与物证是一次复合原子写入，只建立一个还原点。

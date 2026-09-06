@@ -19,6 +19,10 @@ const MAX_FILE: usize = 2 * 1024 * 1024;
 const MAX_TOTAL: usize = 16 * 1024 * 1024;
 const MAX_ENTRIES: usize = 10_000;
 const MAX_PREVIEW: usize = 16 * 1024;
+/// Bytes read from the head of a Markdown file to look for a `todo-spec`
+/// frontmatter declaration. Frontmatter that opts a file in is short by
+/// design; a longer preamble simply is not an opt-in.
+const MAX_DECLARATION_HEAD: usize = 1024;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct TaskSource {
@@ -360,12 +364,15 @@ impl ProjectBackend {
                 }
                 match entry {
                     Err(e) => warnings.push(format!("Discovery: {e}")),
+                    // Two ways in: a conventional file name, or any Markdown
+                    // file whose frontmatter declares `todo-spec`. The second
+                    // lets a project keep TODO.md as an index and split the
+                    // real lists into e.g. docs/todo/*.md, each opting in.
                     Ok(e)
                         if e.file_type().is_some_and(|t| t.is_file())
-                            && e.file_name().to_str().is_some_and(|n| {
-                                ["todo.md", "todo", "todo.txt"]
-                                    .contains(&n.to_ascii_lowercase().as_str())
-                            }) =>
+                            && (is_task_file_name(&e.file_name().to_string_lossy())
+                                || (is_markdown_name(&e.file_name().to_string_lossy())
+                                    && declares_todo_spec(e.path()))) =>
                     {
                         if paths.len() == MAX_SOURCES {
                             warnings.push("Discovery truncated at 256 sources".into());
@@ -438,6 +445,54 @@ impl ProjectBackend {
 }
 fn invalid(message: &str) -> Error {
     Error::InvalidTaskLine(message.into())
+}
+fn is_task_file_name(name: &str) -> bool {
+    ["todo.md", "todo", "todo.txt"].contains(&name.to_ascii_lowercase().as_str())
+}
+fn is_markdown_name(name: &str) -> bool {
+    let lower = name.to_ascii_lowercase();
+    lower.ends_with(".md") || lower.ends_with(".markdown")
+}
+/// True when the file opens with a YAML frontmatter block that contains a
+/// `todo-spec` key. Reads at most `MAX_DECLARATION_HEAD` bytes and never
+/// follows symlinks; anything unreadable is simply not a source.
+fn declares_todo_spec(path: &Path) -> bool {
+    let Ok(meta) = fs::symlink_metadata(path) else {
+        return false;
+    };
+    if !meta.is_file() {
+        return false;
+    }
+    let Ok(file) = fs::File::open(path) else {
+        return false;
+    };
+    let mut bytes = Vec::with_capacity(MAX_DECLARATION_HEAD);
+    if (&file)
+        .take(MAX_DECLARATION_HEAD as u64)
+        .read_to_end(&mut bytes)
+        .is_err()
+    {
+        return false;
+    }
+    let head = String::from_utf8_lossy(&bytes);
+    let body = head.strip_prefix('\u{feff}').unwrap_or(&head);
+    let mut lines = body.lines();
+    if lines.next().map(|l| l.trim_end_matches('\r')) != Some("---") {
+        return false;
+    }
+    for line in lines {
+        let line = line.trim_end_matches('\r');
+        if line == "---" {
+            return false;
+        }
+        if line
+            .split_once(':')
+            .is_some_and(|(key, _)| key.trim() == "todo-spec")
+        {
+            return true;
+        }
+    }
+    false
 }
 fn revision(bytes: &[u8]) -> String {
     format!("{:016x}", crate::parse::hash_bytes(bytes))
@@ -587,10 +642,17 @@ fn prepare(content: &str) -> Result<String> {
         ))
     }
 }
+/// A source is managed when nothing needs to be written before the board can
+/// address its tasks: the `todo-spec` declaration is present and every task
+/// already carries a stable ID. A file that only declares the spec (for
+/// example a split list opted in by hand) is discovered but stays unmanaged
+/// until adoption assigns the missing IDs through the usual diff preview.
 fn classify(content: &str) -> Result<(Document, bool)> {
     let prepared = prepare(content)?;
-    let managed = prepared == content;
-    Ok((parse(prepared)?, managed))
+    let declared = prepared == content;
+    let document = parse(prepared)?;
+    let managed = declared && document.tasks.iter().all(|task| task.id.is_some());
+    Ok((document, managed))
 }
 fn adoption(content: &str) -> Result<String> {
     let (document, managed) = classify(content)?;

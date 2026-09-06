@@ -231,9 +231,9 @@ export function GoalView({
       <section className="view-empty view-empty--tasks" aria-labelledby="empty-goal-title">
         <h2 id="empty-goal-title">还没有 Project Task<span>{snapshot.sources ? snapshot.sources.length === 0 ? '项目目录已打开' : onlyIndexFiles ? '文件已读取，其中没有复选框' : '来源已连接' : 'TODO.md 已连接'}</span></h2>
         <p>{snapshot.sources?.length === 0
-          ? '未发现 TODO.md / TODO / TODO.txt。请放入任务文件后刷新；不会自动创建文件。'
+          ? '未发现 TODO.md / TODO / TODO.txt，也没有 frontmatter 声明 todo-spec 的 Markdown。请放入任务文件后刷新；不会自动创建文件。'
           : onlyIndexFiles
-            ? `${managedSources.map((source) => source.path).join('、')} 已接管，但任务只从「- [ ]」复选框行读取，这个文件里一行也没有。若清单拆在其他 Markdown 里，可在「扫描与历史」扫描仓库；或从顶部新增第一项。`
+            ? `${managedSources.map((source) => source.path).join('、')} 已接管，但任务只从「- [ ]」复选框行读取，这个文件里一行也没有。若清单拆在其他 Markdown 里，给那些文件加上 frontmatter「todo-spec: 1」即可被发现并录入；或从顶部新增第一项。`
             : snapshot.sources
               ? '请选择可写来源后新增第一项。未接管的清单需先预览接管差异。'
               : '从顶部快速新增第一项。它会写回当前项目，而不是留在界面缓存里。'}</p>
