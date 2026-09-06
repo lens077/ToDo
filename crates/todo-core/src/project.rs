@@ -18,14 +18,18 @@ const MAX_SOURCES: usize = 256;
 const MAX_FILE: usize = 2 * 1024 * 1024;
 const MAX_TOTAL: usize = 16 * 1024 * 1024;
 const MAX_ENTRIES: usize = 10_000;
-const MAX_PREVIEW: usize = 4096;
+const MAX_PREVIEW: usize = 16 * 1024;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct TaskSource {
     pub path: String,
     pub status: String,
     pub writable: bool,
+    /// Raw text shown for unmanaged or unreadable sources; empty once managed.
     pub preview: String,
+    /// The preview stops at `MAX_PREVIEW` bytes; writes always use the whole file.
+    #[serde(default)]
+    pub preview_truncated: bool,
     pub error: Option<String>,
     pub revision: String,
     pub task_count: usize,
@@ -386,6 +390,7 @@ impl ProjectBackend {
                     status: "error".into(),
                     writable: false,
                     preview: String::new(),
+                    preview_truncated: false,
                     error: None,
                     revision: String::new(),
                     task_count: 0,
@@ -402,13 +407,17 @@ impl ProjectBackend {
                 while !content.is_char_boundary(end) {
                     end -= 1;
                 }
+                // A bounded preview is only a reading aid for sources the
+                // board cannot show as tasks; a long file is not a finding.
                 source.info.preview = content[..end].into();
-                if end < content.len() {
-                    warnings.push(format!("{path}: preview truncated"));
-                }
+                source.info.preview_truncated = end < content.len();
                 let (document, managed) = classify(&content)?;
                 if let Some(id) = document.duplicate_ids().first() {
                     return Err(Error::DuplicateTaskId(id.clone()));
+                }
+                if managed {
+                    source.info.preview = String::new();
+                    source.info.preview_truncated = false;
                 }
                 source.info.status = if managed { "managed" } else { "unmanaged" }.into();
                 source.info.writable = managed && writable(&full);

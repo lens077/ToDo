@@ -121,6 +121,7 @@ export function SourcePreview({ source, readOnly, onAdopt }: {
       <div className="review-actions"><button className="text-action" disabled={busy} onClick={() => setPreview(null)}>取消接管</button><button className="solid-action" disabled={readOnly || busy} onClick={() => void apply()}>{busy ? '确认中…' : '确认接管并写入'}</button></div>
     </> : <>
       <pre className="source-preview__raw" aria-label="来源原文">{source.preview || '服务未提供可显示的原文。'}</pre>
+      {source.preview_truncated && <p className="source-preview__note">原文只显示前 16 KB；接管差异与写入使用完整文件。</p>}
       {source.status === 'unmanaged' && <button className="solid-action" disabled={readOnly || busy} onClick={() => void prepare()}>{busy ? '生成预览…' : '预览接管差异'}</button>}
     </>}
     {readOnly && <p>服务当前只读，不能接管文件。</p>}

@@ -1449,6 +1449,7 @@
 .source-unavailable { margin: 20px 28px; }
 .source-preview__raw { max-height: 45vh; overflow: auto; margin: 0; padding: 16px; color: var(--ink); background: var(--panel); border: 1px solid var(--hairline); border-radius: 8px; white-space: pre-wrap; overflow-wrap: anywhere; font: 12px/1.6 var(--mono); }
 .source-preview > button { justify-self: start; }
+.source-preview__note { color: var(--ink-3); font-size: 12px; }
 .task-source { color: var(--ink-3); font: 11px/1.4 var(--mono); overflow-wrap: anywhere; }
 .task-card__topline .task-source { margin-left: 8px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .task-card--focus .task-source { color: var(--focus-ink-2); }

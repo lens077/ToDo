@@ -138,6 +138,7 @@ export interface TaskSource {
   status: 'managed' | 'unmanaged' | 'error';
   writable: boolean;
   preview: string;
+  preview_truncated?: boolean;
   error?: string | null;
   revision: string;
   task_count: number;

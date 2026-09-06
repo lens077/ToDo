@@ -304,3 +304,27 @@ fn symlinks_and_readonly_sources_cannot_write() {
         managed("outside")
     );
 }
+
+#[test]
+fn long_files_are_not_a_finding_and_only_unmanaged_previews_are_bounded() {
+    let (_temp, root) = project_root();
+    let long_body = "x".repeat(40 * 1024);
+    put(&root, "TODO.md", &managed(&long_body));
+    put(&root, "notes/TODO.txt", &format!("- [ ] loose\n{long_body}\n"));
+    let snapshot = backend(&root).snapshot().unwrap();
+    assert!(
+        snapshot.warnings.is_empty(),
+        "a long file must not be reported: {:?}",
+        snapshot.warnings
+    );
+    let by_path = |path: &str| snapshot.sources.iter().find(|s| s.path == path).unwrap();
+    let managed_source = by_path("TODO.md");
+    assert_eq!(managed_source.status, "managed");
+    assert!(managed_source.preview.is_empty());
+    assert!(!managed_source.preview_truncated);
+    let loose = by_path("notes/TODO.txt");
+    assert_eq!(loose.status, "unmanaged");
+    assert!(loose.preview_truncated);
+    assert!(loose.preview.starts_with("- [ ] loose"));
+    assert!(loose.preview.len() <= 16 * 1024);
+}
