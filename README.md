@@ -4,7 +4,7 @@
 
 ToDo 把每个仓库的 Project Task 保存在该仓库的 `TODO.md` 中，以可审计的 Git 物证辅助对账；回写只修改工具识别的字节区间，未识别内容逐字节保留；对账结论只报告，不擅自改写完成状态。CLI 是标准接口，桌面看板是同一事实源的视图和编辑入口。
 
-当前是实验性 MVP。Project Task 随仓库管理；个人 Capture 另以 `~/.todo/inbox.md` 为事实源，不进入 Git，也不受项目 `.todo/history/` 还原点保护，需要单独备份。语义对账默认关闭，需自备 LLM provider 并显式启用；当前仍有桌面原生路径的人工验收和 Playwright CI 接入待完成。首次用于真实项目之前，先提交或备份现有任务文件，并审查每次写入的 diff。
+当前是实验性 MVP。Project Task 随仓库管理；个人 Capture 另以 `~/.todo/inbox.md` 为事实源，不进入 Git，也不受项目 `.todo/history/` 还原点保护，需要单独备份。语义对账默认关闭，需自备 LLM provider 并显式启用；Playwright 与真实服务 E2E 已接入 CI，桌面原生路径仍有人工验收待完成。首次用于真实项目之前，先提交或备份现有任务文件，并审查每次写入的 diff。
 
 **许可未定，仅供授权评估。** 本仓库尚未选定许可证，保留一切权利；未经书面授权，不得使用、复制、修改、分发或衍生。许可与商业模型的候选方案见 `DECISIONS.md` 决策②与决策④，拍板前本声明有效。
 
@@ -17,9 +17,11 @@ ToDo 把每个仓库的 Project Task 保存在该仓库的 `TODO.md` 中，以�
 
 | 工具 | 版本 | 说明 |
 |---|---|---|
-| Rust | 1.88 或更高 | 与 `Cargo.toml` 的 `rust-version` 一致；锁定依赖的**实测精确下限**（1.88 通过、1.87 失败，见 `docs/verification-log.md`）。CI 从该字段读取，勿单独修改此处 |
-| Node.js | `^20.19.0` 或 `>=22.12.0` | Vite 7 的要求；本仓库在 24.20.0 上验证 |
-| pnpm | 10.17.1 | 见 `package.json` 的 `packageManager` |
+| Rust | 开发工具链 1.98.1；MSRV 1.88 | `rust-toolchain.toml` 固定开发、Clippy 和发布工具链；独立 MSRV job 从 `Cargo.toml` 的 `rust-version` 读取下限，显式选用该版本运行锁定依赖测试 |
+| Node.js | 26.8.1 | `.node-version` 固定本地与 CI 版本；`package.json` 要求 Node 26.x |
+| pnpm | 12.0.0 | 见 `package.json` 的 `packageManager` |
+
+`.node-version` 是版本声明，不会自行切换全局 Node；运行 pnpm 命令前，先用本地 Node 版本管理器选择该版本。rustup 会自动读取 `rust-toolchain.toml`；手动复验 MSRV 可运行 `cargo +1.88.0 test --workspace --locked`，不修改全局默认工具链。
 
 桌面端另需各平台的 Tauri 2 系统依赖。macOS 需要 Xcode 命令行工具。
 

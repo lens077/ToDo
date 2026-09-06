@@ -1,4 +1,7 @@
-use notify::{Event, RecommendedWatcher, RecursiveMode, Watcher};
+use notify::{
+    event::{AccessKind, AccessMode},
+    Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher,
+};
 use std::{
     fs,
     path::{Path, PathBuf},
@@ -137,7 +140,20 @@ where
 }
 
 fn event_affects_target(event: &Event, target: &Path) -> bool {
-    event.need_rescan() || event.paths.iter().any(|path| path == target)
+    if event.need_rescan() {
+        return true;
+    }
+    // Reload callbacks read the watched file. Linux reports those reads too;
+    // treating them as changes would make each reload schedule the next one.
+    if matches!(event.kind, EventKind::Access(_))
+        && !matches!(
+            event.kind,
+            EventKind::Access(AccessKind::Close(AccessMode::Write))
+        )
+    {
+        return false;
+    }
+    event.paths.iter().any(|path| path == target)
 }
 
 #[cfg(test)]
@@ -178,9 +194,116 @@ mod tests {
 
         atomic_replace(&target, "first", 1);
         assert_eventually_reads(&receiver, "first");
+        assert_eventually_quiet(&receiver);
 
         atomic_replace(&target, "second", 2);
         assert_eventually_reads(&receiver, "second");
+        assert_eventually_quiet(&receiver);
+    }
+
+    #[test]
+    fn read_only_events_are_ignored_but_mutations_and_rescans_are_kept() {
+        use notify::event::{CreateKind, DataChange, Flag, ModifyKind, RemoveKind, RenameMode};
+
+        let target = Path::new("/tmp/TODO.md");
+        for access in [
+            AccessKind::Any,
+            AccessKind::Read,
+            AccessKind::Open(AccessMode::Read),
+            AccessKind::Open(AccessMode::Any),
+            AccessKind::Close(AccessMode::Read),
+            AccessKind::Close(AccessMode::Any),
+            AccessKind::Other,
+        ] {
+            let event = Event::new(EventKind::Access(access)).add_path(target.to_path_buf());
+            assert!(!event_affects_target(&event, target), "{access:?}");
+        }
+        for kind in [
+            EventKind::Any,
+            EventKind::Create(CreateKind::File),
+            EventKind::Modify(ModifyKind::Data(DataChange::Content)),
+            EventKind::Modify(ModifyKind::Name(RenameMode::Both)),
+            EventKind::Remove(RemoveKind::File),
+            EventKind::Access(AccessKind::Close(AccessMode::Write)),
+        ] {
+            let event = Event::new(kind).add_path(target.to_path_buf());
+            assert!(event_affects_target(&event, target), "{kind:?}");
+            let unrelated = Event::new(kind).add_path(PathBuf::from("/tmp/notes.md"));
+            assert!(!event_affects_target(&unrelated, target), "{kind:?}");
+        }
+        let rescan = Event::new(EventKind::Access(AccessKind::Read)).set_flag(Flag::Rescan);
+        assert!(event_affects_target(&rescan, target));
+    }
+
+    #[test]
+    fn reading_target_without_a_write_does_not_reload() {
+        let directory = tempdir().unwrap();
+        let target = directory.path().join("TODO.md");
+        fs::write(&target, "unchanged").unwrap();
+        let (sender, receiver) = mpsc::channel();
+        let _watcher =
+            TargetFileWatcher::spawn(&target, Duration::from_millis(20), move |signal| {
+                sender.send(signal).unwrap()
+            })
+            .unwrap();
+        for _ in 0..8 {
+            assert_eq!(fs::read_to_string(&target).unwrap(), "unchanged");
+            thread::sleep(Duration::from_millis(15));
+        }
+        assert!(matches!(
+            receiver.recv_timeout(Duration::from_millis(250)),
+            Err(RecvTimeoutError::Timeout)
+        ));
+    }
+
+    #[test]
+    fn reload_callback_reads_do_not_create_a_feedback_loop() {
+        use notify::event::{AccessKind, AccessMode, DataChange, ModifyKind};
+
+        let directory = tempdir().unwrap();
+        let target = directory.path().join("TODO.md");
+        fs::write(&target, "unchanged").unwrap();
+        let (sender, receiver) = mpsc::channel();
+        let read_sender = sender.clone();
+        let (signal_sender, signal_receiver) = mpsc::channel();
+        sender
+            .send(WatchMessage::Event(Ok(Event::new(
+                notify::EventKind::Modify(ModifyKind::Data(DataChange::Any)),
+            )
+            .add_path(target.clone()))))
+            .unwrap();
+
+        let worker = thread::spawn(move || {
+            run_event_loop(
+                receiver,
+                &target,
+                Duration::from_millis(20),
+                &mut |signal| {
+                    if matches!(signal, WatchSignal::Reload) {
+                        assert_eq!(fs::read_to_string(&target).unwrap(), "unchanged");
+                        // notify's Linux backend watches OPEN and reports it as
+                        // Open(Any). Replay that read feedback on every OS.
+                        read_sender
+                            .send(WatchMessage::Event(Ok(Event::new(EventKind::Access(
+                                AccessKind::Open(AccessMode::Any),
+                            ))
+                            .add_path(target.clone()))))
+                            .unwrap();
+                    }
+                    signal_sender.send(signal).unwrap();
+                },
+            );
+        });
+
+        let first = signal_receiver.recv_timeout(Duration::from_secs(2));
+        let second = signal_receiver.recv_timeout(Duration::from_millis(250));
+        sender.send(WatchMessage::Stop).unwrap();
+        worker.join().unwrap();
+        assert!(matches!(first, Ok(WatchSignal::Reload)));
+        assert!(
+            matches!(second, Err(RecvTimeoutError::Timeout)),
+            "a reload's own read must not schedule another reload: {second:?}"
+        );
     }
 
     #[test]
@@ -234,6 +357,20 @@ mod tests {
                 return;
             }
             assert!(Instant::now() < deadline, "never observed {expected:?}");
+        }
+    }
+
+    fn assert_eventually_quiet(receiver: &mpsc::Receiver<String>) {
+        let deadline = Instant::now() + Duration::from_secs(3);
+        loop {
+            match receiver.recv_timeout(Duration::from_millis(250)) {
+                Err(RecvTimeoutError::Timeout) => return,
+                Ok(value) => assert!(
+                    Instant::now() < deadline,
+                    "watcher never became quiet after reading {value:?}"
+                ),
+                Err(error) => panic!("watcher disconnected: {error}"),
+            }
         }
     }
 
