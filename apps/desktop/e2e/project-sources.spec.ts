@@ -12,14 +12,16 @@ async function project(page: Page, options: { readonly?: boolean; conflict?: boo
     // Most specs are about writes and adoption, not the first-run enrollment
     // sheet; they start from a project where every source is already enrolled.
     await page.addInitScript((value: string) => {
-      localStorage.setItem('todo.source-enrollment.v1:/test/project-root', value);
+      // Seed once; a reload must keep whatever the test changed since.
+      const key = 'todo.source-enrollment.v1:/test/project-root';
+      if (!localStorage.getItem(key)) localStorage.setItem(key, value);
     }, JSON.stringify({ enrolled: paths, seen: paths }));
   }
   const sources = paths.map((path, index) => ({
     path, status: index < 2 ? 'managed' : index === 2 ? 'unmanaged' : 'error',
     writable: index < 2, revision: `source-${index}`, task_count: index === 3 ? 0 : 1,
     preview: index === 3 ? '---\nbroken frontmatter: [' : '- [ ] 普通清单原文',
-    error: index === 3 ? 'frontmatter parse error' : null, completion_policy: 'normal',
+    error: index === 3 ? 'frontmatter parse error' : null, completion_policy: 'normal', loose_candidates: 0 as number,
   }));
   const tasks = [task(paths[0], '来源甲任务'), task(paths[1], '来源乙任务'), task(paths[2], '未接管任务', 'loose1')];
   const columns = paths.slice(0, 3).flatMap((source_path) => ['todo', 'doing', 'done'].map((id) => ({ source_path, id, name: id === 'todo' ? '待办' : id === 'doing' ? '推进中' : '已完成', done: id === 'done' })));
@@ -28,19 +30,26 @@ async function project(page: Page, options: { readonly?: boolean; conflict?: boo
   const previews: unknown[] = [];
   const adopts: unknown[] = [];
   const unexpected: string[] = [];
-  const snapshot = (selected: string | null = null) => ({
+  const snapshot = (selected: string | null = null, loose: string[] = []) => ({
     // Like the real backend, the revision hashes the source list too.
-    project_path: '/test/project-root', revision: `r${revision}-${sources.length}`, completion_policy: 'normal',
-    sources, selected_source: selected, warnings: ['普通清单仅作只读发现'],
+    project_path: '/test/project-root', revision: `r${revision}-${sources.length}-${loose.join(',')}`, completion_policy: 'normal',
+    sources: sources.map((source) => loose.includes(source.path)
+      ? { ...source, loose: true, status: 'unmanaged', writable: false, task_count: source.loose_candidates ?? 0 }
+      : source),
+    selected_source: selected, warnings: ['普通清单仅作只读发现'],
     columns: columns.filter((item) => selected === null || item.source_path === selected),
-    tasks: tasks.filter((item) => selected === null || item.source_path === selected),
+    tasks: [
+      ...tasks.filter((item) => selected === null || item.source_path === selected),
+      ...sources.filter((source) => loose.includes(source.path) && (selected === null || selected === source.path))
+        .flatMap((source) => Array.from({ length: source.loose_candidates ?? 0 }, (_, index) => ({ ...task(source.path, `列表项${index + 1}`, `loose${index}`), column: null, source_writable: false }))),
+    ],
     today: { overdue: [], today: [], upcoming: [], next: tasks.filter((item) => selected === null || item.source_path === selected) },
   });
   await page.route('**/api/v1/**', async (route) => {
     const url = new URL(route.request().url());
     const path = url.pathname.replace('/api/v1', '');
     if (path === '/health') return route.fulfill({ json: { ok: true, read_only: options.readonly === true, project: '/test/project-root', captures: false } });
-    if (path === '/snapshot') return route.fulfill({ json: snapshot(url.searchParams.get('source')) });
+    if (path === '/snapshot') return route.fulfill({ json: snapshot(url.searchParams.get('source'), (url.searchParams.get('loose') ?? '').split('\n').filter(Boolean)) });
     if (path === '/mutate') {
       const body = route.request().postDataJSON(); mutations.push(body);
       const own = tasks.find((item) => item.id === body.intent.id && item.source_path === body.source_path);
@@ -52,12 +61,16 @@ async function project(page: Page, options: { readonly?: boolean; conflict?: boo
     }
     if (path === '/sources/adopt/preview') {
       const body = route.request().postDataJSON(); previews.push(body);
+      if (body.loose) return route.fulfill({ json: { source_path: body.source_path, base_hash: 'loose-hash', proposed: 'converted', diff: { added: 3, removed: 3, hunks: [{ kind: 'removed', left_line: 1, right_line: null, text: '- 列表项1' }, { kind: 'added', left_line: null, right_line: 1, text: '- [ ] 列表项1 <!--t:aaaaaa-->' }] } } });
       return route.fulfill({ json: { source_path: body.source_path, base_hash: 'preview-hash', proposed: 'managed document', diff: { added: 1, removed: 0, hunks: [{ kind: 'added', left_line: null, right_line: 1, text: 'todo-spec: 1' }] } } });
     }
     if (path === '/sources/adopt') {
       const body = route.request().postDataJSON(); adopts.push(body);
       if (options.conflict) return route.fulfill({ status: 409, json: { error: '文件已在外部更新，未写入' } });
-      sources[2].status = 'managed'; sources[2].writable = true; revision += 1;
+      const target = sources.find((source) => source.path === body.source_path) ?? sources[2];
+      target.status = 'managed'; target.writable = true;
+      if (body.loose) { target.task_count = target.loose_candidates ?? 0; target.loose_candidates = 0; }
+      revision += 1;
       return route.fulfill({ json: snapshot() });
     }
     unexpected.push(`${route.request().method()} ${path}`);
@@ -124,14 +137,14 @@ test('未管理任务只读，选源显示原文并要求两步接管', async ({
   expect(adopts).toHaveLength(0);
   await page.getByRole('button', { name: '预览接管差异' }).click();
   await expect(page.getByRole('table', { name: '左右对比' })).toContainText('todo-spec: 1');
-  expect(previews).toEqual([{ source_path: 'notes/plain.md' }]);
+  expect(previews).toEqual([{ source_path: 'notes/plain.md', loose: false }]);
   expect(adopts).toHaveLength(0);
   await page.getByRole('button', { name: '取消接管' }).click();
   expect(adopts).toHaveLength(0);
   await page.getByRole('button', { name: '预览接管差异' }).click();
   await page.getByRole('button', { name: '确认接管并写入' }).click();
   await expect.poll(() => adopts.length).toBe(1);
-  expect(adopts[0]).toEqual({ source_path: 'notes/plain.md', base_hash: 'preview-hash' });
+  expect(adopts[0]).toEqual({ source_path: 'notes/plain.md', base_hash: 'preview-hash', loose: false });
   await expect(page.getByRole('combobox', { name: '任务来源', exact: true })).toHaveValue('notes/plain.md');
   await expect(card(page, '未接管任务').getByRole('button', { name: '完成“未接管任务”', exact: true })).toBeEnabled();
 });
@@ -266,4 +279,116 @@ test('发现提示折叠在来源栏内，展开后逐条列出', async ({ page 
   await expect(page.getByRole('list', { name: '发现提示' })).toContainText('普通清单仅作只读发现');
   await toggle.click();
   await expect(page.getByRole('list', { name: '发现提示' })).toHaveCount(0);
+});
+
+test('批量接管：先看每个文件的差异，再逐个以预览指纹写入', async ({ page }) => {
+  const { previews, adopts, sources } = await project(page);
+  // A second unmanaged list, so the batch is more than one file.
+  sources.push({ path: 'docs/todo/交易.md', status: 'unmanaged', writable: false, revision: 'source-5', task_count: 4, preview: '- [ ] 交易清单', error: null, completion_policy: 'normal', loose_candidates: 0 });
+  await page.getByRole('button', { name: '重新载入 Snapshot' }).click();
+  await page.getByRole('button', { name: '发现 1 个新来源，尚未录入' }).click();
+  const adjust = page.getByRole('dialog', { name: '调整录入的来源' });
+  await adjust.getByRole('checkbox', { name: '录入 docs/todo/交易.md' }).check();
+  await adjust.getByRole('button', { name: /保存/ }).click();
+
+  await page.getByRole('button', { name: '接管 2 个未接管…' }).click();
+  const dialog = page.getByRole('dialog', { name: '批量接管来源' });
+  await expect(dialog.getByRole('checkbox')).toHaveCount(2);
+  expect(previews).toHaveLength(0);
+  await dialog.getByRole('button', { name: '预览差异（2）' }).click();
+  await expect(dialog.getByText('共新增 2 行')).toBeVisible();
+  expect(previews.map((item) => (item as { source_path: string }).source_path).sort()).toEqual(['docs/todo/交易.md', 'notes/plain.md']);
+  expect(adopts).toHaveLength(0);
+
+  await dialog.getByRole('button', { name: /notes\/plain\.md/ }).click();
+  await expect(dialog.getByRole('table', { name: '左右对比' })).toContainText('todo-spec: 1');
+
+  await dialog.getByRole('button', { name: '确认接管并写入（2）' }).click();
+  await expect(dialog.getByText('已接管 2 个文件，全部可写。')).toBeVisible();
+  // Files are adopted in discovery order, each with the hash it was previewed at.
+  expect(adopts).toEqual([
+    { source_path: 'notes/plain.md', base_hash: 'preview-hash', loose: false },
+    { source_path: 'docs/todo/交易.md', base_hash: 'preview-hash', loose: false },
+  ]);
+  await dialog.getByRole('button', { name: '完成' }).click();
+  await expect(page.getByRole('button', { name: /个未接管…/ })).toHaveCount(0);
+});
+
+test('批量接管遇到冲突即停止，后面的文件保持原样', async ({ page }) => {
+  const { adopts, sources } = await project(page, { conflict: true });
+  sources.push({ path: 'docs/todo/交易.md', status: 'unmanaged', writable: false, revision: 'source-5', task_count: 4, preview: '- [ ] 交易清单', error: null, completion_policy: 'normal', loose_candidates: 0 });
+  await page.getByRole('button', { name: '重新载入 Snapshot' }).click();
+  await page.getByRole('button', { name: '发现 1 个新来源，尚未录入' }).click();
+  await page.getByRole('dialog', { name: '调整录入的来源' }).getByRole('checkbox', { name: '录入 docs/todo/交易.md' }).check();
+  await page.getByRole('dialog', { name: '调整录入的来源' }).getByRole('button', { name: /保存/ }).click();
+  await page.getByRole('button', { name: '接管 2 个未接管…' }).click();
+  const dialog = page.getByRole('dialog', { name: '批量接管来源' });
+  await dialog.getByRole('button', { name: '预览差异（2）' }).click();
+  await dialog.getByRole('button', { name: '确认接管并写入（2）' }).click();
+  await expect(dialog.getByText(/已接管 0 个文件；在「notes\/plain\.md」停止/)).toBeVisible();
+  expect(adopts).toHaveLength(1);
+  await expect(dialog.getByText('失败')).toBeVisible();
+});
+
+test('宽松解析（Beta）默认关闭，没有复选框的文件才提示，开启后只读且可关闭，接管时转换为复选框', async ({ page }) => {
+  const { previews, adopts, sources } = await project(page);
+  sources.push({ path: 'notes/bullets.md', status: 'unmanaged', writable: false, revision: 'source-b', task_count: 0, preview: '- 列表项1\n- 列表项2\n- 列表项3', error: null, completion_policy: 'normal', loose_candidates: 3 });
+  await page.getByRole('button', { name: '重新载入 Snapshot' }).click();
+  await page.getByRole('button', { name: '发现 1 个新来源，尚未录入' }).click();
+  await page.getByRole('dialog', { name: '调整录入的来源' }).getByRole('checkbox', { name: '录入 notes/bullets.md' }).check();
+  await page.getByRole('dialog', { name: '调整录入的来源' }).getByRole('button', { name: /保存/ }).click();
+  const select = page.getByRole('combobox', { name: '任务来源', exact: true });
+
+  // The file with real checkboxes never gets the offer.
+  await select.selectOption('notes/plain.md');
+  await expect(page.getByRole('button', { name: '启用宽松解析' })).toHaveCount(0);
+
+  await select.selectOption('notes/bullets.md');
+  await expect(page.getByText('这个文件里没有复选框，但有 3 个「- 」列表项。')).toBeVisible();
+  await expect(card(page, '列表项1')).toHaveCount(0);
+  await page.getByRole('button', { name: '启用宽松解析' }).click();
+  await expect(page.getByText('宽松解析 · Beta')).toBeVisible();
+  await expect(page.getByText(/宽松解析已开启.*共 3 项，只读/)).toBeVisible();
+  await expect(select.locator('option[value="notes/bullets.md"]')).toHaveText(/宽松解析 Beta/);
+  expect(adopts).toHaveLength(0);
+
+  // Off again: nothing was written, the offer returns.
+  await page.getByRole('button', { name: '关闭宽松解析' }).click();
+  await expect(page.getByRole('button', { name: '启用宽松解析' })).toBeVisible();
+  await page.getByRole('button', { name: '启用宽松解析' }).click();
+
+  // The preference survives reload and aggregate view shows the read-only tasks.
+  await page.reload();
+  await expect(page.getByText('宽松解析 · Beta')).toBeVisible();
+  await select.selectOption('');
+  const loose = card(page, '列表项1');
+  await expect(loose).toBeVisible();
+  await expect(loose.getByRole('button', { name: '完成“列表项1”', exact: true })).toBeDisabled();
+
+  // Adoption from loose mode sends loose:true and converts the bullets.
+  await select.selectOption('notes/bullets.md');
+  await page.getByRole('button', { name: '预览接管差异（转换 3 个列表项）' }).click();
+  expect(previews.at(-1)).toEqual({ source_path: 'notes/bullets.md', loose: true });
+  await expect(page.getByRole('table', { name: '左右对比' })).toContainText('- [ ] 列表项1');
+  await page.getByRole('button', { name: '确认接管并写入' }).click();
+  await expect.poll(() => adopts.length).toBe(1);
+  expect(adopts[0]).toEqual({ source_path: 'notes/bullets.md', base_hash: 'loose-hash', loose: true });
+  await expect(select.locator('option[value="notes/bullets.md"]')).toHaveText(/已管理/);
+  expect(await page.evaluate(() => localStorage.getItem('todo.loose-sources.v1:/test/project-root'))).toBe('[]');
+});
+
+test('已管理但没有复选框的索引文件：空态说明原因并提供宽松解析入口', async ({ page }) => {
+  const { sources } = await project(page);
+  sources.push({ path: 'index/TODO.md', status: 'managed', writable: true, revision: 'source-i', task_count: 0, preview: '', error: null, completion_policy: 'normal', loose_candidates: 8 });
+  await page.getByRole('button', { name: '重新载入 Snapshot' }).click();
+  await page.getByRole('button', { name: '发现 1 个新来源，尚未录入' }).click();
+  const adjust = page.getByRole('dialog', { name: '调整录入的来源' });
+  await adjust.getByRole('checkbox', { name: '录入 index/TODO.md' }).check();
+  await adjust.getByRole('button', { name: /保存/ }).click();
+  await page.getByRole('combobox', { name: '任务来源', exact: true }).selectOption('index/TODO.md');
+  await expect(page.getByText('文件已读取，其中没有复选框')).toBeVisible();
+  await expect(page.getByText(/index\/TODO\.md 已接管，但任务只从/)).toBeVisible();
+  await page.getByRole('button', { name: '启用宽松解析' }).click();
+  await expect(page.getByText('宽松解析 · Beta')).toBeVisible();
+  await expect(page.getByText(/共 8 项，只读/)).toBeVisible();
 });

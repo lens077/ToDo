@@ -34,6 +34,14 @@ pub struct TaskSource {
     /// The preview stops at `MAX_PREVIEW` bytes; writes always use the whole file.
     #[serde(default)]
     pub preview_truncated: bool,
+    /// Bullet lines (`- text`) that the loose list reader would treat as
+    /// tasks. A hint for offering the Beta reader; never a task count.
+    #[serde(default)]
+    pub loose_candidates: usize,
+    /// True when this snapshot read the source with the loose list reader.
+    /// Such a source is always read-only until it is adopted.
+    #[serde(default)]
+    pub loose: bool,
     pub error: Option<String>,
     pub revision: String,
     pub task_count: usize,
@@ -176,14 +184,29 @@ impl ProjectBackend {
         self.snapshot()
     }
     pub fn snapshot(&self) -> Result<ProjectSnapshot> {
-        self.build_snapshot(None)
+        self.build_snapshot(None, &[])
     }
     pub fn snapshot_source(&self, source: &str) -> Result<ProjectSnapshot> {
-        self.build_snapshot(Some(source))
+        self.build_snapshot(Some(source), &[])
     }
-    fn build_snapshot(&self, selected: Option<&str>) -> Result<ProjectSnapshot> {
+    /// Like `snapshot` / `snapshot_source`, but reads the named sources with
+    /// the loose list reader (Beta): plain `- text` bullets become read-only
+    /// tasks in memory. Nothing is written; the file stays as it is.
+    pub fn snapshot_with_loose(
+        &self,
+        selected: Option<&str>,
+        loose: &[String],
+    ) -> Result<ProjectSnapshot> {
+        self.build_snapshot(selected, loose)
+    }
+    fn build_snapshot(&self, selected: Option<&str>, loose: &[String]) -> Result<ProjectSnapshot> {
         let root = self.root.as_ref().ok_or(Error::NoProject)?;
-        let (sources, mut warnings) = self.discover()?;
+        let (mut sources, mut warnings) = self.discover()?;
+        for source in sources.iter_mut() {
+            if loose.iter().any(|path| path == &source.info.path) {
+                loosen_source(source);
+            }
+        }
         if let Some(source) = selected {
             self.validate(source)?;
             if !sources.iter().any(|s| s.info.path == source) {
@@ -261,17 +284,25 @@ impl ProjectBackend {
         self.snapshot()
     }
     pub fn preview_adopt(&self, source: &str) -> Result<AdoptionPreview> {
-        let (sources, _) = self.discover()?;
+        self.preview_adopt_with(source, false)
+    }
+    /// `loose` also converts plain bullets into checkboxes, so a list written
+    /// as `- text` becomes a managed task list in one reviewed rewrite.
+    pub fn preview_adopt_with(&self, source: &str, loose: bool) -> Result<AdoptionPreview> {
+        let (mut sources, _) = self.discover()?;
         let found = sources
-            .iter()
+            .iter_mut()
             .find(|s| s.info.path == source)
             .ok_or_else(|| invalid("source is not in the discovered project"))?;
         self.validate(source)?;
+        if loose {
+            loosen_source(found);
+        }
         if found.info.status != "unmanaged" {
             return Err(invalid("only an unmanaged valid source can be adopted"));
         }
         let content = found.content.as_ref().ok_or(Error::NotTaskFile)?;
-        let proposed = adoption(content)?;
+        let proposed = adoption(content, loose)?;
         Ok(AdoptionPreview {
             source_path: source.into(),
             base_hash: revision(content.as_bytes()),
@@ -280,7 +311,15 @@ impl ProjectBackend {
         })
     }
     pub fn apply_adopt(&self, source: &str, base_hash: &str) -> Result<ProjectSnapshot> {
-        self.preview_adopt(source)?;
+        self.apply_adopt_with(source, base_hash, false)
+    }
+    pub fn apply_adopt_with(
+        &self,
+        source: &str,
+        base_hash: &str,
+        loose: bool,
+    ) -> Result<ProjectSnapshot> {
+        self.preview_adopt_with(source, loose)?;
         let path = self.validate(source)?;
         if !writable(&path) {
             return Err(invalid("source is read-only"));
@@ -293,7 +332,7 @@ impl ProjectBackend {
         if revision(content.as_bytes()) != base_hash {
             return Err(Error::ConcurrentModification);
         }
-        let proposed = adoption(&content)?;
+        let proposed = adoption(&content, loose)?;
         parse(proposed.clone())?;
         self.validate(source)?;
         if !writable(&path) {
@@ -398,6 +437,8 @@ impl ProjectBackend {
                     writable: false,
                     preview: String::new(),
                     preview_truncated: false,
+                    loose_candidates: 0,
+                    loose: false,
                     error: None,
                     revision: String::new(),
                     task_count: 0,
@@ -426,6 +467,7 @@ impl ProjectBackend {
                     source.info.preview = String::new();
                     source.info.preview_truncated = false;
                 }
+                source.info.loose_candidates = loose_candidates(&content);
                 source.info.status = if managed { "managed" } else { "unmanaged" }.into();
                 source.info.writable = managed && writable(&full);
                 source.info.task_count = document.tasks.len();
@@ -654,8 +696,9 @@ fn classify(content: &str) -> Result<(Document, bool)> {
     let managed = declared && document.tasks.iter().all(|task| task.id.is_some());
     Ok((document, managed))
 }
-fn adoption(content: &str) -> Result<String> {
-    let (document, managed) = classify(content)?;
+fn adoption(content: &str, loose: bool) -> Result<String> {
+    let working = if loose { loosen(content) } else { content.to_owned() };
+    let (document, managed) = classify(&working)?;
     if managed {
         return Err(invalid("source is already managed"));
     }
@@ -663,6 +706,8 @@ fn adoption(content: &str) -> Result<String> {
         return Err(Error::DuplicateTaskId(id.clone()));
     }
     // Reserve every existing ID before generating any, including later tasks.
+    // `document.source` is the working text: with `loose` it already carries
+    // the inserted checkboxes, so IDs land on the converted lines too.
     let mut ids: HashSet<String> = document.tasks.iter().filter_map(|t| t.id.clone()).collect();
     let mut output = document.source.clone();
     for task in document.tasks.iter().rev().filter(|t| t.id.is_none()) {
@@ -685,6 +730,107 @@ fn adoption(content: &str) -> Result<String> {
     }
     parse(output.clone())?;
     Ok(output)
+}
+/// Reads a source with the loose list reader: bullets become checkboxes in
+/// memory, the document is re-classified, and the source is forced read-only
+/// because the tasks' byte ranges no longer describe the file on disk.
+fn loosen_source(source: &mut Source) {
+    let Some(content) = source.content.as_ref() else {
+        return;
+    };
+    let working = loosen(content);
+    match classify(&working) {
+        Ok((document, _)) => {
+            source.info.task_count = document.tasks.len();
+            source.info.completion_policy = document.completion_policy();
+            source.info.status = "unmanaged".into();
+            source.document = Some(document);
+        }
+        Err(e) => {
+            source.info.status = "error".into();
+            source.info.error = Some(e.to_string());
+            source.document = None;
+        }
+    }
+    source.info.writable = false;
+    source.info.loose = true;
+}
+/// Number of lines `loosen` would change.
+fn loose_candidates(content: &str) -> usize {
+    loosen(content)
+        .lines()
+        .zip(content.lines())
+        .filter(|(a, b)| a != b)
+        .count()
+}
+/// The loose list reader (Beta). Every unordered bullet outside frontmatter
+/// and fenced code that is not already a checkbox becomes `- [ ] text`.
+/// Bullet characters, indentation, line endings, BOM and every other line are
+/// kept byte for byte, so the diff against the original shows exactly the
+/// inserted `[ ] ` on each converted line and nothing else.
+pub fn loosen(content: &str) -> String {
+    let mut out = String::with_capacity(content.len() + 64);
+    let mut in_frontmatter = false;
+    let mut fence: Option<(u8, usize)> = None;
+    for (index, line) in content.split_inclusive('\n').enumerate() {
+        let body = line.trim_end_matches(['\r', '\n']);
+        let logical = if index == 0 { body.trim_start_matches('\u{feff}') } else { body };
+        if index == 0 && logical == "---" {
+            in_frontmatter = true;
+            out.push_str(line);
+            continue;
+        }
+        if in_frontmatter {
+            if logical == "---" {
+                in_frontmatter = false;
+            }
+            out.push_str(line);
+            continue;
+        }
+        let trimmed = logical.trim_start_matches([' ', '\t']);
+        let fence_byte = trimmed
+            .as_bytes()
+            .first()
+            .copied()
+            .filter(|byte| matches!(byte, b'`' | b'~'));
+        let fence_len = trimmed
+            .bytes()
+            .take_while(|byte| Some(*byte) == fence_byte)
+            .count();
+        if let Some((byte, minimum)) = fence {
+            if Some(byte) == fence_byte && fence_len >= minimum && trimmed[fence_len..].trim().is_empty() {
+                fence = None;
+            }
+            out.push_str(line);
+            continue;
+        }
+        if fence_byte.is_some() && fence_len >= 3 {
+            fence = Some((fence_byte.unwrap(), fence_len));
+            out.push_str(line);
+            continue;
+        }
+        let indent_len = logical.len() - trimmed.len();
+        let mut bytes = trimmed.bytes();
+        let is_bullet = matches!(bytes.next(), Some(b'-' | b'*' | b'+'))
+            && matches!(bytes.next(), Some(b' ' | b'\t'));
+        if is_bullet {
+            let after = trimmed[1..].trim_start_matches([' ', '\t']);
+            let already = after.starts_with('[') && after.len() >= 3 && after.as_bytes()[2] == b']';
+            if !after.is_empty() && !already && !after.starts_with("---") && !after.starts_with("***") {
+                // BOM + indent + bullet char, then the checkbox, then the
+                // text and the original line ending.
+                let ending_len = line.len() - body.len();
+                let bom_len = body.len() - logical.len();
+                out.push_str(&line[..bom_len + indent_len + 1]);
+                out.push_str(" [ ] ");
+                out.push_str(after);
+                out.push_str(&line[line.len() - ending_len..]);
+                continue;
+            }
+        }
+        out.push_str(line);
+    }
+    out
 }
 fn append_snapshot(result: &mut ProjectSnapshot, source: &str, snapshot: DesktopSnapshot) {
     let wrap = |task| ProjectTask {

@@ -139,6 +139,10 @@ export interface TaskSource {
   writable: boolean;
   preview: string;
   preview_truncated?: boolean;
+  /** Bullet lines the loose list reader (Beta) would treat as tasks. */
+  loose_candidates?: number;
+  /** This snapshot read the source with the loose reader; it is read-only. */
+  loose?: boolean;
   error?: string | null;
   revision: string;
   task_count: number;
@@ -750,9 +754,16 @@ export const desktop = {
     return normalizeStatus(await call<unknown>('desktop_status'));
   },
 
-  async snapshot(sourcePath: string | null = null): Promise<DesktopSnapshot> {
-    if (isTauriRuntime()) return normalizeSnapshot(await call<unknown>(sourcePath === null ? 'snapshot' : 'project_snapshot', sourcePath === null ? undefined : { sourcePath }));
-    if (useHttp()) return normalizeSnapshot(await api<unknown>(sourceQuery('/snapshot', sourcePath)));
+  async snapshot(sourcePath: string | null = null, looseSources: string[] = []): Promise<DesktopSnapshot> {
+    if (isTauriRuntime()) {
+      const plain = sourcePath === null && looseSources.length === 0;
+      return normalizeSnapshot(await call<unknown>(plain ? 'snapshot' : 'project_snapshot', plain ? undefined : { sourcePath, looseSources }));
+    }
+    if (useHttp()) {
+      const base = sourceQuery('/snapshot', sourcePath);
+      const query = looseSources.length ? `${base}${base.includes('?') ? '&' : '?'}loose=${encodeURIComponent(looseSources.join('\n'))}` : base;
+      return normalizeSnapshot(await api<unknown>(query));
+    }
     if (mockMode === 'no-project') throw new DesktopBridgeError('no project is open');
     if (mockMode === 'load-error') throw new DesktopBridgeError('frontmatter parse failed near todo-spec');
     return mockSnapshot();
@@ -895,17 +906,17 @@ export const desktop = {
     return mockMutate(intent);
   },
 
-  async previewAdopt(sourcePath: string): Promise<AdoptPreview> {
+  async previewAdopt(sourcePath: string, loose = false): Promise<AdoptPreview> {
     if (httpCapabilities?.writable === false) throw new DesktopBridgeError('服务端只读，不能接管文件');
-    if (isTauriRuntime()) return call<AdoptPreview>('preview_adopt', { sourcePath });
-    if (useHttp()) return api<AdoptPreview>('/sources/adopt/preview', { method: 'POST', body: { source_path: sourcePath } });
+    if (isTauriRuntime()) return call<AdoptPreview>('preview_adopt', { sourcePath, loose });
+    if (useHttp()) return api<AdoptPreview>('/sources/adopt/preview', { method: 'POST', body: { source_path: sourcePath, loose } });
     throw new DesktopBridgeError('演示模式不能接管真实文件。');
   },
 
-  async applyAdopt(sourcePath: string, baseHash: string, projectPath?: string): Promise<DesktopSnapshot> {
+  async applyAdopt(sourcePath: string, baseHash: string, projectPath?: string, loose = false): Promise<DesktopSnapshot> {
     if (httpCapabilities?.writable === false) throw new DesktopBridgeError('服务端只读，不能接管文件');
-    if (isTauriRuntime()) return normalizeSnapshot(await call<unknown>('apply_adopt', { sourcePath, baseHash, projectPath }));
-    if (useHttp()) return normalizeSnapshot(await api<unknown>('/sources/adopt', { method: 'POST', body: { source_path: sourcePath, base_hash: baseHash } }));
+    if (isTauriRuntime()) return normalizeSnapshot(await call<unknown>('apply_adopt', { sourcePath, baseHash, projectPath, loose }));
+    if (useHttp()) return normalizeSnapshot(await api<unknown>('/sources/adopt', { method: 'POST', body: { source_path: sourcePath, base_hash: baseHash, loose } }));
     throw new DesktopBridgeError('演示模式不能接管真实文件。');
   },
 

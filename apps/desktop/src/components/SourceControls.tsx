@@ -3,7 +3,7 @@ import { desktop, type AdoptPreview, type DesktopSnapshot, type TaskSource } fro
 import { DiffView } from './DiffView';
 import { Icon } from './Icon';
 
-export function SourceControls({ snapshot, busy, discoveredCount, pendingCount, onSelect, onAdjustEnrollment }: {
+export function SourceControls({ snapshot, busy, discoveredCount, pendingCount, onSelect, onAdjustEnrollment, onBatchAdopt }: {
   /** The board's snapshot: only enrolled sources. */
   snapshot: DesktopSnapshot;
   busy: boolean;
@@ -13,11 +13,14 @@ export function SourceControls({ snapshot, busy, discoveredCount, pendingCount, 
   pendingCount: number;
   onSelect: (path: string | null) => void;
   onAdjustEnrollment?: () => void;
+  /** Present when at least one enrolled source is unmanaged and writes are allowed. */
+  onBatchAdopt?: () => void;
 }) {
   const [hintsOpen, setHintsOpen] = React.useState(false);
   if (!snapshot.sources) return null;
   const sources = snapshot.sources;
   const readonlyCount = sources.filter((source) => source.status !== 'managed' || !source.writable).length;
+  const unmanagedCount = sources.filter((source) => source.status === 'unmanaged').length;
   const warnings = snapshot.warnings ?? [];
   const summary = busy
     ? '正在读取来源…'
@@ -30,7 +33,7 @@ export function SourceControls({ snapshot, busy, discoveredCount, pendingCount, 
         <span>任务来源</span>
         <select aria-label="任务来源" value={snapshot.selected_source ?? ''} disabled={busy} onChange={(event) => onSelect(event.target.value || null)}>
           <option value="">所有来源</option>
-          {sources.map((source) => <option key={source.path} value={source.path}>{source.path} · {source.status === 'error' ? '读取错误' : source.status === 'unmanaged' ? '未接管' : source.writable ? '已管理' : '只读'}</option>)}
+          {sources.map((source) => <option key={source.path} value={source.path}>{source.path} · {source.loose ? '宽松解析 Beta' : source.status === 'error' ? '读取错误' : source.status === 'unmanaged' ? '未接管' : source.writable ? '已管理' : '只读'}</option>)}
         </select>
       </label>
       <span className="source-controls__summary">{summary}</span>
@@ -40,6 +43,12 @@ export function SourceControls({ snapshot, busy, discoveredCount, pendingCount, 
           <button type="button" className="source-controls__pending" onClick={onAdjustEnrollment}>
             <span className="source-controls__dot" aria-hidden="true" />
             发现 {pendingCount} 个新来源，尚未录入
+          </button>
+        )}
+        {onBatchAdopt && unmanagedCount > 0 && (
+          <button type="button" className="source-controls__action source-controls__adopt" onClick={onBatchAdopt}>
+            <Icon name="check" />
+            接管 {unmanagedCount} 个未接管…
           </button>
         )}
         {onAdjustEnrollment && discoveredCount > 1 && (
@@ -72,10 +81,12 @@ export function SourceControls({ snapshot, busy, discoveredCount, pendingCount, 
   </section>;
 }
 
-export function SourcePreview({ source, readOnly, onAdopt }: {
+export function SourcePreview({ source, readOnly, onAdopt, onSetLoose }: {
   source: TaskSource;
   readOnly: boolean;
   onAdopt: (path: string, hash: string) => Promise<boolean>;
+  /** Turns the loose list reader (Beta) on or off for this source. */
+  onSetLoose?: (path: string, loose: boolean) => void;
 }) {
   const [preview, setPreview] = React.useState<AdoptPreview | null>(null);
   const [busy, setBusy] = React.useState(false);
@@ -87,7 +98,7 @@ export function SourcePreview({ source, readOnly, onAdopt }: {
     setBusy(true);
     setError(null);
     try {
-      const next = await desktop.previewAdopt(source.path);
+      const next = await desktop.previewAdopt(source.path, Boolean(source.loose));
       if (!alive.current) return;
       if (next.source_path !== source.path) throw new Error('预览来源不一致，未写入文件。');
       setPreview(next);
@@ -109,9 +120,24 @@ export function SourcePreview({ source, readOnly, onAdopt }: {
       }
     } finally { if (alive.current) setBusy(false); }
   };
+  const looseOffer = Boolean(onSetLoose) && !source.loose && source.status !== 'error' && source.task_count === 0 && (source.loose_candidates ?? 0) > 0;
   return <section className="source-preview" aria-label="来源只读预览">
-    <h2>{source.path}</h2>
-    <p>{source.status === 'error' ? '此来源读取或解析失败；仅展示原文，不写入。' : source.status === 'unmanaged' ? '发现普通任务清单，当前只读。先查看接管 diff，确认后才加入工具管理。' : '此来源为只读，不能写入。'}</p>
+    <h2>{source.path}{source.loose && <span className="beta-badge">宽松解析 · Beta</span>}</h2>
+    <p>{source.loose
+      ? `宽松解析已开启：把「- 文字」列表项当作任务显示，共 ${source.task_count} 项，只读。文件没有被修改；要让它们可勾选、可拖动，需接管——接管会把这些行改写为「- [ ] 文字」并附上稳定 ID。`
+      : source.status === 'error' ? '此来源读取或解析失败；仅展示原文，不写入。' : source.status === 'unmanaged' ? '发现普通任务清单，当前只读。先查看接管 diff，确认后才加入工具管理。' : '此来源为只读，不能写入。'}</p>
+    {looseOffer && (
+      <div className="loose-offer" role="note">
+        <div className="loose-offer__copy">
+          <strong>这个文件里没有复选框，但有 {source.loose_candidates} 个「- 」列表项。</strong>
+          <span>试试宽松解析（Beta）：把这些列表项当作任务显示，只读、不改文件，随时可以关闭。普通 Markdown 的列表并不都是任务，请自行判断。</span>
+        </div>
+        <button type="button" className="line-action" onClick={() => onSetLoose?.(source.path, true)}>启用宽松解析</button>
+      </div>
+    )}
+    {source.loose && onSetLoose && !preview && (
+      <div className="review-actions"><button type="button" className="text-action" onClick={() => onSetLoose(source.path, false)}>关闭宽松解析</button></div>
+    )}
     {source.error && <p role="alert" className="review-error">{source.error}</p>}
     {error && <p role="alert" className="review-error">{error}</p>}
     {preview ? <>
@@ -122,7 +148,7 @@ export function SourcePreview({ source, readOnly, onAdopt }: {
     </> : <>
       <pre className="source-preview__raw" aria-label="来源原文">{source.preview || '服务未提供可显示的原文。'}</pre>
       {source.preview_truncated && <p className="source-preview__note">原文只显示前 16 KB；接管差异与写入使用完整文件。</p>}
-      {source.status === 'unmanaged' && <button className="solid-action" disabled={readOnly || busy} onClick={() => void prepare()}>{busy ? '生成预览…' : '预览接管差异'}</button>}
+      {source.status === 'unmanaged' && <button className="solid-action" disabled={readOnly || busy} onClick={() => void prepare()}>{busy ? '生成预览…' : source.loose ? `预览接管差异（转换 ${source.task_count} 个列表项）` : '预览接管差异'}</button>}
     </>}
     {readOnly && <p>服务当前只读，不能接管文件。</p>}
   </section>;

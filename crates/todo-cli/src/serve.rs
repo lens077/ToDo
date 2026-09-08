@@ -162,15 +162,29 @@ async fn health(State(state): State<Arc<ServeState>>) -> Json<serde_json::Value>
         serde_json::json!({"ok":true,"read_only":state.read_only,"project":state.path.display().to_string(),"project_sources":true,"captures":false}),
     )
 }
+#[derive(Deserialize)]
+struct SnapshotQuery {
+    source: Option<String>,
+    /// Sources to read with the loose list reader (Beta); newline-separated
+    /// so paths may contain any other character. Read-only in memory.
+    loose: Option<String>,
+}
 async fn snapshot(
     State(state): State<Arc<ServeState>>,
-    Query(query): Query<SourceQuery>,
+    Query(query): Query<SnapshotQuery>,
 ) -> ApiResult<ProjectSnapshot> {
     let backend = state.backend()?;
-    Ok(Json(match query.source {
-        Some(source) => backend.snapshot_source(&source)?,
-        None => backend.snapshot()?,
-    }))
+    let loose: Vec<String> = query
+        .loose
+        .as_deref()
+        .unwrap_or("")
+        .split('\n')
+        .filter(|item| !item.is_empty())
+        .map(str::to_owned)
+        .collect();
+    Ok(Json(
+        backend.snapshot_with_loose(query.source.as_deref(), &loose)?,
+    ))
 }
 #[derive(Deserialize)]
 struct ProjectMutation {
@@ -195,13 +209,19 @@ fn mutate(
 struct AdoptInput {
     source_path: String,
     base_hash: Option<String>,
+    #[serde(default)]
+    loose: bool,
 }
 async fn preview_adopt(
     State(state): State<Arc<ServeState>>,
     Json(input): Json<AdoptInput>,
 ) -> ApiResult<todo_core::AdoptionPreview> {
     state.writable()?;
-    Ok(Json(state.backend()?.preview_adopt(&input.source_path)?))
+    Ok(Json(
+        state
+            .backend()?
+            .preview_adopt_with(&input.source_path, input.loose)?,
+    ))
 }
 async fn apply_adopt(
     State(state): State<Arc<ServeState>>,
@@ -212,9 +232,11 @@ async fn apply_adopt(
         status: StatusCode::BAD_REQUEST,
         message: "review an adoption diff and supply base_hash before confirming".into(),
     })?;
-    Ok(Json(
-        state.backend()?.apply_adopt(&input.source_path, &hash)?,
-    ))
+    Ok(Json(state.backend()?.apply_adopt_with(
+        &input.source_path,
+        &hash,
+        input.loose,
+    )?))
 }
 
 // Legacy per-task endpoints retain their single-source contract. Multi-source

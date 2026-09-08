@@ -121,8 +121,11 @@ fn mutate(state: State<'_, AppState>, intent: DesktopIntent) -> Result<ProjectSn
 fn project_snapshot(
     state: State<'_, AppState>,
     source_path: Option<String>,
+    loose_sources: Option<Vec<String>>,
 ) -> Result<ProjectSnapshot, String> {
-    state.ops.project_snapshot(source_path.as_deref())
+    state
+        .ops
+        .project_snapshot_loose(source_path.as_deref(), &loose_sources.unwrap_or_default())
 }
 
 #[tauri::command]
@@ -141,8 +144,11 @@ fn project_mutate(
 fn preview_adopt(
     state: State<'_, AppState>,
     source_path: String,
+    loose: Option<bool>,
 ) -> Result<todo_core::AdoptionPreview, String> {
-    state.ops.preview_adopt(&source_path)
+    state
+        .ops
+        .preview_adopt_with(&source_path, loose.unwrap_or(false))
 }
 
 #[tauri::command]
@@ -151,10 +157,14 @@ fn apply_adopt(
     source_path: String,
     base_hash: String,
     project_path: Option<String>,
+    loose: Option<bool>,
 ) -> Result<ProjectSnapshot, String> {
-    state
-        .ops
-        .apply_adopt_for(&source_path, &base_hash, project_path.as_deref())
+    state.ops.apply_adopt_for(
+        &source_path,
+        &base_hash,
+        project_path.as_deref(),
+        loose.unwrap_or(false),
+    )
 }
 
 #[tauri::command]

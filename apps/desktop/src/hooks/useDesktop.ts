@@ -1,4 +1,5 @@
 import * as React from 'react';
+import { readLooseSources, writeLooseSources } from '../lib/looseSources';
 import { requireSource, sourceMutation } from '../lib/taskSources';
 import {
   desktop,
@@ -94,6 +95,11 @@ export function useDesktop() {
   const newTaskSourceRef = React.useRef<string | null>(null);
   const [newTaskSource, setNewTaskSourceState] = React.useState<string | null>(null);
   const [sourceBusy, setSourceBusy] = React.useState(false);
+  // Loose list reader (Beta) per source: a per-machine preference keyed by
+  // project, read fresh on every snapshot so a toggle takes effect at once.
+  const looseSourcesRef = React.useRef<string[]>([]);
+  const [looseSources, setLooseSourcesState] = React.useState<string[]>([]);
+  const looseFor = (projectPath: string | undefined) => (projectPath ? readLooseSources(projectPath) : []);
 
   const remember = (key: string, value: string | null) => {
     try { localStorage.setItem(key, JSON.stringify(value)); } catch { /* Session choice still works. */ }
@@ -135,12 +141,18 @@ export function useDesktop() {
     const epoch = snapshotEpoch.current;
     const context = contextSequence.current;
     try {
-      let next = await desktop.snapshot(selectedSourceRef.current);
+      let next = await desktop.snapshot(selectedSourceRef.current, looseSourcesRef.current);
       if (request !== snapshotReadSequence.current || context !== contextSequence.current) return;
       if (initial && next.sources) {
+        looseSourcesRef.current = looseFor(next.project_path);
+        setLooseSourcesState(looseSourcesRef.current);
         const saved = recalled(`todo.selected-source:${next.project_path}`);
-        if (saved && next.sources.some((item) => item.path === saved)) {
-          next = await desktop.snapshot(saved);
+        if (looseSourcesRef.current.length && !saved) {
+          next = await desktop.snapshot(null, looseSourcesRef.current);
+          if (request !== snapshotReadSequence.current || context !== contextSequence.current) return;
+        }
+        if (saved && next.sources?.some((item) => item.path === saved)) {
+          next = await desktop.snapshot(saved, looseSourcesRef.current);
           if (request !== snapshotReadSequence.current || context !== contextSequence.current) return;
           selectedSourceRef.current = saved;
         }
@@ -252,7 +264,7 @@ export function useDesktop() {
     selectedSourceRef.current = source;
     setSourceBusy(true);
     try {
-      const next = await desktop.snapshot(source);
+      const next = await desktop.snapshot(source, looseSourcesRef.current);
       if (context !== contextSequence.current) return;
       applySnapshot(next, true);
       remember(`todo.selected-source:${next.project_path}`, source);
@@ -269,7 +281,7 @@ export function useDesktop() {
   const acceptWrite = React.useCallback(async (next: DesktopSnapshot, context: number) => {
     if (context !== contextSequence.current) return;
     const selected = selectedSourceRef.current;
-    const displayed = next.sources && selected !== null ? await desktop.snapshot(selected) : next;
+    const displayed = next.sources && (selected !== null || looseSourcesRef.current.length) ? await desktop.snapshot(selected, looseSourcesRef.current) : next;
     if (context !== contextSequence.current) return;
     applySnapshot(displayed, true);
   }, [applySnapshot]);
@@ -415,13 +427,31 @@ export function useDesktop() {
     [acceptWrite, withBusy, sourceBusy],
   );
 
+  const setLooseSources = React.useCallback(async (paths: string[]) => {
+    const root = snapshotRef.current?.project_path;
+    if (!root) return;
+    writeLooseSources(root, paths);
+    looseSourcesRef.current = paths;
+    setLooseSourcesState(paths);
+    await refreshSnapshot();
+  }, [refreshSnapshot]);
+
   const adoptSource = React.useCallback(async (path: string, baseHash: string): Promise<boolean> => {
     const context = contextSequence.current;
     const root = snapshotRef.current?.project_path;
     const entry = snapshotRef.current?.sources?.find((item) => item.path === path);
     if (!entry || entry.status !== 'unmanaged' || selectedSourceRef.current !== path || sourceBusy) return false;
+    const loose = Boolean(entry.loose);
     try {
-      const next = await withBusy(`adopt:${path}`, () => desktop.applyAdopt(path, baseHash, root));
+      const next = await withBusy(`adopt:${path}`, () => desktop.applyAdopt(path, baseHash, root, loose));
+      if (loose) {
+        // The bullets are real checkboxes now; the Beta reader is no longer
+        // needed for this file and must not be applied to its new contents.
+        const remaining = looseSourcesRef.current.filter((item) => item !== path);
+        writeLooseSources(root!, remaining);
+        looseSourcesRef.current = remaining;
+        setLooseSourcesState(remaining);
+      }
       await acceptWrite(next, context);
       if (context !== contextSequence.current) return false;
       setBanner(null);
@@ -433,6 +463,48 @@ export function useDesktop() {
     }
   }, [acceptWrite, sourceBusy, withBusy]);
 
+  /**
+   * Adopts several previewed sources one after another. Each apply is its own
+   * atomic write against the hash the person reviewed; the first failure stops
+   * the run so nothing is adopted without the diff having been confirmed for
+   * the file as it is now. The board is refreshed once at the end.
+   */
+  const adoptSources = React.useCallback(async (
+    items: Array<{ path: string; baseHash: string }>,
+    onProgress?: (path: string, outcome: 'adopted' | 'failed', message?: string) => void,
+  ): Promise<{ adopted: string[]; failed: { path: string; message: string } | null }> => {
+    const context = contextSequence.current;
+    const root = snapshotRef.current?.project_path;
+    const adopted: string[] = [];
+    let latest: DesktopSnapshot | null = null;
+    let failed: { path: string; message: string } | null = null;
+    for (const { path, baseHash } of items) {
+      if (context !== contextSequence.current) break;
+      const loose = looseSourcesRef.current.includes(path);
+      try {
+        latest = await withBusy(`adopt:${path}`, () => desktop.applyAdopt(path, baseHash, root, loose));
+        if (loose) {
+          const remaining = looseSourcesRef.current.filter((item) => item !== path);
+          writeLooseSources(root!, remaining);
+          looseSourcesRef.current = remaining;
+          setLooseSourcesState(remaining);
+        }
+        adopted.push(path);
+        onProgress?.(path, 'adopted');
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        failed = { path, message };
+        onProgress?.(path, 'failed', message);
+        break;
+      }
+    }
+    if (latest && context === contextSequence.current) {
+      await acceptWrite(latest, context);
+      setBanner(null);
+    }
+    return { adopted, failed };
+  }, [acceptWrite, withBusy]);
+
   return {
     phase,
     snapshot,
@@ -441,6 +513,9 @@ export function useDesktop() {
     newTaskSource,
     setNewTaskSource,
     adoptSource,
+    adoptSources,
+    looseSources,
+    setLooseSources,
     status,
     captures,
     capturesLoading,

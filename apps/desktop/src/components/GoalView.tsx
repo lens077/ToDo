@@ -18,6 +18,8 @@ import { TaskCard, type TaskCardActions } from './TaskCard';
 
 interface GoalViewProps extends Omit<TaskCardActions, 'onSetCompleted' | 'onMove'> {
   snapshot: DesktopSnapshot;
+  /** Turns the loose list reader (Beta) on for a source with no checkboxes. */
+  onSetLoose?: (path: string, loose: boolean) => void;
   busyKeys: Set<string>;
   readOnly: boolean;
   onSetCompleted: (id: string, completed: boolean) => Promise<boolean>;
@@ -171,6 +173,7 @@ export function GoalView({
   onSetFailed,
   onMove,
   onSetPriority,
+  onSetLoose,
 }: GoalViewProps) {
   const [layout, updateLayout] = useGoalLayout();
   const [{ density }] = useAppSettings();
@@ -225,8 +228,13 @@ export function GoalView({
   if (snapshot.tasks.length === 0) {
     // A managed file with no checkbox lines is read correctly and simply has
     // nothing to show; say so, rather than implying the connection failed.
-    const managedSources = snapshot.sources?.filter((source) => source.status === 'managed') ?? [];
+    // In a single-source view the snapshot still lists every discovered file;
+    // the explanation must be about the file the person is looking at.
+    const managedSources = (snapshot.sources ?? [])
+      .filter((source) => source.status === 'managed')
+      .filter((source) => snapshot.selected_source == null || source.path === snapshot.selected_source);
     const onlyIndexFiles = managedSources.length > 0 && managedSources.every((source) => source.task_count === 0);
+    const looseCandidates = onSetLoose ? managedSources.filter((source) => (source.loose_candidates ?? 0) > 0) : [];
     return (
       <section className="view-empty view-empty--tasks" aria-labelledby="empty-goal-title">
         <h2 id="empty-goal-title">还没有 Project Task<span>{snapshot.sources ? snapshot.sources.length === 0 ? '项目目录已打开' : onlyIndexFiles ? '文件已读取，其中没有复选框' : '来源已连接' : 'TODO.md 已连接'}</span></h2>
@@ -237,6 +245,21 @@ export function GoalView({
             : snapshot.sources
               ? '请选择可写来源后新增第一项。未接管的清单需先预览接管差异。'
               : '从顶部快速新增第一项。它会写回当前项目，而不是留在界面缓存里。'}</p>
+        {onlyIndexFiles && looseCandidates.length > 0 && (
+          <div className="loose-offer" role="note">
+            <div className="loose-offer__copy">
+              <strong>不过{looseCandidates.length === 1 ? `「${looseCandidates[0].path}」` : `这 ${looseCandidates.length} 个文件`}里有「- 」列表项（{looseCandidates.reduce((sum, source) => sum + (source.loose_candidates ?? 0), 0)} 行）。</strong>
+              <span>试试宽松解析（Beta）：把列表项当作任务显示，只读、不改文件，随时可以关闭。普通 Markdown 的列表并不都是任务，请自行判断。</span>
+            </div>
+            <div className="loose-offer__actions">
+              {looseCandidates.map((source) => (
+                <button type="button" key={source.path} className="line-action" onClick={() => onSetLoose?.(source.path, true)}>
+                  {looseCandidates.length === 1 ? '启用宽松解析' : `启用：${source.path}`}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
       </section>
     );
   }

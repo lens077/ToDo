@@ -413,3 +413,56 @@ fn markdown_files_declaring_todo_spec_are_sources_and_plain_markdown_is_not() {
     assert!(written.contains("- [ ] new task"));
     assert!(!fs::read_to_string(root.join("TODO.md")).unwrap().contains("new task"));
 }
+
+#[test]
+fn loose_reader_converts_bullets_only_outside_frontmatter_and_code() {
+    let input = "\u{feff}---\r\ntitle: x\r\n- not: a bullet\r\n---\r\n# 标题\r\n\r\n- 待办1\r\n  * 子项\r\n+ 第三种\r\n- [ ] 已是复选框\r\n- [x] 已完成\r\n-\r\n- ---\r\n```\r\n- 代码里的\r\n```\r\n1. 有序不动\r\n正文\r\n";
+    let out = todo_core::loosen(input);
+    let expected = "\u{feff}---\r\ntitle: x\r\n- not: a bullet\r\n---\r\n# 标题\r\n\r\n- [ ] 待办1\r\n  * [ ] 子项\r\n+ [ ] 第三种\r\n- [ ] 已是复选框\r\n- [x] 已完成\r\n-\r\n- ---\r\n```\r\n- 代码里的\r\n```\r\n1. 有序不动\r\n正文\r\n";
+    assert_eq!(out, expected);
+    assert_eq!(todo_core::loosen(expected), expected, "idempotent");
+}
+
+#[test]
+fn loose_snapshot_is_read_only_in_memory_and_loose_adoption_rewrites_once() {
+    let (_temp, root) = project_root();
+    put(&root, "TODO.md", "# 计划\n\n- 写文档\n- 发版\n  - 打 tag\n\n```\n- 不是任务\n```\n");
+    // Default reader: a plain bullet list is not a task list at all.
+    let plain = backend(&root).snapshot().unwrap();
+    let source = &plain.sources[0];
+    assert_eq!(source.task_count, 0);
+    assert_eq!(source.loose_candidates, 3);
+    assert!(!source.loose);
+    assert!(plain.tasks.is_empty());
+    // Loose reader: three tasks appear, nothing on disk changes, source read-only.
+    let before = fs::read_to_string(root.join("TODO.md")).unwrap();
+    let loose = backend(&root)
+        .snapshot_with_loose(None, &["TODO.md".to_string()])
+        .unwrap();
+    let source = &loose.sources[0];
+    assert!(source.loose);
+    assert_eq!(source.status, "unmanaged");
+    assert!(!source.writable);
+    assert_eq!(source.task_count, 3);
+    let bodies: Vec<_> = loose.tasks.iter().map(|t| t.body.as_str()).collect();
+    assert_eq!(bodies, vec!["写文档", "发版", "打 tag"]);
+    assert_eq!(fs::read_to_string(root.join("TODO.md")).unwrap(), before);
+    assert!(backend(&root).mutate(Some("TODO.md"), add()).is_err());
+    // Plain adoption of a bullet list has nothing to adopt; loose adoption
+    // inserts frontmatter, checkboxes and IDs in one reviewed rewrite.
+    let plain_adopt = backend(&root).preview_adopt("TODO.md").unwrap();
+    assert_eq!(plain_adopt.proposed.matches("- [ ]").count(), 0);
+    let preview = backend(&root).preview_adopt_with("TODO.md", true).unwrap();
+    assert_eq!(preview.proposed.matches("- [ ] ").count(), 3);
+    assert_eq!(preview.proposed.matches("<!--t:").count(), 3);
+    assert!(preview.proposed.contains("```\n- 不是任务\n```"));
+    assert_eq!(preview.diff.removed, 3);
+    let adopted = backend(&root)
+        .apply_adopt_with("TODO.md", &preview.base_hash, true)
+        .unwrap();
+    assert_eq!(adopted.sources[0].status, "managed");
+    assert!(adopted.sources[0].writable);
+    assert_eq!(adopted.sources[0].loose_candidates, 0);
+    assert_eq!(adopted.tasks.len(), 3);
+    assert_eq!(fs::read_to_string(root.join("TODO.md")).unwrap(), preview.proposed);
+}

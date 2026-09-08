@@ -33,12 +33,16 @@ impl DesktopOps {
         self.backend()?.snapshot().map_err(stringify)
     }
     pub fn project_snapshot(&self, source: Option<&str>) -> Result<ProjectSnapshot, String> {
-        let backend = self.backend()?;
-        match source {
-            Some(source) => backend.snapshot_source(source),
-            None => backend.snapshot(),
-        }
-        .map_err(stringify)
+        self.project_snapshot_loose(source, &[])
+    }
+    pub fn project_snapshot_loose(
+        &self,
+        source: Option<&str>,
+        loose: &[String],
+    ) -> Result<ProjectSnapshot, String> {
+        self.backend()?
+            .snapshot_with_loose(source, loose)
+            .map_err(stringify)
     }
     pub fn mutate(&self, intent: DesktopIntent) -> Result<ProjectSnapshot, String> {
         self.project_mutate(None, intent)
@@ -65,16 +69,26 @@ impl DesktopOps {
         backend.mutate(source, intent).map_err(stringify)
     }
     pub fn preview_adopt(&self, source: &str) -> Result<todo_core::AdoptionPreview, String> {
-        self.backend()?.preview_adopt(source).map_err(stringify)
+        self.preview_adopt_with(source, false)
+    }
+    pub fn preview_adopt_with(
+        &self,
+        source: &str,
+        loose: bool,
+    ) -> Result<todo_core::AdoptionPreview, String> {
+        self.backend()?
+            .preview_adopt_with(source, loose)
+            .map_err(stringify)
     }
     pub fn apply_adopt(&self, source: &str, base_hash: &str) -> Result<ProjectSnapshot, String> {
-        self.apply_adopt_for(source, base_hash, None)
+        self.apply_adopt_for(source, base_hash, None, false)
     }
     pub fn apply_adopt_for(
         &self,
         source: &str,
         base_hash: &str,
         expected_root: Option<&str>,
+        loose: bool,
     ) -> Result<ProjectSnapshot, String> {
         let backend = self.backend()?;
         if expected_root
@@ -82,7 +96,9 @@ impl DesktopOps {
         {
             return Err("project changed before adoption; review the current source again".into());
         }
-        backend.apply_adopt(source, base_hash).map_err(stringify)
+        backend
+            .apply_adopt_with(source, base_hash, loose)
+            .map_err(stringify)
     }
     pub fn capture_list(&self) -> Result<Vec<Capture>, String> {
         self.capture_store.list().map_err(stringify)

@@ -19,6 +19,7 @@ import { desktop, transportCapabilities, type DesktopTask, type TaskPriority } f
 import { quadrantGroups } from './lib/quadrant';
 import { SourceControls, SourcePreview } from './components/SourceControls';
 import { SourceEnrollmentDialog } from './components/SourceEnrollmentDialog';
+import { BatchAdoptDialog } from './components/BatchAdoptDialog';
 import { commitSourceEnrollment, filterSnapshotBySources, useSourceEnrollment } from './lib/sourceEnrollment';
 
 interface PriorityRequest {
@@ -55,6 +56,7 @@ export function App() {
   // adoption and the enrollment sheet need it); views read the filtered one.
   const enrollment = useSourceEnrollment(model.snapshot);
   const [enrollmentOpen, setEnrollmentOpen] = React.useState(false);
+  const [batchAdoptOpen, setBatchAdoptOpen] = React.useState(false);
   const snapshot = React.useMemo(
     () => (model.snapshot ? filterSnapshotBySources(model.snapshot, enrollment.enrolled) : null),
     [model.snapshot, enrollment.enrolled],
@@ -70,6 +72,15 @@ export function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [enrollment.enrolled, model.snapshot?.selected_source, model.newTaskSource]);
 
+  const setLoose = React.useCallback((path: string, loose: boolean) => {
+    const current = model.looseSources;
+    const next = loose ? [...current.filter((item) => item !== path), path] : current.filter((item) => item !== path);
+    void model.setLooseSources(next).then(() => {
+      // A loose file has read-only tasks; the preview page is where they are
+      // explained and where adoption starts, so land there when turning it on.
+      if (loose && model.snapshot?.selected_source !== path) void model.selectSource(path);
+    });
+  }, [model]);
   const selected = snapshot?.sources?.find((source) => source.path === snapshot?.selected_source);
   const sourceContextKey = JSON.stringify([snapshot?.project_path, snapshot?.selected_source]);
   const sourceBoundUnavailable = Boolean(snapshot?.sources && (!selected || selected.status !== 'managed'));
@@ -247,6 +258,7 @@ export function App() {
               pendingCount={enrollment.pending.length}
               onSelect={(path) => void model.selectSource(path)}
               onAdjustEnrollment={() => setEnrollmentOpen(true)}
+              onBatchAdopt={readOnly ? undefined : () => setBatchAdoptOpen(true)}
             />
           )}
           <div className="source-content" key={sourceContextKey}>
@@ -269,7 +281,7 @@ export function App() {
             sourceBoundUnavailable ? <p className="source-unavailable">扫描、历史与对齐提示词依赖单个来源。请先在「任务来源」选择已管理文件。</p> :
             <ReviewView snapshot={snapshot} readOnly={readOnly || Boolean(selected && !selected.writable)} onApplied={model.applySnapshot} />
           ) : selected && selected.status !== 'managed' ? (
-            <SourcePreview key={`${sourceContextKey}:${selected.revision}`} source={selected} readOnly={serverReadOnly || model.sourceBusy} onAdopt={model.adoptSource} />
+            <SourcePreview key={`${sourceContextKey}:${selected.revision}:${selected.loose ? 'loose' : ''}`} source={selected} readOnly={serverReadOnly || model.sourceBusy} onAdopt={model.adoptSource} onSetLoose={setLoose} />
           ) : activeView === 'quadrant' && snapshot ? (
             <QuadrantView
               snapshot={snapshot}
@@ -291,6 +303,7 @@ export function App() {
               onSetFailed={model.setFailed}
               onMove={moveTask}
               onSetPriority={(id, priority) => { const task = model.snapshot?.tasks.find((item) => item.id === id); if (task) requestPriority(task, priority); }}
+              onSetLoose={readOnly ? undefined : setLoose}
             />
           ) : (
             <EmptyState
@@ -322,6 +335,14 @@ export function App() {
             commitSourceEnrollment(model.snapshot!.project_path, paths, discovered.map((source) => source.path));
             setEnrollmentOpen(false);
           }}
+        />
+      )}
+      {batchAdoptOpen && snapshot?.sources && (
+        <BatchAdoptDialog
+          sources={snapshot.sources.filter((source) => source.status === 'unmanaged')}
+          readOnly={readOnly}
+          onAdopt={model.adoptSources}
+          onClose={() => setBatchAdoptOpen(false)}
         />
       )}
       {priorityRequest && (
