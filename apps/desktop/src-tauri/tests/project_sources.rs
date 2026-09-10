@@ -78,7 +78,12 @@ fn native_source_adoption_requires_same_root_and_preview_hash() {
     let preview = ops.preview_adopt("TODO").unwrap();
     ops.open_project(other.path().to_str().unwrap()).unwrap();
     assert!(ops
-        .apply_adopt_for("TODO", &preview.base_hash, Some(&snapshot.project_path))
+        .apply_adopt_for(
+            "TODO",
+            &preview.base_hash,
+            Some(&snapshot.project_path),
+            false
+        )
         .is_err());
     assert_eq!(
         fs::read_to_string(other.path().join("TODO")).unwrap(),
