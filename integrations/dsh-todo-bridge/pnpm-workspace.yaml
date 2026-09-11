@@ -1,0 +1,4 @@
+# Standalone pnpm root: keeps `pnpm install` here from climbing into the
+# ToDo repository workspace (`apps/*`), which must not list this package.
+packages:
+  - .

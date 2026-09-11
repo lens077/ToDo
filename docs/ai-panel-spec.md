@@ -124,6 +124,8 @@ ToDo 本地另有两个字段，不由来源写入：`acked_at`（本地已读�
 
 路径 B 是「DSH 单独开发」的部分，只依赖 §3 契约和 §5 的 `upsert` 命令。
 
+实现位置：`integrations/dsh-todo-bridge/`（独立 npm 包，不在根 `pnpm-workspace.yaml` 内），以 DSH 外部扩展形式分发，安装命令为 `dsh plugin --profile web add file:<绝对路径>`。分类规则在 `src/classify.ts` 复刻并用夹具校验；「等你回复」以宿主侧 `approval/request` 与 `user-questions/request` 两条 waterfall 的进入与结束近似；CLI 经 `ctx.subprocess` 启动（无该服务时退回 `node:child_process`）；`open_url` 目前只是 Web 服务基地址，因为 DSH Web 客户端尚无按会话直达的 URL。配置、信号对应表与限制见该目录的 `README.md`。
+
 ## 8. 分期
 
 | 阶段 | 交付 | 验收 |

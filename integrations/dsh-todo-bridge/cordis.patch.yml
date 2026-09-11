@@ -1,0 +1,20 @@
+# dsh-todo-bridge bundle patch: mounts the bridge plugin into a dsh profile
+# layer stack. The profile's own cordis.patch.yml still applies after this
+# layer, so a user can override the config below by id (`todo-bridge`) or
+# disable the row (`disabled: true`).
+#
+# Install: `dsh plugin --profile web add file:/abs/path/to/dsh-todo-bridge`
+# (or a packed tarball). `dsh plugin` pnpm-installs the package into the
+# profile and appends it to the profile's `dsh.profile.bundles` list.
+- insert:
+    - id: todo-bridge
+      # Node-resolvable package name — must stay in sync with package.json `name`.
+      name: 'dsh-todo-bridge'
+      config:
+        enabled: true
+        # Executable name looked up on the harness PATH, or an absolute path.
+        todoBinary: todo
+        # Absolute workspace roots to publish; empty publishes every workspace.
+        workspaces: []
+        debounceMs: 300
+        maxConsecutiveFailures: 5
