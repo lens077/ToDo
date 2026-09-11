@@ -843,8 +843,18 @@
   .ai-section__header h2 { font-size: 13px; letter-spacing: 0.02em; color: var(--ink-2); }
   .ai-section--waiting .ai-section__header h2 { color: var(--violet); }
   .ai-section--failed .ai-section__header h2 { color: var(--danger); }
-  .ai-section__cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 10px; }
-  .ai-card { position: relative; display: grid; gap: 8px; min-width: 0; padding: 12px 14px 12px 16px; background: var(--panel); border: 1px solid var(--hairline); border-left-width: 3px; border-radius: var(--radius-panel); transition: box-shadow 0.3s var(--ease-out), border-color 0.3s var(--ease-out), opacity 0.3s var(--ease-out); }
+  /* Four cards across a full-width 1440px window; `min(100%, …)` keeps the
+     track from ever being wider than the section on narrow screens. */
+  .ai-section__cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 270px), 1fr)); gap: 10px; }
+  /* A grid item's minimum is its content unless told otherwise, so a long
+     path chip or an unbroken token would push the card past its column. Every
+     block inside the card is allowed to shrink; the text then wraps or
+     ellipsises instead of the card growing. The card is a column, not a grid
+     of rows: a short card next to a tall one keeps its content packed at the
+     top and its actions on the bottom edge, instead of the slack being spread
+     between every block. */
+  .ai-card { position: relative; display: flex; flex-direction: column; gap: 8px; min-width: 0; max-width: 100%; padding: 12px 14px 12px 16px; background: var(--panel); border: 1px solid var(--hairline); border-left-width: 3px; border-radius: var(--radius-panel); transition: box-shadow 0.3s var(--ease-out), border-color 0.3s var(--ease-out), opacity 0.3s var(--ease-out); }
+  .ai-card > *, .ai-card__topline > *, .ai-card__reply > *, .ai-card__actions > * { min-width: 0; }
   .ai-card:hover { border-color: var(--hairline-2); box-shadow: var(--shadow-card); }
   .ai-card.is-busy { opacity: 0.65; pointer-events: none; }
   .ai-card--waiting { border-left-color: var(--violet); }
@@ -865,20 +875,22 @@
   .ai-card--running .ai-badge--running::before { content: ''; width: 6px; height: 6px; margin-right: 6px; background: var(--violet); border-radius: 50%; animation: ai-pulse 1.6s ease-in-out infinite; }
   @keyframes ai-pulse { 0%, 100% { opacity: 0.35; } 50% { opacity: 1; } }
   .ai-card__title { font-size: 15px; line-height: 1.4; overflow-wrap: anywhere; }
-  .ai-card__question { color: var(--ink-2); font-size: 12.5px; line-height: 1.5; overflow-wrap: anywhere; }
-  .ai-card__question span { margin-right: 6px; padding: 0 5px; color: var(--ink-3); border: 1px solid var(--hairline); border-radius: 4px; font-size: 10.5px; }
+  .ai-card__question { display: grid; gap: 2px; }
+  .ai-card__question p { color: var(--ink-2); font-size: 12.5px; line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere; word-break: break-word; }
+  .ai-card__question p.is-clamped { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 4; overflow: hidden; white-space: normal; }
+  .ai-card__question-tag { margin-right: 6px; padding: 0 5px; color: var(--ink-3); border: 1px solid var(--hairline); border-radius: 4px; font-size: 10.5px; white-space: nowrap; }
   .ai-card__reply { display: grid; gap: 4px; padding: 8px 10px; background: var(--bg); border-left: 2px solid var(--hairline-2); border-radius: 0 var(--radius-control) var(--radius-control) 0; }
   .ai-card--seen .ai-card__reply, .ai-card--handled .ai-card__reply { background: var(--panel); }
-  .ai-card__reply p { color: var(--ink); font-size: 13px; line-height: 1.55; white-space: pre-wrap; overflow-wrap: anywhere; }
+  .ai-card__reply p { color: var(--ink); font-size: 13px; line-height: 1.55; white-space: pre-wrap; overflow-wrap: anywhere; word-break: break-word; }
   .ai-card__reply p.is-clamped { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; overflow: hidden; white-space: normal; }
   .ai-card__truncated { color: var(--ink-3); font-size: 11.5px; }
   .ai-card__toggle { justify-self: start; padding: 0; color: var(--violet); background: transparent; border: 0; font-size: 12px; }
   .ai-card__toggle:hover { text-decoration: underline; }
   .ai-card__files { display: flex; flex-wrap: wrap; gap: 5px; margin: 0; padding: 0; list-style: none; }
-  .ai-card__files li { max-width: 100%; }
-  .ai-card__files code { display: inline-block; max-width: 100%; padding: 1px 6px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ink-2); background: var(--panel-2); border-radius: var(--radius-chip); font-size: 11px; line-height: 1.5; vertical-align: bottom; }
+  .ai-card__files li { min-width: 0; max-width: 100%; }
+  .ai-card__files code { display: block; max-width: 100%; padding: 1px 6px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ink-2); background: var(--panel-2); border-radius: var(--radius-chip); font-size: 11px; line-height: 1.5; }
   .ai-card__files-more { padding: 1px 6px; color: var(--ink-3); font-size: 11px; line-height: 1.5; font-variant-numeric: tabular-nums; }
-  .ai-card__actions { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 2px; padding-top: 10px; border-top: 1px solid var(--hairline); }
+  .ai-card__actions { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: auto; padding-top: 10px; border-top: 1px solid var(--hairline); }
   .ai-card__linked { color: var(--ink-3); font-size: 12px; }
   .ai-card__linked code { color: var(--ink-2); }
   .ai-card__remove { margin-left: auto; color: var(--ink-3); }

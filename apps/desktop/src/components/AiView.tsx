@@ -7,6 +7,7 @@ import {
   absoluteTime,
   canAck,
   countByState,
+  displayPath,
   displayState,
   groupSections,
   recordKey,
@@ -51,21 +52,63 @@ function taskTarget(snapshot: DesktopSnapshot | null, newTaskSource: string | nu
   return { column: column.local_id ?? column.id, sourcePath: source };
 }
 
+/**
+ * Whether a CSS line clamp is actually hiding something. Measured rather
+ * than guessed from the character count, so the toggle appears exactly when
+ * there is more to see: a card that is 270px wide and one that is 400px wide
+ * clamp at different lengths. While expanded the last measurement stands, so
+ * the 收起 button stays until the text is folded again.
+ */
+function useClampOverflow(ref: React.RefObject<HTMLElement | null>, expanded: boolean, text: string): boolean {
+  const [overflowing, setOverflowing] = React.useState(false);
+  React.useLayoutEffect(() => {
+    const element = ref.current;
+    if (!element || expanded) return undefined;
+    const measure = () => setOverflowing(element.scrollHeight > element.clientHeight + 1);
+    measure();
+    if (typeof ResizeObserver === 'undefined') return undefined;
+    const observer = new ResizeObserver(measure);
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [ref, expanded, text]);
+  return overflowing;
+}
+
+function ClampToggle({ expanded, onToggle }: { expanded: boolean; onToggle: () => void }) {
+  return (
+    <button type="button" className="ai-card__toggle" aria-expanded={expanded} onClick={onToggle}>
+      {expanded ? '收起' : '展开'}
+    </button>
+  );
+}
+
+/** The latest human question, clamped to four lines with the same 展开 as the reply. */
+function QuestionPreview({ question }: { question: string }) {
+  const [expanded, setExpanded] = React.useState(false);
+  const ref = React.useRef<HTMLParagraphElement>(null);
+  const long = useClampOverflow(ref, expanded, question);
+  return (
+    <div className="ai-card__question">
+      <p ref={ref} className={expanded ? '' : 'is-clamped'}>
+        <span className="ai-card__question-tag">提问</span>「{question}」
+      </p>
+      {long && <ClampToggle expanded={expanded} onToggle={() => setExpanded((value) => !value)} />}
+    </div>
+  );
+}
+
 function ReplyPreview({ record }: { record: AiRecord }) {
   const [expanded, setExpanded] = React.useState(false);
-  const reply = record.reply;
-  if (!reply) return null;
-  // Three clamped lines is about 180 CJK characters; anything longer or with
-  // paragraph breaks earns the toggle. The clamp itself is CSS.
-  const long = reply.length > 120 || reply.includes('\n');
+  const ref = React.useRef<HTMLParagraphElement>(null);
+  const reply = record.reply ?? '';
+  // Three clamped lines; the clamp itself is CSS and the toggle follows what
+  // it hides.
+  const long = useClampOverflow(ref, expanded, reply);
+  if (!record.reply) return null;
   return (
     <div className="ai-card__reply">
-      <p className={expanded ? '' : 'is-clamped'}>{reply}{record.reply_truncated && expanded ? <span className="ai-card__truncated">（来源已截断）</span> : null}</p>
-      {long && (
-        <button type="button" className="ai-card__toggle" aria-expanded={expanded} onClick={() => setExpanded((value) => !value)}>
-          {expanded ? '收起' : '展开'}
-        </button>
-      )}
+      <p ref={ref} className={expanded ? '' : 'is-clamped'}>{reply}{record.reply_truncated && expanded ? <span className="ai-card__truncated">（来源已截断）</span> : null}</p>
+      {long && <ClampToggle expanded={expanded} onToggle={() => setExpanded((value) => !value)} />}
     </div>
   );
 }
@@ -76,9 +119,12 @@ function ChangedFiles({ record }: { record: AiRecord }) {
   const rest = Math.max(record.changed_file_count, record.changed_files.length) - shown.length;
   return (
     <ul className="ai-card__files" aria-label={`改动 ${Math.max(record.changed_file_count, record.changed_files.length)} 个文件`}>
-      {shown.map((file) => (
-        <li key={file} title={file}><code>{file}</code></li>
-      ))}
+      {shown.map((file) => {
+        const path = displayPath(file, record.workspace);
+        return (
+          <li key={file} title={path.title}><code>{path.label}</code></li>
+        );
+      })}
       {rest > 0 && <li className="ai-card__files-more">+{rest}</li>}
     </ul>
   );
@@ -116,9 +162,7 @@ function AiCard({ record, busy, readOnly, target, onOpen, onToTask, onAck, onRem
         </time>
       </header>
       <h3 className="ai-card__title">{title}</h3>
-      {record.question && (
-        <p className="ai-card__question"><span>提问</span>「{record.question}」</p>
-      )}
+      {record.question && <QuestionPreview question={record.question} />}
       <ReplyPreview record={record} />
       <ChangedFiles record={record} />
       <footer className="ai-card__actions">

@@ -3,9 +3,10 @@ import { expect, test } from '@playwright/test';
 /**
  * The AI view against the mock feed (`desktop.ts`, `?ai=` modes).
  *
- * The fixture holds seven sessions: four under the mock project root
- * (`waiting`, `failed`, `running`, and an `unread` one in a subdirectory), one
- * `unread` in another workspace, one `seen`, one `handled`. Attention is
+ * The fixture holds eight sessions: five under the mock project root
+ * (`waiting`, `failed`, `running`, an `unread` one in a subdirectory, and a
+ * `seen` one with 32 absolute paths and a 300-character token), one `unread`
+ * in another workspace, one `seen`, one `handled`. Attention is
  * `waiting + failed + unread`, so the project badge reads 3 and the
  * all-workspaces badge reads 4.
  */
@@ -110,6 +111,106 @@ test.describe('AI view', () => {
     const opened = await popup;
     expect(opened.url()).toBe('http://127.0.0.1:3080/?session=s_wait1');
     await opened.close();
+    await expect(page.getByTestId('ai-card').filter({ hasText: '把 1,000 项 Snapshot' }).getByRole('button', { name: '打开会话' })).toBeDisabled();
+  });
+
+  test('the 打开会话 setting persists and decides how a session opens', async ({ page, context }) => {
+    await page.goto('/');
+    await nav(page).click();
+    const card = page.getByTestId('ai-card').filter({ hasText: '为 CLI 增加 release 构建说明' });
+    const recorded = () => page.evaluate(() => window.__todoMockOpenSessions ?? []);
+
+    // Default: reuse one window.
+    let popup = context.waitForEvent('page');
+    await card.getByRole('button', { name: '打开会话' }).click();
+    await (await popup).close();
+    expect(await recorded()).toEqual([{ url: 'http://127.0.0.1:3080/?session=s_wait1', mode: 'reuse' }]);
+
+    await page.getByRole('button', { name: '设置', exact: true }).click();
+    const settings = page.getByRole('dialog', { name: '设置' });
+    const group = settings.getByRole('radiogroup', { name: '打开会话' });
+    await expect(group.getByRole('radio', { name: '复用同一窗口（默认）' })).toBeChecked();
+    await expect(settings).toContainText('在 ToDo 自带的窗口里打开 DSH，再次打开时切换会话，不新开标签页');
+    await group.getByRole('radio', { name: '每次新开标签页' }).check();
+    await expect(settings).toContainText('用系统默认浏览器打开');
+    await page.keyboard.press('Escape');
+    await expect(settings).toBeHidden();
+
+    popup = context.waitForEvent('page');
+    await card.getByRole('button', { name: '打开会话' }).click();
+    await (await popup).close();
+    expect((await recorded()).at(-1)).toEqual({ url: 'http://127.0.0.1:3080/?session=s_wait1', mode: 'new-tab' });
+
+    await page.reload();
+    expect(await page.evaluate(() => JSON.parse(localStorage.getItem('todo.app-settings.v1') ?? '{}').openSession)).toBe('new-tab');
+    await page.getByRole('button', { name: '设置', exact: true }).click();
+    await expect(page.getByRole('radiogroup', { name: '打开会话' }).getByRole('radio', { name: '每次新开标签页' })).toBeChecked();
+  });
+
+  test('wide window: four cards per row, and no card leaves its column', async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.goto('/');
+    await nav(page).click();
+    const wide = page.getByTestId('ai-card').filter({ hasText: '整理 gateway 组件的 README 与部署清单' });
+    await expect(wide).toBeVisible();
+    // Absolute paths under the workspace are shown relative to it, the rest
+    // of the 32 as a count.
+    await expect(wide.locator('.ai-card__files li code').first()).toHaveText('components/gateway/README.md');
+    await expect(wide.locator('.ai-card__files li').first()).toHaveAttribute('title', '/Users/demo/field-notes/kubernetes/components/gateway/README.md');
+    await expect(wide.locator('.ai-card__files li:not(.ai-card__files-more)')).toHaveCount(3);
+    await expect(wide.locator('.ai-card__files-more')).toHaveText('+29');
+    // Long question and reply clamp and offer the same 展开.
+    await expect(wide.locator('.ai-card__question p')).toHaveClass(/is-clamped/);
+    await expect(wide.locator('.ai-card__question').getByRole('button', { name: '展开' })).toBeVisible();
+    await expect(wide.locator('.ai-card__reply').getByRole('button', { name: '展开' })).toBeVisible();
+
+    const geometry = await page.evaluate(() => {
+      const sections = Array.from(document.querySelectorAll<HTMLElement>('.ai-section'));
+      return sections.map((section) => {
+        const bounds = section.getBoundingClientRect();
+        const grid = section.querySelector<HTMLElement>('.ai-section__cards')!;
+        // The resolved value of an auto-fill grid lists one size per track.
+        const columns = getComputedStyle(grid).gridTemplateColumns.trim().split(/\s+/).length;
+        return {
+          right: bounds.right,
+          columns,
+          cards: Array.from(section.querySelectorAll<HTMLElement>('.ai-card')).map((card) => {
+            const rect = card.getBoundingClientRect();
+            return { right: rect.right, scrollWidth: card.scrollWidth, clientWidth: card.clientWidth };
+          }),
+        };
+      });
+    });
+    expect(geometry.length).toBeGreaterThan(0);
+    for (const section of geometry) {
+      expect(section.columns).toBe(4);
+      for (const card of section.cards) {
+        expect(card.right).toBeLessThanOrEqual(section.right + 0.5);
+        expect(card.scrollWidth).toBeLessThanOrEqual(card.clientWidth + 1);
+      }
+    }
+
+    // Expanding the unbroken token must wrap it, not widen the card.
+    await wide.locator('.ai-card__question').getByRole('button', { name: '展开' }).click();
+    const after = await wide.evaluate((card) => {
+      const section = card.closest('.ai-section')!;
+      return { card: card.getBoundingClientRect().right, section: section.getBoundingClientRect().right, scrollWidth: card.scrollWidth, clientWidth: card.clientWidth };
+    });
+    expect(after.card).toBeLessThanOrEqual(after.section + 0.5);
+    expect(after.scrollWidth).toBeLessThanOrEqual(after.clientWidth + 1);
+  });
+
+  test('narrow window: one card per row', async ({ page }) => {
+    await page.setViewportSize({ width: 640, height: 900 });
+    await page.goto('/');
+    await nav(page).click();
+    const lefts = await page.evaluate(() =>
+      Array.from(document.querySelectorAll<HTMLElement>('.ai-section--seen .ai-card')).map((card) => Math.round(card.getBoundingClientRect().left)));
+    expect(lefts.length).toBeGreaterThan(1);
+    expect(new Set(lefts).size).toBe(1);
+    const columns = await page.evaluate(() =>
+      Array.from(document.querySelectorAll<HTMLElement>('.ai-section__cards')).map((grid) => getComputedStyle(grid).gridTemplateColumns.trim().split(/\s+/).length));
+    expect(columns.every((count) => count === 1)).toBe(true);
   });
 
   test('empty states: no host yet, connected but nothing here, and everything filtered out', async ({ page }) => {

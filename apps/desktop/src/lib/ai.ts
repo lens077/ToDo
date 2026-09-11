@@ -149,6 +149,26 @@ export function workspaceName(workspace: string): string {
   return workspace.replace(/\\/g, '/').split('/').filter(Boolean).at(-1) ?? workspace;
 }
 
+/**
+ * How a changed file is labelled on a card. The contract asks for paths
+ * relative to `workspace`, but hosts do send absolute ones: those are shown
+ * relative to the workspace when they live under it, and by basename
+ * otherwise, with the full path kept for the tooltip.
+ */
+export function displayPath(file: string, workspace: string): { label: string; title: string } {
+  const normalized = file.replace(/\\/g, '/');
+  const root = workspace.replace(/\\/g, '/').replace(/\/+$/, '');
+  if (root && normalized.startsWith(`${root}/`) && normalized.length > root.length + 1) {
+    return { label: normalized.slice(root.length + 1), title: file };
+  }
+  const absolute = normalized.startsWith('/') || /^[a-zA-Z]:\//.test(normalized);
+  if (absolute) {
+    const base = normalized.split('/').filter(Boolean).at(-1);
+    return { label: base ?? file, title: file };
+  }
+  return { label: file, title: file };
+}
+
 /** "3 分钟前"-style time, without exclamation or precision it cannot have. */
 export function relativeTime(eventAt: number, now = Date.now()): string {
   const delta = Math.max(0, now - eventAt);

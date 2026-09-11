@@ -9,6 +9,7 @@ import {
   type AiScope,
   type AiState,
 } from '../lib/ai';
+import { currentAppSettings } from '../lib/appSettings';
 import { desktop, transportCapabilities, type AiToTaskResult, type DesktopSnapshot } from '../lib/desktop';
 
 /** Web polling interval: the browser has no watcher on `~/.todo/ai/`. */
@@ -139,9 +140,14 @@ export function useAiFeed({ projectPath, onSnapshot }: UseAiFeedOptions) {
     return result;
   }, [applyRecord, onSnapshot, projectPath, refresh, withBusy]);
 
+  // Read at click time rather than subscribed: the setting only matters when
+  // 打开会话 is pressed, and this keeps the feed from re-rendering on every
+  // settings write.
   const open = React.useCallback(async (record: AiRecord) => {
     if (!record.open_url) return false;
-    return (await withBusy(`open:${recordKey(record)}`, () => desktop.openExternal(record.open_url!))) !== null;
+    const url = record.open_url;
+    const mode = currentAppSettings().openSession;
+    return (await withBusy(`open:${recordKey(record)}`, () => desktop.openSession(url, mode))) !== null;
   }, [withBusy]);
 
   const toggleVisible = React.useCallback((state: AiState) => {

@@ -334,10 +334,56 @@ fn open_external(url: String) -> Result<(), String> {
     open_web_url(&url)
 }
 
-fn open_web_url(url: &str) -> Result<(), String> {
+/// The label of the one window 「复用同一窗口」 keeps for the agent host.
+///
+/// It is not in `capabilities/default.json`, so a page loaded into it gets no
+/// IPC permission: with an external URL the runtime resolves commands against
+/// the remote origin, and no capability grants that origin anything.
+const SESSION_WINDOW_LABEL: &str = "dsh-session";
+
+/// Opens a session link in ToDo's own `dsh-session` window.
+///
+/// The window is created on first use and navigated on every later call, so
+/// switching sessions never adds a tab. The URL rules are those of
+/// [`open_external`]: web URLs only.
+#[tauri::command]
+fn open_session_window(app: tauri::AppHandle, url: String) -> Result<(), String> {
+    let target = parse_web_url(&url)?;
+    if let Some(window) = app.get_webview_window(SESSION_WINDOW_LABEL) {
+        window.navigate(target).map_err(|error| error.to_string())?;
+        if window.is_minimized().unwrap_or(false) {
+            window.unminimize().map_err(|error| error.to_string())?;
+        }
+        window.show().map_err(|error| error.to_string())?;
+        window.set_focus().map_err(|error| error.to_string())?;
+        return Ok(());
+    }
+    tauri::WebviewWindowBuilder::new(
+        &app,
+        SESSION_WINDOW_LABEL,
+        tauri::WebviewUrl::External(target),
+    )
+    .title("DSH 会话")
+    .inner_size(1280.0, 860.0)
+    .build()
+    .map(|_| ())
+    .map_err(|error| format!("无法打开会话窗口：{error}"))
+}
+
+/// Accepts only absolute `http`/`https` URLs with a host.
+fn parse_web_url(url: &str) -> Result<tauri::Url, String> {
     if !(url.starts_with("http://") || url.starts_with("https://")) {
         return Err("只能打开 http/https 链接".into());
     }
+    let parsed = tauri::Url::parse(url).map_err(|error| format!("链接无效：{error}"))?;
+    if parsed.host_str().is_none() {
+        return Err("链接缺少主机名".into());
+    }
+    Ok(parsed)
+}
+
+fn open_web_url(url: &str) -> Result<(), String> {
+    parse_web_url(url)?;
     let mut command = if cfg!(target_os = "macos") {
         let mut command = std::process::Command::new("open");
         command.arg(url);
@@ -571,6 +617,7 @@ pub fn run() {
             ai_link,
             ai_to_task,
             open_external,
+            open_session_window,
             desktop_status
         ])
         .setup(move |app| {
@@ -626,9 +673,43 @@ mod tests {
 
     #[test]
     fn only_web_urls_reach_the_system_opener() {
-        for url in ["file:///etc/passwd", "javascript:alert(1)", "todo://x", ""] {
+        for url in [
+            "file:///etc/passwd",
+            "javascript:alert(1)",
+            "todo://x",
+            "",
+            "http://",
+            "http://[::1",
+        ] {
             assert!(open_web_url(url).is_err(), "{url:?} must be refused");
+            assert!(parse_web_url(url).is_err(), "{url:?} must be refused");
         }
+        let parsed = parse_web_url("http://127.0.0.1:3080/?session=s_8f2a").unwrap();
+        assert_eq!(parsed.host_str(), Some("127.0.0.1"));
+        assert_eq!(parsed.query(), Some("session=s_8f2a"));
+    }
+
+    #[test]
+    fn session_window_gets_no_ipc_capability() {
+        // The session window shows a remote page. Keep it out of every
+        // capability so that page can never invoke a command.
+        let capability: serde_json::Value =
+            serde_json::from_str(include_str!("../capabilities/default.json")).unwrap();
+        let windows = capability["windows"].as_array().unwrap();
+        assert!(
+            !windows.iter().any(|window| window == SESSION_WINDOW_LABEL),
+            "{SESSION_WINDOW_LABEL} must not be granted capabilities"
+        );
+        assert!(
+            capability.get("remote").is_none(),
+            "no remote origin may use the IPC"
+        );
+        let config: tauri::Config =
+            serde_json::from_str(include_str!("../tauri.conf.json")).unwrap();
+        assert!(
+            !config.app.with_global_tauri,
+            "withGlobalTauri would expose the IPC object to remote pages"
+        );
     }
 
     #[test]

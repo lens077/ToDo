@@ -19,6 +19,20 @@ export const LAYOUT_DENSITIES: ReadonlyArray<{ value: LayoutDensity; label: stri
 ];
 
 /**
+ * How 「打开会话」 on an AI card opens the host's link.
+ *
+ * - `reuse`: one window owned by ToDo (a named tab on the web); opening
+ *   another session navigates it instead of adding a tab.
+ * - `new-tab`: the system browser, a new tab every time.
+ */
+export type OpenSessionMode = 'reuse' | 'new-tab';
+
+export const OPEN_SESSION_MODES: ReadonlyArray<{ value: OpenSessionMode; label: string; note: string }> = [
+  { value: 'reuse', label: '复用同一窗口', note: '在 ToDo 自带的窗口里打开 DSH，再次打开时切换会话，不新开标签页。' },
+  { value: 'new-tab', label: '每次新开标签页', note: '用系统默认浏览器打开。' },
+];
+
+/**
  * Per-machine interface preferences. Nothing here is product data: it never
  * enters TODO.md and a cleared browser profile only restores the defaults.
  */
@@ -29,6 +43,7 @@ export interface AppSettings {
    */
   confirmCompletion: boolean;
   density: LayoutDensity;
+  openSession: OpenSessionMode;
 }
 
 export const APP_SETTINGS_STORAGE_KEY = 'todo.app-settings.v1';
@@ -36,10 +51,15 @@ export const APP_SETTINGS_STORAGE_KEY = 'todo.app-settings.v1';
 export const defaultAppSettings: AppSettings = {
   confirmCompletion: true,
   density: 'normal',
+  openSession: 'reuse',
 };
 
 function isDensity(value: unknown): value is LayoutDensity {
   return value === 'normal' || value === 'medium' || value === 'efficient';
+}
+
+function isOpenSessionMode(value: unknown): value is OpenSessionMode {
+  return value === 'reuse' || value === 'new-tab';
 }
 
 function normalize(value: unknown): AppSettings {
@@ -47,6 +67,7 @@ function normalize(value: unknown): AppSettings {
   return {
     confirmCompletion: typeof raw.confirmCompletion === 'boolean' ? raw.confirmCompletion : defaultAppSettings.confirmCompletion,
     density: isDensity(raw.density) ? raw.density : defaultAppSettings.density,
+    openSession: isOpenSessionMode(raw.openSession) ? raw.openSession : defaultAppSettings.openSession,
   };
 }
 
@@ -66,6 +87,11 @@ let current: AppSettings | null = null;
 function snapshot(): AppSettings {
   if (!current) current = readAppSettings();
   return current;
+}
+
+/** The settings as they stand now, for code that acts on a click rather than renders. */
+export function currentAppSettings(): AppSettings {
+  return snapshot();
 }
 
 export function writeAppSettings(patch: Partial<AppSettings>): AppSettings {

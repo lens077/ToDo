@@ -4,6 +4,7 @@ import { getCurrentWindow } from '@tauri-apps/api/window';
 import { open } from '@tauri-apps/plugin-dialog';
 import { sourceKey, sourceQuery } from './taskSources';
 import type { AiListResult, AiOutcome, AiRecord, AiState } from './ai';
+import type { OpenSessionMode } from './appSettings';
 import {
   api,
   apiBase,
@@ -238,6 +239,16 @@ export class DesktopBridgeError extends Error {
   }
 }
 
+/** The browser tab 「复用同一窗口」 targets on the web: one name, one tab. */
+const SESSION_TAB_NAME = 'todo-dsh';
+
+declare global {
+  interface Window {
+    /** Mock mode only: every 打开会话 call, for e2e to inspect. */
+    __todoMockOpenSessions?: Array<{ url: string; mode: OpenSessionMode }>;
+  }
+}
+
 const MOCK_TODAY = '2026-08-31';
 type MockMode = 'default' | 'empty' | 'no-project' | 'load-error';
 let mockMode: MockMode = (() => {
@@ -386,6 +397,13 @@ const mockAiMode: MockAiMode = (() => {
 })();
 const MOCK_AI_ROOT = '/Users/demo/field-notes';
 const mockAiNow = Date.now();
+/** 300 characters with no break opportunity, the worst case for a card's width. */
+const MOCK_AI_LONG_TOKEN = 'gateway-manifest-'.concat('x'.repeat(283));
+/** 32 absolute paths under the record's workspace, as a host that ignores §1.1 sends them. */
+const MOCK_AI_WIDE_FILES: string[] = Array.from({ length: 32 }, (_, index) =>
+  index === 0
+    ? `${MOCK_AI_ROOT}/kubernetes/components/gateway/README.md`
+    : `${MOCK_AI_ROOT}/kubernetes/components/gateway/manifests/environment-${String(index).padStart(2, '0')}/deployment-with-a-deliberately-long-name.yaml`);
 function mockAiRecord(
   overrides: Partial<AiRecord> & Pick<AiRecord, 'session_id' | 'state' | 'event_at'>,
 ): AiRecord {
@@ -439,11 +457,14 @@ let mockAiRecords: AiRecord[] = mockAiMode === 'default' ? [
     changed_files: ['crates/todo-core/src/reconcile.rs', 'crates/todo-core/src/write.rs', 'crates/todo-core/tests/reconcile.rs', 'README.md', 'docs/spec.md'],
     changed_file_count: 7,
   }),
+  // No link yet: the host publishes `open_url` once the turn has an id to
+  // deep-link to, so 打开会话 is disabled here.
   mockAiRecord({
     session_id: 's_run1',
     state: 'running',
     event_at: mockAiNow - 30_000,
     question: '把 1,000 项 Snapshot 的构建预算测一遍，输出到 docs/perf.md',
+    open_url: null,
   }),
   mockAiRecord({
     session_id: 's_other1',
@@ -456,6 +477,21 @@ let mockAiRecords: AiRecord[] = mockAiMode === 'default' ? [
     reply: '已迁移；package.json 新增 build/preview 两个脚本，Makefile 保留为转发。',
     changed_files: ['package.json', 'Makefile'],
     changed_file_count: 2,
+  }),
+  // A host that sent absolute paths, the full 32-file list, and an unbroken
+  // token: the card must still fit its column (e2e asserts the geometry).
+  // Already seen, so the attention counts the other tests rely on hold.
+  mockAiRecord({
+    session_id: 's_wide1',
+    state: 'seen',
+    outcome: 'completed',
+    workspace: '/Users/demo/field-notes/kubernetes',
+    event_at: mockAiNow - 55 * 60_000,
+    title: '整理 gateway 组件的 README 与部署清单',
+    question: `把 ${MOCK_AI_LONG_TOKEN} 这个 manifest 的名字改短，并把 kubernetes/components/gateway 下所有 README 的安装步骤统一成同一份`,
+    reply: `已把 32 个文件的安装步骤改为引用 components/gateway/README.md。原来的 ${MOCK_AI_LONG_TOKEN} 改为 gateway-manifest.yaml。`,
+    changed_files: MOCK_AI_WIDE_FILES,
+    changed_file_count: MOCK_AI_WIDE_FILES.length,
   }),
   mockAiRecord({
     session_id: 's_seen1',
@@ -1285,6 +1321,27 @@ export const desktop = {
       return;
     }
     window.open(url, '_blank', 'noopener,noreferrer');
+  },
+
+  /**
+   * Opens a session link the way the 「打开会话」 setting asks.
+   *
+   * `reuse`: one place for DSH — a `dsh-session` webview window in Tauri
+   * (created once, navigated afterwards), a named browser tab on the web.
+   * `new-tab`: the system browser, a fresh tab every time. The mock also
+   * records each call so a test can check which path a setting took.
+   */
+  async openSession(url: string, mode: OpenSessionMode): Promise<void> {
+    if (!/^https?:\/\//.test(url)) throw new DesktopBridgeError('只能打开 http/https 链接');
+    if (isTauriRuntime()) {
+      await call<void>(mode === 'reuse' ? 'open_session_window' : 'open_external', { url });
+      return;
+    }
+    if (!useHttp()) {
+      (window.__todoMockOpenSessions ??= []).push({ url, mode });
+    }
+    if (mode === 'reuse') window.open(url, SESSION_TAB_NAME);
+    else window.open(url, '_blank', 'noopener,noreferrer');
   },
 
   /** Fires when the AI store changes underneath the app (CLI writes, or mock actions). */

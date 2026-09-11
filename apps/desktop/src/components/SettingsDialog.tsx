@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { LAYOUT_DENSITIES, useAppSettings } from '../lib/appSettings';
+import { LAYOUT_DENSITIES, OPEN_SESSION_MODES, defaultAppSettings, useAppSettings } from '../lib/appSettings';
 import { readProviderSettings } from '../lib/providerSettings';
 import { Icon } from './Icon';
 
@@ -75,6 +75,30 @@ export function SettingsDialog({ onClose, onOpenProviderSettings }: SettingsDial
                       onChange={() => update({ density: item.value })}
                     />
                     <span>{item.label}</span>
+                  </label>
+                ))}
+              </div>
+            </div>
+          </section>
+
+          <section className="settings-group" aria-labelledby="settings-open-session">
+            <h3 id="settings-open-session">打开会话</h3>
+            <div className="settings-row settings-row--stack">
+              <span className="settings-row__copy">
+                <strong>AI 会话链接的打开方式</strong>
+                <span>{OPEN_SESSION_MODES.find((item) => item.value === settings.openSession)?.note}</span>
+              </span>
+              <div className="segmented" role="radiogroup" aria-label="打开会话">
+                {OPEN_SESSION_MODES.map((item) => (
+                  <label key={item.value} className={`segmented__option${settings.openSession === item.value ? ' is-active' : ''}`}>
+                    <input
+                      type="radio"
+                      name="open-session"
+                      value={item.value}
+                      checked={settings.openSession === item.value}
+                      onChange={() => update({ openSession: item.value })}
+                    />
+                    <span>{item.label}{item.value === defaultAppSettings.openSession ? '（默认）' : ''}</span>
                   </label>
                 ))}
               </div>

@@ -71,13 +71,13 @@
 - 侧栏「AI」入口右侧显示需要关注的数量：`waiting + failed + unread` 中尚未标记已读的记录，按当前范围计算，样式与「目标」旁的计数一致。
 - 顶部状态胶囊：运行中 / 等你回复 / 完成未读 / 失败 / 已读 / 已处理，各带计数；点击切换显隐，`handled` 默认隐藏。范围切换「当前项目 / 所有工作区」：当前项目指 `workspace` 等于当前项目根或位于其下；未打开项目时只有所有工作区，切换不显示。
 - 分区按契约顺序：等你回复 → 失败 → 完成未读 → 运行中 → 已读 → 已处理；同一分区内按 `event_at` 降序。已标记已读的 `waiting` / `failed` / `unread` 记录显示在「已读」，直到宿主发布新的活动。
-- 卡片显示状态标记、标题（缺省「未命名会话」）、工作区目录名、提问、回答预览（默认三行，可展开）、改动文件（前 3 个与 `+N`）、相对时间，以及非 `completed` 的结局。
-- 动作：**打开会话**用系统浏览器打开 `open_url`，只接受 `http` / `https`，缺省时禁用；**转为任务**在当前项目新建 Project Task，正文取标题、缺省取提问，`↳` 说明写入「来自 `<source>` 会话 `<session_id>`：`<open_url>`」，随后回写 `task_id`，未打开项目或只读时禁用；**标记已读**；**移除**只影响本机列表。
+- 卡片显示状态标记、标题（缺省「未命名会话」）、工作区目录名、提问（默认四行，可展开）、回答预览（默认三行，可展开）、改动文件（前 3 个与 `+N`）、相对时间，以及非 `completed` 的结局。改动文件以相对 `workspace` 的路径显示，宿主传入绝对路径时先去掉工作区前缀，不在工作区之下的只显示文件名并在悬停时给出完整路径。卡片网格按 `minmax(270px, 1fr)` 自动填充，1440px 宽的窗口一行四张，窄屏退到一列；卡片不得超出所在列。
+- 动作：**打开会话**打开 `open_url`，只接受 `http` / `https`，缺省时禁用。打开方式由设置「打开会话」决定：「复用同一窗口」（默认）在 ToDo 自带的 `dsh-session` 窗口里打开，窗口已存在时只切换地址并置前，不新开标签页；「每次新开标签页」交给系统默认浏览器。该窗口不在任何 capability 的窗口列表中，远程页面拿不到 IPC；**转为任务**在当前项目新建 Project Task，正文取标题、缺省取提问，`↳` 说明写入「来自 `<source>` 会话 `<session_id>`：`<open_url>`」，随后回写 `task_id`，未打开项目或只读时禁用；**标记已读**；**移除**只影响本机列表。
 - 空状态区分三种：尚未有宿主接入（存储文件不存在，提示 `todo hooks instructions --agent deepseek-harness` 与 `ai-feed-spec.md`）、宿主已接入但当前范围没有会话、全部被筛选掉。
 
 数据通道：
 
-- Tauri：命令 `ai_list` / `ai_ack` / `ai_remove` / `ai_link` / `ai_to_task` / `open_external`。桌面端监听存储目录，CLI 写入后发出 `desktop://ai-changed`，视图随之重读；目录不存在时先创建再监听。
+- Tauri：命令 `ai_list` / `ai_ack` / `ai_remove` / `ai_link` / `ai_to_task` / `open_external` / `open_session_window`。桌面端监听存储目录，CLI 写入后发出 `desktop://ai-changed`，视图随之重读；目录不存在时先创建再监听。
 - `todo serve`：`GET /api/v1/ai/sessions?workspace=<路径>&all=1` 与 `POST /api/v1/ai/sessions/{source}/{id}/ack|remove|link|to-task`；`--read-only` 下写入端点返回 403。Web 端每 5 秒轮询。
 - mock：固定夹具覆盖全部状态与两个工作区，`?ai=none` 模拟未接入，`?ai=empty` 模拟已接入但为空。
 
