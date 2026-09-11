@@ -25,6 +25,44 @@ describe('relativeToWorkspace', () => {
     expect(relativeToWorkspace(WORKSPACE, WORKSPACE)).toBe(WORKSPACE)
     expect(relativeToWorkspace(`${WORKSPACE}-other/x`, WORKSPACE)).toBe(`${WORKSPACE}-other/x`)
   })
+
+  it('accepts alias spellings of the workspace (realpath) as a prefix', () => {
+    const real = '/private/tmp/ws'
+    expect(relativeToWorkspace(`${real}/src/a.rs`, '/tmp/ws', [real])).toBe('src/a.rs')
+    expect(relativeToWorkspace('/tmp/ws/src/a.rs', '/tmp/ws', [real])).toBe('src/a.rs')
+    expect(relativeToWorkspace(real, '/tmp/ws', [real])).toBe(real)
+  })
+
+  it('falls back to the longest trailing workspace segment run found in the path', () => {
+    // The observed case: the session log was written under another user's
+    // home, while the workspace is now spelled with the current user.
+    const workspace = '/Users/lens/lens077/kubernetes'
+    expect(relativeToWorkspace('/Users/sumery/lens077/kubernetes/components/gateway/README.md', workspace))
+      .toBe('components/gateway/README.md')
+    // Longest run wins: `lens077/kubernetes` over a stray `kubernetes` earlier in the path.
+    expect(relativeToWorkspace('/mnt/kubernetes/lens077/kubernetes/a.md', workspace)).toBe('a.md')
+    // Basename alone is the last resort.
+    expect(relativeToWorkspace('/srv/kubernetes/deploy/x.yaml', workspace)).toBe('deploy/x.yaml')
+    // The first occurrence of the run is taken as the root.
+    expect(relativeToWorkspace('/srv/kubernetes/vendor/kubernetes/x.yaml', workspace)).toBe('vendor/kubernetes/x.yaml')
+    // A path that merely ends with the run is not a file inside the workspace.
+    expect(relativeToWorkspace('/srv/lens077/kubernetes', workspace)).toBe('/srv/lens077/kubernetes')
+    // Nothing in common: untouched.
+    expect(relativeToWorkspace('/etc/hosts', workspace)).toBe('/etc/hosts')
+    expect(relativeToWorkspace('/Users/lens/lens077/kubernetes-old/x', workspace)).toBe('/Users/lens/lens077/kubernetes-old/x')
+  })
+
+  it('buildRecord passes workspace aliases through', () => {
+    const record = buildRecord({
+      meta: meta({ workspace: '/tmp/ws' }),
+      digest: digest({ changedFiles: ['/private/tmp/ws/a.rs', '/Users/x/tmp/ws/b.rs', '/etc/hosts'] }),
+      row: undefined,
+      state: 'unread',
+      openUrl: null,
+      workspaceAliases: ['/private/tmp/ws'],
+    })
+    expect(record.changed_files).toEqual(['a.rs', 'b.rs', '/etc/hosts'])
+  })
 })
 
 describe('eventAtOf', () => {

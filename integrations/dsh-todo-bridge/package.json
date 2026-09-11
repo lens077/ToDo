@@ -1,7 +1,7 @@
 {
   "name": "dsh-todo-bridge",
   "version": "0.1.0",
-  "description": "DeepSeek Harness host plugin that publishes session state to the ToDo CLI (`todo ai upsert --stdin`, ai-feed-spec 1).",
+  "description": "DeepSeek Harness bundle for the ToDo CLI: a host plugin that publishes session state (`todo ai upsert --stdin`, ai-feed-spec 1) and a Web client half that opens `?session=<id>` deep links.",
   "license": "MIT",
   "type": "module",
   "main": "./lib/index.js",
@@ -10,6 +10,10 @@
     ".": {
       "types": "./lib/index.d.ts",
       "default": "./lib/index.js"
+    },
+    "./client": {
+      "types": "./lib/client.d.ts",
+      "default": "./lib/client.js"
     },
     "./cordis.patch.yml": "./cordis.patch.yml",
     "./package.json": "./package.json"
@@ -29,7 +33,7 @@
     "node": "^22.19.0 || >=24.0.0"
   },
   "scripts": {
-    "build": "tsdown",
+    "build": "rm -rf lib && tsdown",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
     "check": "pnpm typecheck && pnpm build && pnpm test",
@@ -38,11 +42,19 @@
   "dsh": {
     "bundle": {
       "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "inject": [
+        "@deepseek-ai/dsh-api-session-controller"
+      ],
+      "platform": "web"
     }
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "^4.0.1",
     "@deepseek-ai/dsh-agent": "^0.1.0-rc.6",
+    "@deepseek-ai/dsh-api-session-controller": "^0.1.0-rc.6",
+    "@deepseek-ai/dsh-client-store": "^0.1.0-rc.6",
     "@deepseek-ai/dsh-host-webserver": "^0.1.0-rc.6",
     "@deepseek-ai/dsh-session": "^0.1.0-rc.6",
     "@deepseek-ai/dsh-session-digest": "^0.1.0-rc.6",
@@ -61,6 +73,8 @@
   "peerDependenciesMeta": {
     "@deepseek-ai/cordis": { "optional": true },
     "@deepseek-ai/dsh-agent": { "optional": true },
+    "@deepseek-ai/dsh-api-session-controller": { "optional": true },
+    "@deepseek-ai/dsh-client-store": { "optional": true },
     "@deepseek-ai/dsh-host-webserver": { "optional": true },
     "@deepseek-ai/dsh-session": { "optional": true },
     "@deepseek-ai/dsh-session-digest": { "optional": true },
@@ -79,6 +93,8 @@
   "devDependencies": {
     "@deepseek-ai/cordis": "link:/Users/lens/lens077/deepseek-harness/vendor/cordis",
     "@deepseek-ai/dsh-agent": "link:/Users/lens/lens077/deepseek-harness/packages/core/agent",
+    "@deepseek-ai/dsh-api-session-controller": "link:/Users/lens/lens077/deepseek-harness/packages/api/session-controller",
+    "@deepseek-ai/dsh-client-store": "link:/Users/lens/lens077/deepseek-harness/packages/client/store",
     "@deepseek-ai/dsh-host-webserver": "link:/Users/lens/lens077/deepseek-harness/packages/host/webserver",
     "@deepseek-ai/dsh-session": "link:/Users/lens/lens077/deepseek-harness/packages/core/session",
     "@deepseek-ai/dsh-session-digest": "link:/Users/lens/lens077/deepseek-harness/packages/session/session-digest",

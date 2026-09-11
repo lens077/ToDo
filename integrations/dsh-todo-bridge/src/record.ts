@@ -45,17 +45,49 @@ export function truncateUtf8(text: string, maxBytes: number): Truncated {
 }
 
 /**
- * Express one changed-file path relative to the workspace when it lies
- * inside it; any other path is passed through as the host recorded it.
+ * Express one changed-file path relative to the workspace (ai-feed-spec
+ * §1.1 says `changed_files` are workspace-relative). Three attempts, in
+ * order:
+ *
+ * 1. the file lies under the workspace or one of its `aliases` (the
+ *    workspace's realpath, for example): strip that prefix;
+ * 2. otherwise the longest run of trailing workspace segments that also
+ *    occurs in the file path marks the workspace root inside the file path
+ *    (a session log written under `/Users/old/lens077/proj` while the
+ *    workspace is now `/Users/new/lens077/proj` matches on
+ *    `lens077/proj`; a bare basename match like `proj/` is the last resort):
+ *    strip everything through that run;
+ * 3. otherwise keep the path as the host recorded it.
+ *
+ * A relative input is returned unchanged; separators are normalized to `/`.
  * @param file - path as the mutation tool recorded it.
  * @param workspace - absolute session workspace.
+ * @param aliases - other absolute spellings of the same workspace.
  * @returns a workspace-relative path when possible.
  */
-export function relativeToWorkspace(file: string, workspace: string): string {
+export function relativeToWorkspace(file: string, workspace: string, aliases: readonly string[] = []): string {
   if (!isAbsolute(file)) return file
-  const rel = relative(workspace, file)
-  if (rel === '' || rel.startsWith('..') || isAbsolute(rel)) return file
-  return sep === '/' ? rel : rel.split(sep).join('/')
+  for (const root of [workspace, ...aliases]) {
+    const rel = relative(root, file)
+    if (rel !== '' && !rel.startsWith('..') && !isAbsolute(rel)) return sep === '/' ? rel : rel.split(sep).join('/')
+  }
+  const wanted = segments(workspace)
+  const have = segments(file)
+  for (let length = wanted.length; length >= 1; length -= 1) {
+    const suffix = wanted.slice(wanted.length - length)
+    // The run must leave a remainder: a path that *is* the workspace is not a file in it.
+    for (let start = 0; start + length < have.length; start += 1) {
+      if (suffix.every((segment, offset) => have[start + offset] === segment)) {
+        return have.slice(start + length).join('/')
+      }
+    }
+  }
+  return file
+}
+
+/** Non-empty path segments, accepting either separator. */
+function segments(path: string): string[] {
+  return path.split(/[\\/]+/u).filter(segment => segment.length > 0)
 }
 
 /** Inputs of {@link buildRecord}. */
@@ -66,6 +98,8 @@ export interface BuildRecordInput {
   readonly state: FeedState
   /** Link opening the session, or `null` when the host has none. */
   readonly openUrl: string | null
+  /** Other absolute spellings of `meta.workspace` (its realpath, for example) for {@link relativeToWorkspace}. */
+  readonly workspaceAliases?: readonly string[]
 }
 
 /**
@@ -103,7 +137,7 @@ export function buildRecord(input: BuildRecordInput): FeedRecord {
   const reply = digest?.reply ?? null
   const cutReply = reply === null ? null : truncateUtf8(reply, CONTRACT_LIMITS.replyBytes)
   const files = (digest?.changedFiles ?? [])
-    .map(file => relativeToWorkspace(file, meta.workspace as string))
+    .map(file => relativeToWorkspace(file, meta.workspace as string, input.workspaceAliases ?? []))
     .slice(0, CONTRACT_LIMITS.changedFiles)
   const changedFileCount = Math.max(digest?.changedFileCount ?? 0, digest?.changedFiles.length ?? 0)
   return {

@@ -13,6 +13,7 @@
  * @module dsh-todo-bridge
  */
 
+import { realpathSync } from 'node:fs'
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import type { Agent } from '@deepseek-ai/dsh-agent/types'
@@ -64,11 +65,15 @@ export interface Config {
   maxConsecutiveFailures?: number
   /**
    * `open_url` template. `{base}` is the Web server's loopback URL and
-   * `{sessionId}` the session id. The shipped Web client has no per-session
-   * deep link, so the default is the bare base URL.
+   * `{sessionId}` the URL-encoded session id. Omit for
+   * `{base}/?session={sessionId}`, the deep link this bundle's client half
+   * (`lib/client.js`) resolves in the Web GUI.
    */
   openUrlTemplate?: string
 }
+
+/** Default `open_url` template: the deep link the bundle's client half handles. */
+export const DEFAULT_OPEN_URL_TEMPLATE = '{base}/?session={sessionId}'
 
 /** Schemastery validation for {@link Config}. */
 export const Config: z<Config> = z.object({
@@ -77,7 +82,7 @@ export const Config: z<Config> = z.object({
   workspaces: z.array(z.string()).default([]),
   debounceMs: z.natural().default(300),
   maxConsecutiveFailures: z.natural().min(1).default(5),
-  openUrlTemplate: z.string().default('{base}'),
+  openUrlTemplate: z.string().default(DEFAULT_OPEN_URL_TEMPLATE),
 })
 
 /** Loopback URL when no Web server is mounted (matches the shipped `dsh web` default port). */
@@ -107,7 +112,7 @@ export function apply(ctx: Context, config: Config = {}): void {
     workspaces: (config.workspaces ?? []).map(normalizeRoot),
     debounceMs: config.debounceMs ?? 300,
     maxConsecutiveFailures: config.maxConsecutiveFailures ?? 5,
-    openUrlTemplate: config.openUrlTemplate ?? '{base}',
+    openUrlTemplate: config.openUrlTemplate ?? DEFAULT_OPEN_URL_TEMPLATE,
   }
   if (!settings.enabled) {
     ctx.logger.info('todo-bridge: disabled by configuration')
@@ -150,6 +155,19 @@ export function apply(ctx: Context, config: Config = {}): void {
   const workspaceAllowed = (workspace: string): boolean =>
     settings.workspaces.length === 0 || settings.workspaces.some(root => isWithin(workspace, root))
 
+  // `header.cwd` may be a symlinked spelling of the directory the mutation
+  // tools recorded (or the reverse); the realpath is the second prefix
+  // `relativeToWorkspace` tries. Resolved once per workspace per plugin life.
+  const aliasCache = new Map<string, readonly string[]>()
+  const aliasesOf = (workspace: string): readonly string[] => {
+    let aliases = aliasCache.get(workspace)
+    if (aliases === undefined) {
+      aliases = workspaceAliases(workspace)
+      aliasCache.set(workspace, aliases)
+    }
+    return aliases
+  }
+
   /** Classify and, when publishable, hand a record to the publisher. */
   const publish = (
     meta: BridgeSessionMeta,
@@ -159,7 +177,14 @@ export function apply(ctx: Context, config: Config = {}): void {
     if (meta.workspace === null || !workspaceAllowed(meta.workspace)) return
     const state = classify(digest, row, meta, Date.now())
     if (state === null) return
-    publisher.schedule(buildRecord({ meta, digest, row, state, openUrl: openUrlOf(meta.sessionId as SessionId) }))
+    publisher.schedule(buildRecord({
+      meta,
+      digest,
+      row,
+      state,
+      openUrl: openUrlOf(meta.sessionId as SessionId),
+      workspaceAliases: aliasesOf(meta.workspace),
+    }))
   }
 
   /** Evaluate one attached session from its live projection cut. */
@@ -429,6 +454,21 @@ function symmetricDifference(left: ReadonlySet<string>, right: ReadonlySet<strin
   for (const id of left) if (!right.has(id)) result.push(id)
   for (const id of right) if (!left.has(id)) result.push(id)
   return result
+}
+
+/**
+ * Other absolute spellings of a workspace directory: its realpath when that
+ * differs (symlinked home, `/private/tmp`, ...). A missing directory has none.
+ * @param workspace - absolute session workspace.
+ * @returns zero or one alias.
+ */
+export function workspaceAliases(workspace: string): readonly string[] {
+  try {
+    const real = realpathSync.native(workspace)
+    return real === workspace ? [] : [real]
+  } catch {
+    return []
+  }
 }
 
 /** Strip a trailing separator so prefix matching is exact. */

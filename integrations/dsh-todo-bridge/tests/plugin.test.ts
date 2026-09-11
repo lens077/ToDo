@@ -3,8 +3,11 @@
  * projection feed, inbox feed, agent status, approval / question waterfalls,
  * archive toggles, the initial snapshot, and the `ctx.subprocess` launcher.
  */
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { apply, Config } from '../src/index.ts'
+import { apply, Config, DEFAULT_OPEN_URL_TEMPLATE, workspaceAliases } from '../src/index.ts'
 import type { FeedRecord } from '../src/types.ts'
 import { NOW, WORKSPACE, digest, openDigest } from './fixtures.ts'
 
@@ -139,8 +142,10 @@ describe('todo-bridge plugin', () => {
 
   it('Config applies the documented defaults', () => {
     expect(new Config({})).toMatchObject({
-      enabled: true, todoBinary: 'todo', workspaces: [], debounceMs: 300, maxConsecutiveFailures: 5, openUrlTemplate: '{base}',
+      enabled: true, todoBinary: 'todo', workspaces: [], debounceMs: 300, maxConsecutiveFailures: 5,
+      openUrlTemplate: '{base}/?session={sessionId}',
     })
+    expect(new Config({}).openUrlTemplate).toBe(DEFAULT_OPEN_URL_TEMPLATE)
   })
 
   it('publishes an initial snapshot of every eligible attached session through ctx.subprocess', async () => {
@@ -160,7 +165,7 @@ describe('todo-bridge plugin', () => {
     expect(host.calls.map(call => call.record.session_id)).toEqual(['a'])
     expect(host.calls[0]?.argv).toEqual(['/resolved/todo', 'ai', 'upsert', '--stdin'])
     expect(host.calls[0]?.record).toMatchObject({
-      state: 'unread', title: 'A', open_url: 'http://127.0.0.1:4321', workspace: WORKSPACE, changed_files: ['README.md'],
+      state: 'unread', title: 'A', open_url: 'http://127.0.0.1:4321/?session=a', workspace: WORKSPACE, changed_files: ['README.md'],
     })
     expect(host.logs.some(line => line.includes('via ctx.subprocess'))).toBe(true)
   })
@@ -321,6 +326,31 @@ describe('todo-bridge plugin', () => {
     mount(host)
     await settle()
     expect(host.calls.at(-1)?.record).toMatchObject({ state: 'failed', outcome: null, event_at: NOW })
+  })
+
+  it('relativizes changed files recorded under the workspace realpath', async () => {
+    vi.useRealTimers()
+    const base = mkdtempSync(join(tmpdir(), 'todo-bridge-'))
+    const real = join(base, 'real')
+    const link = join(base, 'link')
+    mkdirSync(real)
+    symlinkSync(real, link)
+    try {
+      expect(workspaceAliases(link)).toEqual([realpathSync.native(real)])
+      expect(workspaceAliases(realpathSync.native(real))).toEqual([])
+      expect(workspaceAliases(join(base, 'missing'))).toEqual([])
+      vi.useFakeTimers({ now: NOW })
+      const host = makeHost()
+      host.sessions.set('a', session('a', { cwd: link }))
+      host.projections.set('a', {
+        sessionDigest: digest({ changedFiles: [`${realpathSync.native(real)}/src/a.rs`, `${link}/src/b.rs`] }),
+      })
+      mount(host)
+      await settle()
+      expect(host.calls[0]?.record).toMatchObject({ workspace: link, changed_files: ['src/a.rs', 'src/b.rs'] })
+    } finally {
+      rmSync(base, { recursive: true, force: true })
+    }
   })
 
   it('disposes the publisher through the fiber effect', async () => {

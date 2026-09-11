@@ -6,6 +6,10 @@
 # Install: `dsh plugin --profile web add file:/abs/path/to/dsh-todo-bridge`
 # (or a packed tarball). `dsh plugin` pnpm-installs the package into the
 # profile and appends it to the profile's `dsh.profile.bundles` list.
+#
+# The package also declares `dsh.client` (package.json): the Web GUI loads
+# `lib/client.js`, which resolves the `?session=<id>` deep link that
+# `openUrlTemplate` produces. Client entries need no row here.
 - insert:
     - id: todo-bridge
       # Node-resolvable package name — must stay in sync with package.json `name`.
@@ -18,3 +22,6 @@
         workspaces: []
         debounceMs: 300
         maxConsecutiveFailures: 5
+        # `open_url` template; `{base}` is http://127.0.0.1:<web port>, `{sessionId}`
+        # the URL-encoded session id. The default is the client half's deep link.
+        openUrlTemplate: '{base}/?session={sessionId}'
