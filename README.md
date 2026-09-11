@@ -106,6 +106,10 @@ make dev
 | `todo align [--review <文件\|->]` | 打印全仓对齐提示词，或校验 agent 的回复 |
 | `todo serve [--port <n>] [--host <ip>] [--read-only] [--web-root <目录>]` | 启动 HTTP API 与 Web 端 |
 | `todo scan [--markdown-only\|--comments-only] [--import [--yes]] [--column <id>]` | 扫描全仓未跟踪的工作 |
+| `todo ai upsert --stdin` / `todo ai upsert --source <s> --session <id> --workspace <路径> --state <状态> [...]` | 由 agent 宿主发布一条会话状态；契约见 `docs/ai-feed-spec.md` |
+| `todo ai list [--workspace <路径>] [--state <状态>]... [--all]` | 列出 AI 会话；默认隐藏 `handled` 与已移除的记录 |
+| `todo ai get\|ack\|remove <source> <session>` / `todo ai link <source> <session> <task-id>` | 查看、标记已读、移除，或关联到某个任务的稳定 ID |
+| `todo ai prune [--older-than <天>]` | 清理早于 N 天（默认 30）的 `handled` 或已移除记录 |
 | `todo history [--limit <n>] [--prune-to <n>]` | 列出还原点 |
 | `todo diff <版本>` | 还原点与当前文件的左右对比 |
 | `todo restore <版本> [--yes]` | 恢复到某个版本；不带 `--yes` 只预览 |
@@ -187,6 +191,10 @@ todo align --review reply.json  # 校验它的回复
 - **模型没有决定权**，所有判定都是提议。任何 `done` 缺少 `path:line` 引用会被程序拒绝，不会出现在确认界面上。
 
 `--review` 只校验和汇报，**永远不写文件**；有拒绝项或漏查项时退出码为 6。
+
+## AI 会话状态
+
+agent 宿主（如 DeepSeek Harness）通过 `todo ai upsert` 发布每个会话的当前状态：`running`、`waiting`、`unread`、`seen`、`failed`、`handled`，以及最近一次提问、收尾回答和改动文件。记录以 `(source, session_id)` 为主键，存放在全局的 `~/.todo/ai/sessions.json`，**不进 `TODO.md`，也不进 Git**；`event_at` 早于已存记录的写入会被忽略并报告 `unchanged`。`todo ai list` 在任何目录下都可运行，不要求当前目录有 `TODO.md`；`ack`、`remove`、`link` 只改 ToDo 本地标记，宿主的后续更新不会覆盖「已移除」和「已关联」。字段、状态语义、排序与退出码见 `docs/ai-feed-spec.md`；测试或脚本可用环境变量 `TODO_AI_STORE` 指向另一份存储文件。
 
 ## 版本历史
 

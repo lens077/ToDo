@@ -147,4 +147,4 @@ ToDo 本地另有两个字段，不由来源写入：`acked_at`（本地已读�
 | 条目粒度 | 一个会话一条 |
 | 分期 | 阶段 1（core + CLI）、阶段 2（桌面视图）、阶段 3b（DSH 扩展）并行，只共享 `docs/ai-feed-spec.md` |
 
-待确认：`open_url` 的格式由 DSH 决定，需要确认 DSH Web 是否支持按会话 ID 直达〔待确认〕。
+已确认：DSH Web 客户端（`packages/client/*`）目前不解析会话 ID 的 URL 参数或 hash，不支持按会话直达。v1 的 `open_url` 为 DSH GUI 根地址（默认 `http://127.0.0.1:3080`）；卡片同时展示 `session_id`，用户在 DSH 汇总面板中定位。DSH 后续提供深链接时，桥接只需改 `open_url` 的拼接，契约不变。

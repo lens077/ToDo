@@ -13,10 +13,16 @@ use std::{
 use clap::{Parser, Subcommand, ValueEnum};
 use serde::Serialize;
 use todo_core::{
-    atomic_write, generate_task_id, parse_file, set_priority_changes, Change, CompletionOutcome,
+    atomic_write, generate_task_id, parse_file, set_priority_changes, AiListFilter, AiOutcome,
+    AiPruneOutcome, AiRecord, AiState, AiStore, AiUpsert, Change, CompletionOutcome,
     CompletionPolicy, Error, History, InsertPosition, LlmSemanticReconciler, LockedWriter,
-    PriorityScope, ReconcileOptions, ReconcileReport, Reconciler, TokenKind,
+    PriorityScope, ReconcileOptions, ReconcileReport, Reconciler, TokenKind, AI_FEED_SPEC,
+    AI_PRUNE_DAYS,
 };
+
+/// Overrides the global `~/.todo/ai/sessions.json` path. Tests use it so they
+/// never touch the developer's real store.
+const AI_STORE_ENV: &str = "TODO_AI_STORE";
 
 const TODO_TEMPLATE: &str = "---\ntodo-spec: 1\ncolumns:\n  - {id: todo, name: Todo}\n  - {id: doing, name: Doing}\n  - {id: done, name: Done, type: done}\n---\n\n# Project tasks\n\n## Todo\n\n## Doing\n\n## Done\n";
 const ARCHIVE_TEMPLATE: &str = "---\ntodo-spec: 1\ncolumns:\n  - {id: archived, name: Archived, type: done}\n---\n\n# Archived project tasks\n\n## Archived\n";
@@ -132,6 +138,12 @@ enum Command {
         #[command(subcommand)]
         command: HooksCommand,
     },
+    /// Agent session state published by a host (contract: docs/ai-feed-spec.md).
+    /// Stored globally under ~/.todo/ai/, never in TODO.md.
+    Ai {
+        #[command(subcommand)]
+        command: AiCommand,
+    },
     /// List restore points recorded before each write.
     History {
         #[arg(long, default_value_t = 20)]
@@ -246,6 +258,122 @@ enum HooksCommand {
         #[arg(long, value_enum, default_value = "claude")]
         agent: hooks::Agent,
     },
+}
+
+#[derive(Subcommand)]
+enum AiCommand {
+    /// Publish one session's current state: a JSON record on stdin, or flags.
+    Upsert {
+        /// Read one JSON record (ai-feed-spec §1.1) from stdin.
+        #[arg(
+            long,
+            conflicts_with_all = [
+                "source", "session", "workspace", "state", "outcome", "title", "question",
+                "reply", "reply_truncated", "changed_files", "changed_file_count", "open_url",
+                "event_at",
+            ]
+        )]
+        stdin: bool,
+        /// Source identifier, e.g. `dsh`.
+        #[arg(long, required_unless_present = "stdin")]
+        source: Option<String>,
+        /// Session ID, unique within the source.
+        #[arg(long, required_unless_present = "stdin")]
+        session: Option<String>,
+        /// Absolute path of the session's working directory.
+        #[arg(long, required_unless_present = "stdin")]
+        workspace: Option<String>,
+        /// running | waiting | unread | seen | failed | handled
+        #[arg(long, required_unless_present = "stdin", value_parser = parse_ai_state)]
+        state: Option<AiState>,
+        /// completed | error | aborted | blocked | max-tokens | interrupted
+        #[arg(long, value_parser = parse_ai_outcome)]
+        outcome: Option<AiOutcome>,
+        /// Session title.
+        #[arg(long)]
+        title: Option<String>,
+        /// The latest human question.
+        #[arg(long)]
+        question: Option<String>,
+        /// The closing reply to that question.
+        #[arg(long)]
+        reply: Option<String>,
+        /// The reply was cut short by the source.
+        #[arg(long)]
+        reply_truncated: bool,
+        /// A changed file, relative to the workspace. Repeatable.
+        #[arg(long = "changed-file", value_name = "PATH")]
+        changed_files: Vec<String>,
+        /// Total changed files when more than the listed ones.
+        #[arg(long)]
+        changed_file_count: Option<u32>,
+        /// http(s) link that opens the session in the host.
+        #[arg(long)]
+        open_url: Option<String>,
+        /// Source-side event time, Unix epoch milliseconds. Defaults to now.
+        #[arg(long)]
+        event_at: Option<i64>,
+    },
+    /// List sessions in contract order. Hides handled and removed ones unless --all.
+    List {
+        /// Keep sessions whose workspace equals or lies under this path.
+        #[arg(long)]
+        workspace: Option<PathBuf>,
+        /// Keep only these states. Repeatable.
+        #[arg(long, value_parser = parse_ai_state)]
+        state: Vec<AiState>,
+        /// Include handled and removed sessions.
+        #[arg(long)]
+        all: bool,
+    },
+    /// Show one session.
+    Get { source: String, session: String },
+    /// Mark one session as read in ToDo.
+    Ack { source: String, session: String },
+    /// Hide one session from `list`. The host may still update it.
+    Remove { source: String, session: String },
+    /// Link one session to a project task's stable ID.
+    Link {
+        source: String,
+        session: String,
+        task_id: String,
+    },
+    /// Delete handled or removed sessions older than N days.
+    Prune {
+        #[arg(long, default_value_t = AI_PRUNE_DAYS)]
+        older_than: u64,
+    },
+}
+
+fn parse_ai_state(value: &str) -> Result<AiState, String> {
+    AiState::parse(value).ok_or_else(|| {
+        format!(
+            "unknown state `{value}`; expected one of {}",
+            join_names(AiState::ALL.iter().map(|state| state.as_str()))
+        )
+    })
+}
+
+const AI_OUTCOMES: [AiOutcome; 6] = [
+    AiOutcome::Completed,
+    AiOutcome::Error,
+    AiOutcome::Aborted,
+    AiOutcome::Blocked,
+    AiOutcome::MaxTokens,
+    AiOutcome::Interrupted,
+];
+
+fn parse_ai_outcome(value: &str) -> Result<AiOutcome, String> {
+    AiOutcome::parse(value).ok_or_else(|| {
+        format!(
+            "unknown outcome `{value}`; expected one of {}",
+            join_names(AI_OUTCOMES.iter().map(|outcome| outcome.as_str()))
+        )
+    })
+}
+
+fn join_names<'a>(names: impl Iterator<Item = &'a str>) -> String {
+    names.collect::<Vec<_>>().join(", ")
 }
 
 #[derive(Serialize)]
@@ -393,6 +521,8 @@ fn run(cli: &Cli) -> Result<u8, Error> {
             no_semantic,
         } => reconcile(cli, &path, *apply, *semantic && !*no_semantic, *no_semantic),
         Command::Hooks { command } => run_hooks(cli, command),
+        // Global store: must work in any directory, TODO.md or not.
+        Command::Ai { command } => run_ai(cli, command),
         Command::History { limit, prune_to } => history_list(cli, &path, *limit, *prune_to),
         Command::Diff { version } => show_diff(cli, &path, *version),
         Command::Restore { version, yes } => restore(cli, &path, *version, *yes),
@@ -820,6 +950,219 @@ fn run_hooks(cli: &Cli, command: &HooksCommand) -> Result<u8, Error> {
             Ok(0)
         }
     }
+}
+
+#[derive(Serialize)]
+struct AiListData {
+    sessions: Vec<AiRecord>,
+}
+
+#[derive(Serialize)]
+struct AiRecordData {
+    record: AiRecord,
+}
+
+fn ai_store(cli: &Cli) -> Result<AiStore, Error> {
+    let timeout = Duration::from_millis(cli.lock_timeout_ms);
+    match std::env::var_os(AI_STORE_ENV).filter(|value| !value.is_empty()) {
+        Some(path) => Ok(AiStore::new(PathBuf::from(path), timeout)),
+        None => AiStore::global(timeout),
+    }
+}
+
+fn run_ai(cli: &Cli, command: &AiCommand) -> Result<u8, Error> {
+    let store = ai_store(cli)?;
+    match command {
+        AiCommand::Upsert {
+            stdin,
+            source,
+            session,
+            workspace,
+            state,
+            outcome,
+            title,
+            question,
+            reply,
+            reply_truncated,
+            changed_files,
+            changed_file_count,
+            open_url,
+            event_at,
+        } => {
+            let input = if *stdin {
+                read_ai_upsert_stdin()?
+            } else {
+                // clap guarantees the four required flags in flag form.
+                AiUpsert {
+                    spec: AI_FEED_SPEC,
+                    source: source.clone().unwrap_or_default(),
+                    session_id: session.clone().unwrap_or_default(),
+                    workspace: workspace.clone().unwrap_or_default(),
+                    state: state.unwrap_or(AiState::Running),
+                    outcome: *outcome,
+                    title: title.clone(),
+                    question: question.clone(),
+                    reply: reply.clone(),
+                    reply_truncated: *reply_truncated,
+                    changed_files: changed_files.clone(),
+                    changed_file_count: *changed_file_count,
+                    open_url: open_url.clone(),
+                    event_at: *event_at,
+                }
+            };
+            let outcome = store.upsert(input)?;
+            emit(cli, "todo.ai.upsert.v1", outcome, |data| {
+                let key = ai_key(&data.record);
+                if data.unchanged {
+                    format!("unchanged {key} (stored event is newer)")
+                } else {
+                    format!("upserted {key} → {}", data.record.state.as_str())
+                }
+            });
+            Ok(0)
+        }
+        AiCommand::List {
+            workspace,
+            state,
+            all,
+        } => {
+            let workspace = workspace.as_ref().map(|path| {
+                if path.is_absolute() {
+                    path.clone()
+                } else {
+                    std::env::current_dir()
+                        .map(|cwd| cwd.join(path))
+                        .unwrap_or_else(|_| path.clone())
+                }
+            });
+            let sessions = store.list(&AiListFilter {
+                workspace,
+                states: state.clone(),
+                include_all: *all,
+            })?;
+            emit(cli, "todo.ai.list.v1", AiListData { sessions }, |data| {
+                if data.sessions.is_empty() {
+                    return "no ai sessions".into();
+                }
+                data.sessions
+                    .iter()
+                    .map(ai_record_line)
+                    .collect::<Vec<_>>()
+                    .join("\n")
+            });
+            Ok(0)
+        }
+        AiCommand::Get { source, session } => {
+            let record = store.get(source, session)?;
+            emit(cli, "todo.ai.record.v1", AiRecordData { record }, |data| {
+                ai_record_detail(&data.record)
+            });
+            Ok(0)
+        }
+        AiCommand::Ack { source, session } => {
+            let record = store.ack(source, session)?;
+            emit(cli, "todo.ai.record.v1", AiRecordData { record }, |data| {
+                format!("acked {}", ai_key(&data.record))
+            });
+            Ok(0)
+        }
+        AiCommand::Remove { source, session } => {
+            let record = store.remove(source, session)?;
+            emit(cli, "todo.ai.record.v1", AiRecordData { record }, |data| {
+                format!("removed {}", ai_key(&data.record))
+            });
+            Ok(0)
+        }
+        AiCommand::Link {
+            source,
+            session,
+            task_id,
+        } => {
+            let record = store.link(source, session, task_id)?;
+            emit(cli, "todo.ai.record.v1", AiRecordData { record }, |data| {
+                format!(
+                    "linked {} → {}",
+                    ai_key(&data.record),
+                    data.record.task_id.as_deref().unwrap_or_default()
+                )
+            });
+            Ok(0)
+        }
+        AiCommand::Prune { older_than } => {
+            let outcome: AiPruneOutcome = store.prune(*older_than)?;
+            emit(cli, "todo.ai.prune.v1", outcome, |data| {
+                format!("pruned {}, {} remaining", data.removed, data.remaining)
+            });
+            Ok(0)
+        }
+    }
+}
+
+/// One record, parse errors included, is a contract violation: exit code 2.
+fn read_ai_upsert_stdin() -> Result<AiUpsert, Error> {
+    use std::io::Read;
+    let mut buffer = String::new();
+    std::io::stdin()
+        .read_to_string(&mut buffer)
+        .map_err(|error| Error::InvalidAiFeed(format!("could not read stdin: {error}")))?;
+    serde_json::from_str(&buffer)
+        .map_err(|error| Error::InvalidAiFeed(format!("stdin is not a valid record: {error}")))
+}
+
+fn ai_key(record: &AiRecord) -> String {
+    format!("{}/{}", record.source, record.session_id)
+}
+
+fn ai_record_line(record: &AiRecord) -> String {
+    let workspace = Path::new(&record.workspace)
+        .file_name()
+        .map(|name| name.to_string_lossy().into_owned())
+        .unwrap_or_else(|| record.workspace.clone());
+    let mut line = format!(
+        "[{}] {}  {}  ({workspace})",
+        record.state.as_str(),
+        ai_key(record),
+        record.title.as_deref().unwrap_or("(untitled)")
+    );
+    match record.changed_file_count {
+        0 => {}
+        1 => line.push_str("  1 file"),
+        n => line.push_str(&format!("  {n} files")),
+    }
+    if let Some(question) = record.question.as_deref() {
+        line.push_str(&format!("\n  ↳ {}", truncate_chars(question, 120)));
+    }
+    line
+}
+
+fn ai_record_detail(record: &AiRecord) -> String {
+    let mut lines = vec![ai_record_line(record)];
+    lines.push(format!("  workspace: {}", record.workspace));
+    if let Some(outcome) = record.outcome {
+        lines.push(format!("  outcome: {}", outcome.as_str()));
+    }
+    if let Some(url) = &record.open_url {
+        lines.push(format!("  url: {url}"));
+    }
+    if let Some(task_id) = &record.task_id {
+        lines.push(format!("  task: {task_id}"));
+    }
+    if let Some(reply) = &record.reply {
+        let suffix = if record.reply_truncated { " …" } else { "" };
+        lines.push(format!("  reply: {}{suffix}", truncate_chars(reply, 400)));
+    }
+    lines.join("\n")
+}
+
+/// Single-line preview: newlines collapsed, cut at `max` chars with an ellipsis.
+fn truncate_chars(text: &str, max: usize) -> String {
+    let flat: String = text.split_whitespace().collect::<Vec<_>>().join(" ");
+    if flat.chars().count() <= max {
+        return flat;
+    }
+    let mut cut: String = flat.chars().take(max).collect();
+    cut.push('…');
+    cut
 }
 
 /// Agent config files hold API keys, so their contents are never printed unless
@@ -1953,6 +2296,8 @@ fn emit_error(cli: &Cli, error: &Error) {
 fn error_code(error: &Error) -> u8 {
     match error {
         Error::NotTaskFile => 3,
+        // A host record that breaks the contract is a usage error, not a runtime one.
+        Error::InvalidAiFeed(_) => 2,
         Error::LockTimeout { .. } => 4,
         Error::ConcurrentModification => 5,
         _ => 1,
