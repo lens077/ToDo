@@ -1,8 +1,8 @@
 # 商业模型三选项决策对比
 
-> 状态：**待拍板**。对应 `DECISIONS.md` 决策② 最后一条待办。
+> 状态：**已选 C（组合双轨）**，形态、窗口、价格与续费规则均已定，剩余待拍板项见 `DECISIONS.md` 决策④。
 > 证据基线：`research/c-commercial-mainstream.md` §13、`research/b-markdown-local-first-tools.md`、`research/e-community-voices.md`（调研日期 2026-08-30）。
-> 拍板后把「已选」写回 `DECISIONS.md`，并按 ADR 惯例在 `docs/adr/` 留一条最终记录。
+> 本文是**本项目的决策记录**；抽成通用、可供其他项目取用的版本见 `docs/pricing-playbook.md`。
 
 ## 0. 先确认四个已经成立的事实
 
