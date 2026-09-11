@@ -69,6 +69,13 @@ pub enum Error {
     InvalidAlignment(String),
     #[error("invalid LLM configuration: {0}")]
     InvalidLlmConfiguration(String),
+    /// A host sent a record that violates `docs/ai-feed-spec.md`; nothing was written.
+    #[error("invalid ai-feed record: {0}")]
+    InvalidAiFeed(String),
+    #[error("ai feed store {path} is corrupt: {message}")]
+    InvalidAiFile { path: PathBuf, message: String },
+    #[error("ai session not found: {0}")]
+    AiSessionNotFound(String),
 }
 
 impl Error {

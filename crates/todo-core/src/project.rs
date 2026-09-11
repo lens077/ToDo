@@ -697,7 +697,11 @@ fn classify(content: &str) -> Result<(Document, bool)> {
     Ok((document, managed))
 }
 fn adoption(content: &str, loose: bool) -> Result<String> {
-    let working = if loose { loosen(content) } else { content.to_owned() };
+    let working = if loose {
+        loosen(content)
+    } else {
+        content.to_owned()
+    };
     let (document, managed) = classify(&working)?;
     if managed {
         return Err(invalid("source is already managed"));
@@ -774,7 +778,11 @@ pub fn loosen(content: &str) -> String {
     let mut fence: Option<(u8, usize)> = None;
     for (index, line) in content.split_inclusive('\n').enumerate() {
         let body = line.trim_end_matches(['\r', '\n']);
-        let logical = if index == 0 { body.trim_start_matches('\u{feff}') } else { body };
+        let logical = if index == 0 {
+            body.trim_start_matches('\u{feff}')
+        } else {
+            body
+        };
         if index == 0 && logical == "---" {
             in_frontmatter = true;
             out.push_str(line);
@@ -798,14 +806,17 @@ pub fn loosen(content: &str) -> String {
             .take_while(|byte| Some(*byte) == fence_byte)
             .count();
         if let Some((byte, minimum)) = fence {
-            if Some(byte) == fence_byte && fence_len >= minimum && trimmed[fence_len..].trim().is_empty() {
+            if Some(byte) == fence_byte
+                && fence_len >= minimum
+                && trimmed[fence_len..].trim().is_empty()
+            {
                 fence = None;
             }
             out.push_str(line);
             continue;
         }
-        if fence_byte.is_some() && fence_len >= 3 {
-            fence = Some((fence_byte.unwrap(), fence_len));
+        if let (Some(byte), true) = (fence_byte, fence_len >= 3) {
+            fence = Some((byte, fence_len));
             out.push_str(line);
             continue;
         }
@@ -816,7 +827,11 @@ pub fn loosen(content: &str) -> String {
         if is_bullet {
             let after = trimmed[1..].trim_start_matches([' ', '\t']);
             let already = after.starts_with('[') && after.len() >= 3 && after.as_bytes()[2] == b']';
-            if !after.is_empty() && !already && !after.starts_with("---") && !after.starts_with("***") {
+            if !after.is_empty()
+                && !already
+                && !after.starts_with("---")
+                && !after.starts_with("***")
+            {
                 // BOM + indent + bullet char, then the checkbox, then the
                 // text and the original line ending.
                 let ending_len = line.len() - body.len();

@@ -1,6 +1,7 @@
 //! Lossless parser and surgical writer for TODO.md format v1.
 //! Parsed values are a view over the original bytes; writes never serialize Markdown.
 
+mod ai;
 mod desktop;
 mod error;
 mod history;
@@ -16,6 +17,7 @@ mod reconcile;
 mod scan;
 mod write;
 
+pub use ai::*;
 pub use desktop::*;
 pub use error::{Error, Result};
 pub use history::{

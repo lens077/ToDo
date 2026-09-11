@@ -312,7 +312,11 @@ fn long_files_are_not_a_finding_and_only_unmanaged_previews_are_bounded() {
     let (_temp, root) = project_root();
     let long_body = "x".repeat(40 * 1024);
     put(&root, "TODO.md", &managed(&long_body));
-    put(&root, "notes/TODO.txt", &format!("- [ ] loose\n{long_body}\n"));
+    put(
+        &root,
+        "notes/TODO.txt",
+        &format!("- [ ] loose\n{long_body}\n"),
+    );
     let snapshot = backend(&root).snapshot().unwrap();
     assert!(
         snapshot.warnings.is_empty(),
@@ -336,7 +340,11 @@ fn markdown_files_declaring_todo_spec_are_sources_and_plain_markdown_is_not() {
     let (_temp, root) = project_root();
     // An index-style TODO.md with no checkboxes, and the real lists split
     // into docs/todo/*.md that opt in through frontmatter.
-    put(&root, "TODO.md", "---\ntodo-spec: 1\n---\n# 索引\n\n明细见 docs/todo/。\n");
+    put(
+        &root,
+        "TODO.md",
+        "---\ntodo-spec: 1\n---\n# 索引\n\n明细见 docs/todo/。\n",
+    );
     put(
         &root,
         "docs/todo/交易闭环.md",
@@ -349,9 +357,17 @@ fn markdown_files_declaring_todo_spec_are_sources_and_plain_markdown_is_not() {
     );
     // Frontmatter without the key, prose only, and a key that is not at the
     // start of the file: none of these are sources.
-    put(&root, "docs/todo/README.md", "---\ntitle: 分类说明\n---\n- [ ] 不是来源\n");
+    put(
+        &root,
+        "docs/todo/README.md",
+        "---\ntitle: 分类说明\n---\n- [ ] 不是来源\n",
+    );
     put(&root, "docs/notes.md", "# 笔记\n\n- [ ] 也不是来源\n");
-    put(&root, "docs/late.md", "# 标题\n\n---\ntodo-spec: 1\n---\n- [ ] 声明太晚\n");
+    put(
+        &root,
+        "docs/late.md",
+        "# 标题\n\n---\ntodo-spec: 1\n---\n- [ ] 声明太晚\n",
+    );
     put(&root, "docs/todo/data.json", "{\"todo-spec\": 1}");
     // Declared by hand, IDs not yet assigned: discovered, but not managed
     // until adoption writes the IDs.
@@ -383,9 +399,7 @@ fn markdown_files_declaring_todo_spec_are_sources_and_plain_markdown_is_not() {
     assert_eq!(status("TODO.md"), ("managed", true));
     assert_eq!(status("docs/todo/交易闭环.md"), ("managed", true));
     assert_eq!(status("docs/todo/供应链.md"), ("unmanaged", false));
-    let preview = backend(&root)
-        .preview_adopt("docs/todo/供应链.md")
-        .unwrap();
+    let preview = backend(&root).preview_adopt("docs/todo/供应链.md").unwrap();
     assert_eq!(preview.diff.added, 2, "only the two task lines gain IDs");
     assert!(preview.proposed.starts_with("---\ntodo-spec: 1\n---\n"));
     assert_eq!(preview.proposed.matches("<!--t:").count(), 2);
@@ -401,17 +415,24 @@ fn markdown_files_declaring_todo_spec_are_sources_and_plain_markdown_is_not() {
     assert!(source.writable);
     let mut bodies: Vec<_> = snapshot.tasks.iter().map(|t| t.body.as_str()).collect();
     bodies.sort();
-    assert_eq!(bodies, vec!["SBOM 生成", "下单幂等", "指标采集", "镜像签名"]);
+    assert_eq!(
+        bodies,
+        vec!["SBOM 生成", "下单幂等", "指标采集", "镜像签名"]
+    );
     assert!(snapshot.warnings.is_empty(), "{:?}", snapshot.warnings);
     // The single-source view and writes address the opted-in file by its path.
-    let single = backend(&root).snapshot_source("docs/todo/交易闭环.md").unwrap();
+    let single = backend(&root)
+        .snapshot_source("docs/todo/交易闭环.md")
+        .unwrap();
     assert_eq!(single.tasks.len(), 1);
     backend(&root)
         .mutate(Some("docs/todo/交易闭环.md"), add())
         .unwrap();
     let written = fs::read_to_string(root.join("docs/todo/交易闭环.md")).unwrap();
     assert!(written.contains("- [ ] new task"));
-    assert!(!fs::read_to_string(root.join("TODO.md")).unwrap().contains("new task"));
+    assert!(!fs::read_to_string(root.join("TODO.md"))
+        .unwrap()
+        .contains("new task"));
 }
 
 #[test]
@@ -426,7 +447,11 @@ fn loose_reader_converts_bullets_only_outside_frontmatter_and_code() {
 #[test]
 fn loose_snapshot_is_read_only_in_memory_and_loose_adoption_rewrites_once() {
     let (_temp, root) = project_root();
-    put(&root, "TODO.md", "# 计划\n\n- 写文档\n- 发版\n  - 打 tag\n\n```\n- 不是任务\n```\n");
+    put(
+        &root,
+        "TODO.md",
+        "# 计划\n\n- 写文档\n- 发版\n  - 打 tag\n\n```\n- 不是任务\n```\n",
+    );
     // Default reader: a plain bullet list is not a task list at all.
     let plain = backend(&root).snapshot().unwrap();
     let source = &plain.sources[0];
@@ -464,5 +489,8 @@ fn loose_snapshot_is_read_only_in_memory_and_loose_adoption_rewrites_once() {
     assert!(adopted.sources[0].writable);
     assert_eq!(adopted.sources[0].loose_candidates, 0);
     assert_eq!(adopted.tasks.len(), 3);
-    assert_eq!(fs::read_to_string(root.join("TODO.md")).unwrap(), preview.proposed);
+    assert_eq!(
+        fs::read_to_string(root.join("TODO.md")).unwrap(),
+        preview.proposed
+    );
 }
