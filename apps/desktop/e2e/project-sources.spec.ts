@@ -50,6 +50,8 @@ async function project(page: Page, options: { readonly?: boolean; conflict?: boo
     const path = url.pathname.replace('/api/v1', '');
     if (path === '/health') return route.fulfill({ json: { ok: true, read_only: options.readonly === true, project: '/test/project-root', captures: false } });
     if (path === '/snapshot') return route.fulfill({ json: snapshot(url.searchParams.get('source'), (url.searchParams.get('loose') ?? '').split('\n').filter(Boolean)) });
+    // The AI feed is read at startup for the sidebar badge; an unconnected, empty feed is the neutral answer.
+    if (path === '/ai/sessions') return route.fulfill({ json: { records: [], connected: false } });
     if (path === '/mutate') {
       const body = route.request().postDataJSON(); mutations.push(body);
       const own = tasks.find((item) => item.id === body.intent.id && item.source_path === body.source_path);

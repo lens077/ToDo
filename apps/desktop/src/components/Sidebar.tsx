@@ -2,7 +2,7 @@ import type { WorkspaceStatus } from '../hooks/useDesktop';
 import { shortProjectName } from '../lib/desktop';
 import { Icon, type IconName } from './Icon';
 
-export type MainView = 'goal' | 'quadrant' | 'capture' | 'review';
+export type MainView = 'goal' | 'quadrant' | 'capture' | 'ai' | 'review';
 
 interface SidebarProps {
   activeView: MainView;
@@ -11,6 +11,8 @@ interface SidebarProps {
   goalCount: number;
   captureCount: number;
   unrankedCount: number;
+  /** Agent sessions waiting, failed, or finished unread in the current scope. */
+  aiCount: number;
   readOnly: boolean;
   onChangeView: (view: MainView) => void;
   onChooseProject: () => void;
@@ -23,6 +25,7 @@ const navItems: Array<{ id: MainView; label: string; icon: IconName }> = [
   { id: 'goal', label: '目标', icon: 'target' },
   { id: 'quadrant', label: '象限', icon: 'grid' },
   { id: 'capture', label: '随记', icon: 'capture' },
+  { id: 'ai', label: 'AI', icon: 'sparkle' },
   { id: 'review', label: '扫描与历史', icon: 'folder' },
 ];
 
@@ -32,13 +35,14 @@ export function Sidebar({
   goalCount,
   captureCount,
   unrankedCount,
+  aiCount,
   readOnly,
   onChangeView,
   onChooseProject,
   onOpenSettings,
 }: SidebarProps) {
   const projectName = status.projectPath ? shortProjectName(status.projectPath) : '未选择项目';
-  const countFor = (view: MainView) => (view === 'goal' ? goalCount : view === 'quadrant' ? unrankedCount : view === 'capture' ? captureCount : null);
+  const countFor = (view: MainView) => (view === 'goal' ? goalCount : view === 'quadrant' ? unrankedCount : view === 'capture' ? captureCount : view === 'ai' ? aiCount : null);
 
   return (
     <aside className="sidebar">

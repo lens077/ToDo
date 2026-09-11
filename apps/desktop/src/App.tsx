@@ -1,4 +1,5 @@
 import * as React from 'react';
+import { AiView } from './components/AiView';
 import { CaptureView } from './components/CaptureView';
 import { CommandBar } from './components/CommandBar';
 import { CompletionDialog, type CompletionDecision } from './components/CompletionDialog';
@@ -13,6 +14,7 @@ import { ReviewView } from './components/ReviewView';
 import { SettingsDialog } from './components/SettingsDialog';
 import { Sidebar, type MainView } from './components/Sidebar';
 import { StatusBanner } from './components/StatusBanner';
+import { useAiFeed } from './hooks/useAiFeed';
 import { useDesktop } from './hooks/useDesktop';
 import { useAppSettings } from './lib/appSettings';
 import { desktop, transportCapabilities, type DesktopTask, type TaskPriority } from './lib/desktop';
@@ -102,6 +104,9 @@ export function App() {
   const goalCount = snapshot
     ? snapshot.today.overdue.length + snapshot.today.today.length
     : 0;
+  // The AI feed is global and read independently of the project; the scope
+  // toggle inside the view narrows it to sessions under the open root.
+  const aiFeed = useAiFeed({ projectPath: model.snapshot?.project_path ?? null, onSnapshot: model.applySnapshot });
 
   const openCompletion = React.useCallback((request: CompletionRequest) => {
     completionRequestRef.current?.settleMove?.(false);
@@ -210,6 +215,7 @@ export function App() {
         goalCount={goalCount}
         captureCount={model.captures.length}
         unrankedCount={unrankedCount}
+        aiCount={aiFeed.attention}
         readOnly={readOnly}
         onChangeView={setActiveView}
         onChooseProject={chooseProject}
@@ -276,6 +282,13 @@ export function App() {
               onDelete={model.deleteCapture}
               onTriage={model.triageCapture}
               triageUnavailable={sourceBoundUnavailable || Boolean(selected && !selected.writable)}
+            />
+          ) : activeView === 'ai' ? (
+            <AiView
+              feed={aiFeed}
+              snapshot={snapshot}
+              newTaskSource={model.newTaskSource}
+              readOnly={serverReadOnly || model.sourceBusy}
             />
           ) : activeView === 'review' ? (
             sourceBoundUnavailable ? <p className="source-unavailable">扫描、历史与对齐提示词依赖单个来源。请先在「任务来源」选择已管理文件。</p> :

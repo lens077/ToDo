@@ -3,6 +3,7 @@ import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { open } from '@tauri-apps/plugin-dialog';
 import { sourceKey, sourceQuery } from './taskSources';
+import type { AiListResult, AiOutcome, AiRecord, AiState } from './ai';
 import {
   api,
   apiBase,
@@ -219,6 +220,14 @@ export type DesktopEvent =
   | { type: 'snapshot'; snapshot: DesktopSnapshot }
   | { type: 'error'; error: DesktopBridgeError };
 
+/** What 转为任务 returns: the new task, the linked record, and the board if it could be re-read. */
+export interface AiToTaskResult {
+  task_id: string;
+  record: AiRecord;
+  snapshot?: DesktopSnapshot;
+  snapshot_error?: string;
+}
+
 export class DesktopBridgeError extends Error {
   readonly kind: 'conflict' | 'locked' | 'parse' | 'no_project' | 'unknown';
 
@@ -364,6 +373,123 @@ let mockCaptures: Capture[] = [
 let mockCaptureSequence = 4;
 let mockTaskSequence = 1;
 const mockListeners = new Set<(event: DesktopEvent) => void>();
+const mockAiListeners = new Set<() => void>();
+
+// `?ai=none` is a machine where no host has published yet; `?ai=empty` is a
+// connected host with nothing for any workspace. The default covers every
+// state and two workspaces so the scope toggle and the sections have work.
+type MockAiMode = 'default' | 'none' | 'empty';
+const mockAiMode: MockAiMode = (() => {
+  if (typeof window === 'undefined') return 'default';
+  const requested = new URLSearchParams(window.location.search).get('ai');
+  return requested === 'none' || requested === 'empty' ? requested : 'default';
+})();
+const MOCK_AI_ROOT = '/Users/demo/field-notes';
+const mockAiNow = Date.now();
+function mockAiRecord(
+  overrides: Partial<AiRecord> & Pick<AiRecord, 'session_id' | 'state' | 'event_at'>,
+): AiRecord {
+  return {
+    source: 'dsh',
+    workspace: MOCK_AI_ROOT,
+    outcome: null,
+    title: null,
+    question: null,
+    reply: null,
+    reply_truncated: false,
+    changed_files: [],
+    changed_file_count: 0,
+    open_url: `http://127.0.0.1:3080/?session=${overrides.session_id}`,
+    received_at: overrides.event_at,
+    acked_at: null,
+    hidden: false,
+    task_id: null,
+    ...overrides,
+  };
+}
+let mockAiRecords: AiRecord[] = mockAiMode === 'default' ? [
+  mockAiRecord({
+    session_id: 's_wait1',
+    state: 'waiting',
+    event_at: mockAiNow - 4 * 60_000,
+    title: '为 CLI 增加 release 构建说明',
+    question: '要不要把 cargo install --path 的说明也写进 README 的快速开始？',
+    reply: '我准备在「快速开始」第二段加入 cargo install 的命令，并在下面注明需要 Rust 1.80 以上。是否继续？',
+  }),
+  mockAiRecord({
+    session_id: 's_fail1',
+    state: 'failed',
+    outcome: 'error',
+    event_at: mockAiNow - 26 * 60_000,
+    title: '修复 watcher 的读取反馈循环',
+    question: '把 Linux 上的 Access(Open) 事件过滤掉',
+    reply: 'cargo test 在 watch::tests::reload_callback_reads_do_not_create_a_feedback_loop 失败：second 仍收到 Reload。已回退改动。',
+    changed_files: ['apps/desktop/src-tauri/src/watch.rs'],
+    changed_file_count: 1,
+  }),
+  mockAiRecord({
+    session_id: 's_unread1',
+    state: 'unread',
+    outcome: 'completed',
+    workspace: `${MOCK_AI_ROOT}/apps/desktop`,
+    event_at: mockAiNow - 3 * 3_600_000,
+    title: '补齐 evidence diff 摘要',
+    question: '为 reconcile findings 补齐 evidence diff 摘要，并加上单元测试',
+    reply: '已在 reconcile.rs 增加 evidence_summary()，输出「+N/-M 行」与涉及文件数；对应测试 3 个全部通过。\n\n顺带修正了 diff_lines 在空文件上的越界。README 的对账章节补了一句示例输出。',
+    changed_files: ['crates/todo-core/src/reconcile.rs', 'crates/todo-core/src/write.rs', 'crates/todo-core/tests/reconcile.rs', 'README.md', 'docs/spec.md'],
+    changed_file_count: 7,
+  }),
+  mockAiRecord({
+    session_id: 's_run1',
+    state: 'running',
+    event_at: mockAiNow - 30_000,
+    question: '把 1,000 项 Snapshot 的构建预算测一遍，输出到 docs/perf.md',
+  }),
+  mockAiRecord({
+    session_id: 's_other1',
+    state: 'unread',
+    outcome: 'completed',
+    workspace: '/Users/demo/site-notes',
+    event_at: mockAiNow - 40 * 60_000,
+    title: '把博客构建脚本迁到 pnpm',
+    question: '把 Makefile 的 build 目标迁到 pnpm scripts',
+    reply: '已迁移；package.json 新增 build/preview 两个脚本，Makefile 保留为转发。',
+    changed_files: ['package.json', 'Makefile'],
+    changed_file_count: 2,
+  }),
+  mockAiRecord({
+    session_id: 's_seen1',
+    state: 'seen',
+    outcome: 'completed',
+    event_at: mockAiNow - 2 * 86_400_000,
+    title: '整理 e2e 夹具',
+    reply: '夹具已收敛到 desktop.ts 一处。',
+  }),
+  mockAiRecord({
+    session_id: 's_handled1',
+    state: 'handled',
+    outcome: 'completed',
+    event_at: mockAiNow - 5 * 86_400_000,
+    title: '确定 TODO.md v1 的保真写回边界',
+    reply: '边界已写入 docs/spec.md §4。',
+    task_id: 'd8q3mf',
+  }),
+] : [];
+
+function emitMockAi(): void {
+  window.setTimeout(() => {
+    mockAiListeners.forEach((listener) => listener());
+  }, 24);
+}
+
+function mockAiModify(source: string, session: string, change: (record: AiRecord) => AiRecord): AiRecord {
+  const index = mockAiRecords.findIndex((record) => record.source === source && record.session_id === session);
+  if (index === -1) throw new DesktopBridgeError(`会话 ${source}/${session} 已不存在`);
+  const next = change(mockAiRecords[index]);
+  mockAiRecords = mockAiRecords.map((record, position) => (position === index ? next : record));
+  emitMockAi();
+  return { ...next, changed_files: [...next.changed_files] };
+}
 
 function isTauriRuntime(): boolean {
   return typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
@@ -523,6 +649,43 @@ function normalizeCapture(raw: unknown): Capture {
     created_at: String(capture.created_at ?? ''),
     text: String(capture.text ?? ''),
   };
+}
+
+const AI_STATES: ReadonlySet<string> = new Set(['running', 'waiting', 'unread', 'seen', 'failed', 'handled']);
+const AI_OUTCOMES: ReadonlySet<string> = new Set(['completed', 'error', 'aborted', 'blocked', 'max-tokens', 'interrupted']);
+
+function normalizeAiRecord(raw: unknown): AiRecord {
+  const record = (raw ?? {}) as Partial<AiRecord>;
+  if (typeof record.source !== 'string' || typeof record.session_id !== 'string' || typeof record.state !== 'string' || !AI_STATES.has(record.state)) {
+    throw new DesktopBridgeError('AI 会话记录不完整');
+  }
+  const text = (value: unknown): string | null => (typeof value === 'string' && value.length > 0 ? value : null);
+  const files = Array.isArray(record.changed_files) ? record.changed_files.filter((item): item is string => typeof item === 'string') : [];
+  return {
+    source: record.source,
+    session_id: record.session_id,
+    workspace: typeof record.workspace === 'string' ? record.workspace : '',
+    state: record.state as AiState,
+    outcome: typeof record.outcome === 'string' && AI_OUTCOMES.has(record.outcome) ? (record.outcome as AiOutcome) : null,
+    title: text(record.title),
+    question: text(record.question),
+    reply: text(record.reply),
+    reply_truncated: record.reply_truncated === true,
+    changed_files: files,
+    changed_file_count: typeof record.changed_file_count === 'number' ? Math.max(record.changed_file_count, files.length) : files.length,
+    open_url: text(record.open_url),
+    event_at: typeof record.event_at === 'number' ? record.event_at : 0,
+    received_at: typeof record.received_at === 'number' ? record.received_at : 0,
+    acked_at: typeof record.acked_at === 'number' ? record.acked_at : null,
+    hidden: record.hidden === true,
+    task_id: text(record.task_id),
+  };
+}
+
+function normalizeAiList(raw: unknown): AiListResult {
+  const value = (raw ?? {}) as { records?: unknown; connected?: unknown };
+  if (!Array.isArray(value.records)) throw new DesktopBridgeError('ai_list 没有返回记录列表');
+  return { records: value.records.map(normalizeAiRecord), connected: value.connected === true };
 }
 
 function cloneTasks(tasks: DesktopTask[]): DesktopTask[] {
@@ -1036,6 +1199,101 @@ export const desktop = {
       task_id: taggedResult.task_id,
       ...commandValues,
     };
+  },
+
+  // ── AI feed ──────────────────────────────────────────────────────────
+  // Every record, including handled and hidden ones; the view applies the
+  // pills and drops hidden records so one read feeds the badge and the list.
+
+  async aiList(workspace: string | null = null): Promise<AiListResult> {
+    if (isTauriRuntime()) return normalizeAiList(await call<unknown>('ai_list', { workspace }));
+    if (useHttp()) {
+      const query = workspace ? `&workspace=${encodeURIComponent(workspace)}` : '';
+      return normalizeAiList(await api<unknown>(`/ai/sessions?all=1${query}`));
+    }
+    return {
+      records: mockAiRecords.map((record) => ({ ...record, changed_files: [...record.changed_files] })),
+      connected: mockAiMode !== 'none',
+    };
+  },
+
+  async aiAck(source: string, session: string): Promise<AiRecord> {
+    if (isTauriRuntime()) return normalizeAiRecord(await call<unknown>('ai_ack', { source, session }));
+    if (useHttp()) {
+      if (!httpCapabilities?.writable) throw new DesktopBridgeError('服务端处于只读模式，无法标记会话');
+      return normalizeAiRecord(await api<unknown>(`/ai/sessions/${encodeURIComponent(source)}/${encodeURIComponent(session)}/ack`, { method: 'POST', body: {} }));
+    }
+    return mockAiModify(source, session, (record) => ({ ...record, acked_at: Date.now() }));
+  },
+
+  async aiRemove(source: string, session: string): Promise<AiRecord> {
+    if (isTauriRuntime()) return normalizeAiRecord(await call<unknown>('ai_remove', { source, session }));
+    if (useHttp()) {
+      if (!httpCapabilities?.writable) throw new DesktopBridgeError('服务端处于只读模式，无法移除会话');
+      return normalizeAiRecord(await api<unknown>(`/ai/sessions/${encodeURIComponent(source)}/${encodeURIComponent(session)}/remove`, { method: 'POST', body: {} }));
+    }
+    return mockAiModify(source, session, (record) => ({ ...record, hidden: true }));
+  },
+
+  async aiLink(source: string, session: string, taskId: string): Promise<AiRecord> {
+    if (isTauriRuntime()) return normalizeAiRecord(await call<unknown>('ai_link', { source, session, taskId }));
+    if (useHttp()) {
+      if (!httpCapabilities?.writable) throw new DesktopBridgeError('服务端处于只读模式，无法关联任务');
+      return normalizeAiRecord(await api<unknown>(`/ai/sessions/${encodeURIComponent(source)}/${encodeURIComponent(session)}/link`, { method: 'POST', body: { task_id: taskId } }));
+    }
+    return mockAiModify(source, session, (record) => ({ ...record, task_id: taskId }));
+  },
+
+  /**
+   * Creates a Project Task from a session (body = title, else question) with
+   * a `↳` note pointing back at it, then links the record. The backend does
+   * the three writes in one call so a half-done result cannot be retried
+   * into a duplicate task.
+   */
+  async aiToTask(source: string, session: string, column: string | null, sourcePath: string | null = null, projectPath?: string): Promise<AiToTaskResult> {
+    if (isTauriRuntime()) {
+      const raw = (await call<Record<string, unknown>>('ai_to_task', { source, session, column, sourcePath, projectPath })) ?? {};
+      if (typeof raw.task_id !== 'string' || !raw.task_id) throw new DesktopBridgeError('ai_to_task 缺少 task_id');
+      const snapshot = readCommandValue(raw.snapshot, normalizeSnapshot);
+      return { task_id: raw.task_id, record: normalizeAiRecord(raw.record), snapshot: snapshot.value, snapshot_error: snapshot.error };
+    }
+    if (useHttp()) {
+      if (!httpCapabilities?.writable) throw new DesktopBridgeError('服务端处于只读模式，无法创建任务');
+      const raw = await api<{ task_id: string; record: unknown; snapshot: unknown }>(`/ai/sessions/${encodeURIComponent(source)}/${encodeURIComponent(session)}/to-task`, {
+        method: 'POST',
+        body: { column, source_path: sourcePath },
+      });
+      return { task_id: raw.task_id, record: normalizeAiRecord(raw.record), snapshot: normalizeSnapshot(raw.snapshot) };
+    }
+    const existing = mockAiRecords.find((record) => record.source === source && record.session_id === session);
+    if (!existing) throw new DesktopBridgeError(`会话 ${source}/${session} 已不存在`);
+    const body = (existing.title ?? existing.question ?? `会话 ${session}`).split(/\s+/).join(' ');
+    const note = existing.open_url ? `来自 ${source} 会话 ${session}：${existing.open_url}` : `来自 ${source} 会话 ${session}`;
+    const snapshot = await mockMutate({ type: 'add_task', body, column });
+    const created = mockTasks.at(-1);
+    if (!created?.id) throw new DesktopBridgeError('mock 任务创建失败');
+    created.note = note;
+    const record = mockAiModify(source, session, (item) => ({ ...item, task_id: created.id }));
+    return { task_id: created.id, record, snapshot: { ...snapshot, tasks: cloneTasks(mockTasks) } };
+  },
+
+  /** Opens a web URL in the system browser; the shell decides how. */
+  async openExternal(url: string): Promise<void> {
+    if (!/^https?:\/\//.test(url)) throw new DesktopBridgeError('只能打开 http/https 链接');
+    if (isTauriRuntime()) {
+      await call<void>('open_external', { url });
+      return;
+    }
+    window.open(url, '_blank', 'noopener,noreferrer');
+  },
+
+  /** Fires when the AI store changes underneath the app (CLI writes, or mock actions). */
+  async subscribeAi(listener: () => void): Promise<UnlistenFn> {
+    if (!isTauriRuntime()) {
+      mockAiListeners.add(listener);
+      return () => mockAiListeners.delete(listener);
+    }
+    return listen<unknown>('desktop://ai-changed', () => listener());
   },
 
   async subscribe(listener: (event: DesktopEvent) => void): Promise<UnlistenFn> {

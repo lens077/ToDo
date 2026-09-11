@@ -5,20 +5,24 @@ mod watch;
 use serde::Serialize;
 use std::{
     fmt::Display,
-    path::PathBuf,
+    path::{Path, PathBuf},
     sync::Mutex,
     time::{Duration, Instant},
 };
 use tauri::{Emitter, Manager, State};
 use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState};
 use todo_core::{
-    Capture, CaptureStore, DesktopBackend, DesktopIntent, ProjectSnapshot, TriageResult,
+    AiRecord, AiStore, Capture, CaptureStore, DesktopBackend, DesktopIntent, ProjectSnapshot,
+    TriageResult,
 };
 use watch::{TargetFileWatcher, WatchSignal};
 
 struct AppState {
     ops: ops::DesktopOps,
     watcher: Mutex<Option<TargetFileWatcher>>,
+    /// Watches the AI feed store so the AI view refreshes when the CLI writes.
+    /// Independent of the project watcher: the store is global.
+    ai_watcher: Mutex<Option<TargetFileWatcher>>,
     status: Mutex<DesktopStatus>,
     /// `None` when the home directory is unavailable; the desktop then simply
     /// forgets the project between launches.
@@ -271,6 +275,92 @@ fn alignment_review(
 }
 
 #[tauri::command]
+fn ai_list(
+    state: State<'_, AppState>,
+    workspace: Option<String>,
+) -> Result<ops::AiListResponse, String> {
+    state.ops.ai_list(workspace.as_deref())
+}
+
+#[tauri::command]
+fn ai_ack(state: State<'_, AppState>, source: String, session: String) -> Result<AiRecord, String> {
+    state.ops.ai_ack(&source, &session)
+}
+
+#[tauri::command]
+fn ai_remove(
+    state: State<'_, AppState>,
+    source: String,
+    session: String,
+) -> Result<AiRecord, String> {
+    state.ops.ai_remove(&source, &session)
+}
+
+#[tauri::command]
+fn ai_link(
+    state: State<'_, AppState>,
+    source: String,
+    session: String,
+    task_id: String,
+) -> Result<AiRecord, String> {
+    state.ops.ai_link(&source, &session, &task_id)
+}
+
+#[tauri::command]
+fn ai_to_task(
+    state: State<'_, AppState>,
+    source: String,
+    session: String,
+    column: Option<String>,
+    source_path: Option<String>,
+    project_path: Option<String>,
+) -> Result<ops::AiToTaskResponse, String> {
+    state.ops.ai_to_task(
+        &source,
+        &session,
+        column.as_deref(),
+        source_path.as_deref(),
+        project_path.as_deref(),
+    )
+}
+
+/// Opens an `http`/`https` URL in the system browser.
+///
+/// Only web URLs are accepted: the AI feed contract restricts `open_url` to
+/// those, and a `file:` or custom scheme handed to the OS opener would run
+/// whatever is registered for it.
+#[tauri::command]
+fn open_external(url: String) -> Result<(), String> {
+    open_web_url(&url)
+}
+
+fn open_web_url(url: &str) -> Result<(), String> {
+    if !(url.starts_with("http://") || url.starts_with("https://")) {
+        return Err("只能打开 http/https 链接".into());
+    }
+    let mut command = if cfg!(target_os = "macos") {
+        let mut command = std::process::Command::new("open");
+        command.arg(url);
+        command
+    } else if cfg!(target_os = "windows") {
+        let mut command = std::process::Command::new("cmd");
+        command.args(["/C", "start", "", url]);
+        command
+    } else {
+        let mut command = std::process::Command::new("xdg-open");
+        command.arg(url);
+        command
+    };
+    command
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .map(|_| ())
+        .map_err(|error| format!("无法打开浏览器：{error}"))
+}
+
+#[tauri::command]
 fn desktop_status(state: State<'_, AppState>) -> Result<DesktopStatus, String> {
     let status = state
         .status
@@ -335,6 +425,53 @@ fn start_watcher(
     Ok(())
 }
 
+/// Watches the AI store's directory and tells the webview when it changes.
+///
+/// The directory may not exist before the first `todo ai upsert`; it is created
+/// here so the watch can be registered now rather than polled for later. A
+/// failure is reported once and the view then refreshes only on its own reads.
+fn start_ai_watcher(app: &tauri::AppHandle, state: &State<'_, AppState>, store_path: &Path) {
+    let Some(parent) = store_path.parent() else {
+        return;
+    };
+    let Some(file_name) = store_path.file_name() else {
+        return;
+    };
+    let watched = std::fs::create_dir_all(parent)
+        .and_then(|_| std::fs::canonicalize(parent))
+        .map(|parent| parent.join(file_name));
+    let target = match watched {
+        Ok(target) => target,
+        Err(error) => {
+            eprintln!(
+                "AI store directory {} not watched: {error}",
+                parent.display()
+            );
+            return;
+        }
+    };
+    let handle = app.clone();
+    let watcher =
+        TargetFileWatcher::spawn(
+            target,
+            Duration::from_millis(150),
+            move |signal| match signal {
+                WatchSignal::Reload => {
+                    let _ = handle.emit("desktop://ai-changed", ());
+                }
+                WatchSignal::Error(error) => eprintln!("AI store watcher error: {error}"),
+            },
+        );
+    match watcher {
+        Ok(watcher) => {
+            if let Ok(mut slot) = state.ai_watcher.lock() {
+                *slot = Some(watcher);
+            }
+        }
+        Err(error) => eprintln!("AI store not watched: {error}"),
+    }
+}
+
 fn status_after_setup(elapsed: Duration, shortcut_result: Result<(), String>) -> DesktopStatus {
     DesktopStatus {
         startup_ms: Some(elapsed.as_millis().min(u64::MAX as u128) as u64),
@@ -353,11 +490,32 @@ fn runtime_capture_store(lock_timeout: Duration) -> todo_core::Result<CaptureSto
     CaptureStore::global(lock_timeout)
 }
 
+/// The AI feed store: `TODO_AI_STORE` overrides the global path, the same
+/// convention the CLI uses so tests and the desktop can share a fixture.
+fn runtime_ai_store(lock_timeout: Duration) -> Option<AiStore> {
+    if let Some(path) = std::env::var_os("TODO_AI_STORE").filter(|value| !value.is_empty()) {
+        return Some(AiStore::new(PathBuf::from(path), lock_timeout));
+    }
+    match AiStore::global(lock_timeout) {
+        Ok(store) => Some(store),
+        Err(error) => {
+            eprintln!("AI feed store unavailable: {error}");
+            None
+        }
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let started = Instant::now();
     let capture_store = runtime_capture_store(Duration::from_secs(2))
         .expect("could not resolve the global Capture inbox path");
+    let ai_store = runtime_ai_store(Duration::from_secs(2));
+    let ai_store_path = ai_store.as_ref().map(|store| store.path().to_path_buf());
+    let mut ops = ops::DesktopOps::new(DesktopBackend::default(), capture_store);
+    if let Some(store) = ai_store {
+        ops = ops.with_ai_store(store);
+    }
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(
@@ -380,8 +538,9 @@ pub fn run() {
                 .build(),
         )
         .manage(AppState {
-            ops: ops::DesktopOps::new(DesktopBackend::default(), capture_store),
+            ops,
             watcher: Mutex::new(None),
+            ai_watcher: Mutex::new(None),
             status: Mutex::new(DesktopStatus {
                 startup_ms: None,
                 shortcut_status: ShortcutStatus::Pending,
@@ -406,6 +565,12 @@ pub fn run() {
             history_preview,
             alignment_prompt,
             alignment_review,
+            ai_list,
+            ai_ack,
+            ai_remove,
+            ai_link,
+            ai_to_task,
+            open_external,
             desktop_status
         ])
         .setup(move |app| {
@@ -429,6 +594,9 @@ pub fn run() {
                 .map_err(|_| std::io::Error::other("desktop status lock is poisoned"))? = status;
             let handle = app.handle().clone();
             reopen_last_project(&handle, &app.state::<AppState>());
+            if let Some(path) = &ai_store_path {
+                start_ai_watcher(&handle, &app.state::<AppState>(), path);
+            }
             let _ = app.emit("desktop://ready", startup_ms);
             Ok(())
         })
@@ -454,6 +622,13 @@ mod tests {
             !main.drag_drop_enabled,
             "task cards use HTML drag-and-drop, not Tauri's native file-drop handler"
         );
+    }
+
+    #[test]
+    fn only_web_urls_reach_the_system_opener() {
+        for url in ["file:///etc/passwd", "javascript:alert(1)", "todo://x", ""] {
+            assert!(open_web_url(url).is_err(), "{url:?} must be refused");
+        }
     }
 
     #[test]

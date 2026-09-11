@@ -7,24 +7,104 @@ use std::{
     time::Duration,
 };
 use todo_core::{
-    Capture, CaptureStore, DesktopBackend, DesktopIntent, ProjectBackend, ProjectSnapshot,
+    AiListFilter, AiRecord, AiStore, Capture, CaptureProject, CaptureStore, Change, DesktopBackend,
+    DesktopIntent, LockedWriter, ProjectBackend, ProjectSnapshot,
 };
 
 pub struct DesktopOps {
     pub backend: Arc<Mutex<ProjectBackend>>,
     pub capture_store: CaptureStore,
+    /// The AI feed store (`docs/ai-feed-spec.md`). `None` when the home
+    /// directory is unavailable; the AI view then reports that instead of
+    /// pretending the feed is empty.
+    ai_store: Option<AiStore>,
 }
 impl DesktopOps {
     pub fn new(backend: DesktopBackend, capture_store: CaptureStore) -> Self {
         Self {
             backend: Arc::new(Mutex::new(ProjectBackend::from_backend(backend))),
             capture_store,
+            ai_store: None,
         }
+    }
+    pub fn with_ai_store(mut self, ai_store: AiStore) -> Self {
+        self.ai_store = Some(ai_store);
+        self
     }
     fn backend(&self) -> Result<std::sync::MutexGuard<'_, ProjectBackend>, String> {
         self.backend
             .lock()
             .map_err(|_| "desktop backend lock is poisoned".to_string())
+    }
+    fn ai_store(&self) -> Result<&AiStore, String> {
+        self.ai_store
+            .as_ref()
+            .ok_or_else(|| "AI 会话存储不可用：无法确定主目录".to_string())
+    }
+    /// Every record the AI view may show, including `handled` and hidden ones;
+    /// the view applies its own pills and drops hidden records. `connected`
+    /// tells the "no host yet" empty state apart from "nothing right now".
+    pub fn ai_list(&self, workspace: Option<&str>) -> Result<AiListResponse, String> {
+        let store = self.ai_store()?;
+        let records = store
+            .list(&AiListFilter {
+                workspace: workspace.map(PathBuf::from),
+                states: Vec::new(),
+                include_all: true,
+            })
+            .map_err(stringify)?;
+        Ok(AiListResponse {
+            records,
+            connected: store.path().exists(),
+        })
+    }
+    pub fn ai_ack(&self, source: &str, session: &str) -> Result<AiRecord, String> {
+        self.ai_store()?.ack(source, session).map_err(stringify)
+    }
+    pub fn ai_remove(&self, source: &str, session: &str) -> Result<AiRecord, String> {
+        self.ai_store()?.remove(source, session).map_err(stringify)
+    }
+    pub fn ai_link(&self, source: &str, session: &str, task_id: &str) -> Result<AiRecord, String> {
+        self.ai_store()?
+            .link(source, session, task_id)
+            .map_err(stringify)
+    }
+    /// Creates a Project Task from a session and links the record to it.
+    ///
+    /// Three writes, in the order that leaves the least confusing state if one
+    /// fails: the task line first (the user's intent), then the link (so a
+    /// retry does not create a second task), then the `↳` note.
+    pub fn ai_to_task(
+        &self,
+        source: &str,
+        session: &str,
+        column: Option<&str>,
+        source_path: Option<&str>,
+        expected_root: Option<&str>,
+    ) -> Result<AiToTaskResponse, String> {
+        let store = self.ai_store()?;
+        let backend = self.backend()?;
+        if expected_root
+            .is_some_and(|root| backend.project_path() != Some(std::path::Path::new(root)))
+        {
+            return Err("project changed before this write; reload and retry".into());
+        }
+        let record = store.get(source, session).map_err(stringify)?;
+        let mut target = backend.source_backend(source_path).map_err(stringify)?;
+        let task_id = target
+            .create_task(&ai_task_body(&record), column)
+            .map_err(stringify)?;
+        let record = store.link(source, session, &task_id).map_err(stringify)?;
+        let path = target
+            .project_path()
+            .ok_or_else(|| "no project is open".to_string())?;
+        write_ai_task_note(path, &task_id, &ai_task_note(&record))
+            .map_err(|error| format!("任务 {task_id} 已创建并关联，但说明写入失败：{error}"))?;
+        Ok(AiToTaskResponse {
+            task_id,
+            record,
+            snapshot: CommandValue::from_result(backend.snapshot()),
+        })
     }
     pub fn open_project(&self, path: &str) -> Result<ProjectSnapshot, String> {
         self.backend()?.open_project(path).map_err(stringify)
@@ -309,6 +389,65 @@ pub struct ProposedRewrite {
 pub struct ScanPreview {
     pub report: todo_core::ScanReport,
     pub rewrite: Option<ProposedRewrite>,
+}
+#[derive(Debug, Clone, Serialize)]
+pub struct AiListResponse {
+    pub records: Vec<AiRecord>,
+    /// Whether a host has ever published: the store file exists on disk.
+    pub connected: bool,
+}
+#[derive(Debug, Serialize)]
+pub struct AiToTaskResponse {
+    pub task_id: String,
+    pub record: AiRecord,
+    pub snapshot: CommandValue<ProjectSnapshot>,
+}
+/// One-line task body: the title, else the question, else the session ID.
+/// A task line cannot hold newlines or comment markers, so both are removed.
+pub fn ai_task_body(record: &AiRecord) -> String {
+    let raw = record
+        .title
+        .as_deref()
+        .filter(|text| !text.trim().is_empty())
+        .or(record
+            .question
+            .as_deref()
+            .filter(|text| !text.trim().is_empty()))
+        .map(str::to_owned)
+        .unwrap_or_else(|| format!("会话 {}", record.session_id));
+    let mut body = raw
+        .replace("<!--", "")
+        .replace("-->", "")
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ");
+    const MAX_CHARS: usize = 200;
+    if body.chars().count() > MAX_CHARS {
+        body = body.chars().take(MAX_CHARS).collect::<String>() + "…";
+    }
+    body
+}
+/// The `↳` note that keeps the way back to the session.
+pub fn ai_task_note(record: &AiRecord) -> String {
+    let text = match record.open_url.as_deref() {
+        Some(url) => format!("来自 {} 会话 {}：{url}", record.source, record.session_id),
+        None => format!("来自 {} 会话 {}", record.source, record.session_id),
+    };
+    text.replace("<!--", "").replace("-->", "")
+}
+fn write_ai_task_note(path: &std::path::Path, task_id: &str, note: &str) -> todo_core::Result<()> {
+    LockedWriter::new(path, Duration::from_secs(2)).update_labeled("ai-to-task", |document| {
+        let task = document
+            .tasks
+            .iter()
+            .position(|task| task.id.as_deref() == Some(task_id))
+            .ok_or_else(|| todo_core::Error::TaskNotFound(task_id.into()))?;
+        Ok(vec![Change::SetNote {
+            task,
+            text: note.to_string(),
+        }])
+    })?;
+    Ok(())
 }
 fn content_hash(source: &str) -> String {
     use std::hash::{Hash, Hasher};

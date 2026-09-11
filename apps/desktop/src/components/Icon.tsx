@@ -24,7 +24,8 @@ export type IconName =
   | 'panel-bottom'
   | 'panel-bottom-collapsed'
   | 'minus'
-  | 'settings';
+  | 'settings'
+  | 'sparkle';
 
 const paths: Record<IconName, React.ReactNode> = {
   grid: <path d="M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4zM14 14h6v6h-6z" />,
@@ -108,6 +109,13 @@ const paths: Record<IconName, React.ReactNode> = {
     <>
       <circle cx="12" cy="12" r="3" />
       <path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3M5.3 5.3l2.1 2.1M16.6 16.6l2.1 2.1M5.3 18.7l2.1-2.1M16.6 7.4l2.1-2.1" />
+    </>
+  ),
+  // A four-point star for the agent feed: the same stroke, no fill.
+  sparkle: (
+    <>
+      <path d="M12 3c.6 4.6 3.4 7.4 8 8-4.6.6-7.4 3.4-8 8-.6-4.6-3.4-7.4-8-8 4.6-.6 7.4-3.4 8-8z" />
+      <path d="M19 15v4M17 17h4" />
     </>
   ),
 };

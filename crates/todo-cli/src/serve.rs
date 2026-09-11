@@ -17,8 +17,9 @@ use std::{
     time::Duration,
 };
 use todo_core::{
-    diff_lines, import_text, parse_file, review_alignment, scan, DesktopBackend, DesktopIntent,
-    History, LockedWriter, MoveTarget, PriorityScope, ProjectBackend, ProjectSnapshot, ScanOptions,
+    diff_lines, import_text, parse_file, review_alignment, scan, AiListFilter, AiRecord, AiStore,
+    CaptureProject, Change, DesktopBackend, DesktopIntent, History, LockedWriter, MoveTarget,
+    PriorityScope, ProjectBackend, ProjectSnapshot, ScanOptions,
 };
 use tower_http::{cors::CorsLayer, services::ServeDir};
 
@@ -27,12 +28,21 @@ struct ServeState {
     path: PathBuf,
     lock_timeout: Duration,
     read_only: bool,
+    /// The AI feed store (`docs/ai-feed-spec.md`); `None` when no home
+    /// directory could be found, in which case the AI endpoints say so.
+    ai_store: Option<AiStore>,
 }
 impl ServeState {
     fn backend(&self) -> Result<ProjectBackend, ApiError> {
         let mut backend = ProjectBackend::new(self.lock_timeout);
         backend.open_project(&self.path)?;
         Ok(backend)
+    }
+    fn ai_store(&self) -> Result<&AiStore, ApiError> {
+        self.ai_store.as_ref().ok_or_else(|| ApiError {
+            status: StatusCode::INTERNAL_SERVER_ERROR,
+            message: "AI feed store is unavailable: no home directory".into(),
+        })
     }
     fn source(&self, source: Option<&str>) -> Result<DesktopBackend, ApiError> {
         Ok(self.backend()?.source_backend(source)?)
@@ -62,12 +72,13 @@ impl From<todo_core::Error> for ApiError {
         let status = match error {
             todo_core::Error::LockTimeout { .. } => StatusCode::SERVICE_UNAVAILABLE,
             todo_core::Error::ConcurrentModification => StatusCode::CONFLICT,
-            todo_core::Error::TaskNotFound(_) | todo_core::Error::HistoryVersionNotFound(_) => {
-                StatusCode::NOT_FOUND
-            }
+            todo_core::Error::TaskNotFound(_)
+            | todo_core::Error::HistoryVersionNotFound(_)
+            | todo_core::Error::AiSessionNotFound(_) => StatusCode::NOT_FOUND,
             todo_core::Error::NotTaskFile
             | todo_core::Error::NoProject
             | todo_core::Error::InvalidTaskLine(_)
+            | todo_core::Error::InvalidTaskId(_)
             | todo_core::Error::InvalidAlignment(_) => StatusCode::BAD_REQUEST,
             _ => StatusCode::INTERNAL_SERVER_ERROR,
         };
@@ -92,16 +103,41 @@ struct SourceQuery {
     source: Option<String>,
 }
 
+/// Where the AI feed lives: `TODO_AI_STORE` overrides the global path, the
+/// same convention the CLI uses so tests never touch `~/.todo/ai/`.
+fn runtime_ai_store(lock_timeout: Duration) -> Option<AiStore> {
+    if let Some(path) = std::env::var_os("TODO_AI_STORE").filter(|value| !value.is_empty()) {
+        return Some(AiStore::new(PathBuf::from(path), lock_timeout));
+    }
+    AiStore::global(lock_timeout).ok()
+}
+
 pub fn router(
     path: PathBuf,
     lock_timeout: Duration,
     read_only: bool,
     web_root: Option<PathBuf>,
 ) -> Router {
+    router_with_ai_store(path, lock_timeout, read_only, web_root, None)
+}
+
+/// `router` with an explicit AI store path; `None` resolves it from the
+/// environment. Tests use this to point the feed at a fixture file.
+pub fn router_with_ai_store(
+    path: PathBuf,
+    lock_timeout: Duration,
+    read_only: bool,
+    web_root: Option<PathBuf>,
+    ai_store: Option<PathBuf>,
+) -> Router {
     let state = ServeState {
         path: path.canonicalize().unwrap_or(path),
         lock_timeout,
         read_only,
+        ai_store: match ai_store {
+            Some(path) => Some(AiStore::new(path, lock_timeout)),
+            None => runtime_ai_store(lock_timeout),
+        },
     };
     let api = Router::new()
         .route("/health", get(health))
@@ -122,6 +158,11 @@ pub fn router(
         .route("/history/{version}/restore", post(history_restore))
         .route("/align/prompt", get(align_prompt))
         .route("/align/review", post(align_review))
+        .route("/ai/sessions", get(ai_sessions))
+        .route("/ai/sessions/{source}/{id}/ack", post(ai_ack))
+        .route("/ai/sessions/{source}/{id}/remove", post(ai_remove))
+        .route("/ai/sessions/{source}/{id}/link", post(ai_link))
+        .route("/ai/sessions/{source}/{id}/to-task", post(ai_to_task))
         .with_state(Arc::new(state))
         .layer(CorsLayer::permissive());
     match web_root {
@@ -543,6 +584,153 @@ async fn align_review(
     let path = state.source_path(input.source_path.as_deref())?;
     Ok(Json(review_alignment(&parse_file(&path)?, &input.raw)?))
 }
+// ── AI feed ────────────────────────────────────────────────────────────────
+// Read-mostly: the host writes through `todo ai upsert`; this server only
+// reads the store and records the local marks (ack, remove, link).
+#[derive(Deserialize)]
+struct AiSessionsQuery {
+    workspace: Option<String>,
+    /// `1`/`true` includes `handled` and hidden records, like `todo ai list --all`.
+    all: Option<String>,
+}
+#[derive(Serialize)]
+struct AiSessionsResponse {
+    records: Vec<AiRecord>,
+    /// Whether a host has ever published: the store file exists on disk.
+    connected: bool,
+}
+async fn ai_sessions(
+    State(state): State<Arc<ServeState>>,
+    Query(query): Query<AiSessionsQuery>,
+) -> ApiResult<AiSessionsResponse> {
+    let store = state.ai_store()?;
+    let include_all = matches!(query.all.as_deref(), Some("1" | "true"));
+    let records = store.list(&AiListFilter {
+        workspace: query.workspace.map(PathBuf::from),
+        states: Vec::new(),
+        include_all,
+    })?;
+    Ok(Json(AiSessionsResponse {
+        records,
+        connected: store.path().exists(),
+    }))
+}
+async fn ai_ack(
+    State(state): State<Arc<ServeState>>,
+    AxumPath((source, id)): AxumPath<(String, String)>,
+) -> ApiResult<AiRecord> {
+    state.writable()?;
+    Ok(Json(state.ai_store()?.ack(&source, &id)?))
+}
+async fn ai_remove(
+    State(state): State<Arc<ServeState>>,
+    AxumPath((source, id)): AxumPath<(String, String)>,
+) -> ApiResult<AiRecord> {
+    state.writable()?;
+    Ok(Json(state.ai_store()?.remove(&source, &id)?))
+}
+#[derive(Deserialize)]
+struct AiLinkInput {
+    task_id: String,
+}
+async fn ai_link(
+    State(state): State<Arc<ServeState>>,
+    AxumPath((source, id)): AxumPath<(String, String)>,
+    Json(input): Json<AiLinkInput>,
+) -> ApiResult<AiRecord> {
+    state.writable()?;
+    Ok(Json(state.ai_store()?.link(
+        &source,
+        &id,
+        &input.task_id,
+    )?))
+}
+#[derive(Deserialize, Default)]
+struct AiToTaskInput {
+    column: Option<String>,
+    source_path: Option<String>,
+}
+#[derive(Serialize)]
+struct AiToTaskResponse {
+    task_id: String,
+    record: AiRecord,
+    snapshot: ProjectSnapshot,
+}
+/// Creates a Project Task from a session and links the record to it. Task
+/// line first, then the link (a retry must not create a second task), then
+/// the `↳` note that keeps the way back to the session.
+async fn ai_to_task(
+    State(state): State<Arc<ServeState>>,
+    AxumPath((source, id)): AxumPath<(String, String)>,
+    Json(input): Json<AiToTaskInput>,
+) -> ApiResult<AiToTaskResponse> {
+    state.writable()?;
+    let store = state.ai_store()?;
+    let record = store.get(&source, &id)?;
+    let backend = state.backend()?;
+    let mut target = backend.source_backend(input.source_path.as_deref())?;
+    let task_id = target.create_task(&ai_task_body(&record), input.column.as_deref())?;
+    let record = store.link(&source, &id, &task_id)?;
+    let path = target.project_path().ok_or(todo_core::Error::NoProject)?;
+    let note = ai_task_note(&record);
+    LockedWriter::new(path, state.lock_timeout)
+        .update_labeled("ai-to-task", |document| {
+            let task = document
+                .tasks
+                .iter()
+                .position(|task| task.id.as_deref() == Some(task_id.as_str()))
+                .ok_or_else(|| todo_core::Error::TaskNotFound(task_id.clone()))?;
+            Ok(vec![Change::SetNote { task, text: note }])
+        })
+        .map_err(|error| {
+            let api = ApiError::from(error);
+            ApiError {
+                status: api.status,
+                message: format!(
+                    "task {task_id} was created and linked, but its note was not written: {}",
+                    api.message
+                ),
+            }
+        })?;
+    Ok(Json(AiToTaskResponse {
+        task_id,
+        record,
+        snapshot: backend.snapshot()?,
+    }))
+}
+/// One-line task body: the title, else the question, else the session ID.
+/// A task line cannot hold newlines or comment markers, so both are removed.
+fn ai_task_body(record: &AiRecord) -> String {
+    let raw = record
+        .title
+        .as_deref()
+        .filter(|text| !text.trim().is_empty())
+        .or(record
+            .question
+            .as_deref()
+            .filter(|text| !text.trim().is_empty()))
+        .map(str::to_owned)
+        .unwrap_or_else(|| format!("会话 {}", record.session_id));
+    let mut body = raw
+        .replace("<!--", "")
+        .replace("-->", "")
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ");
+    const MAX_CHARS: usize = 200;
+    if body.chars().count() > MAX_CHARS {
+        body = body.chars().take(MAX_CHARS).collect::<String>() + "…";
+    }
+    body
+}
+fn ai_task_note(record: &AiRecord) -> String {
+    let text = match record.open_url.as_deref() {
+        Some(url) => format!("来自 {} 会话 {}：{url}", record.source, record.session_id),
+        None => format!("来自 {} 会话 {}", record.source, record.session_id),
+    };
+    text.replace("<!--", "").replace("-->", "")
+}
+
 fn content_hash(source: &str) -> String {
     let mut hasher = DefaultHasher::new();
     source.hash(&mut hasher);
