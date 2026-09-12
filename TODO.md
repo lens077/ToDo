@@ -28,7 +28,8 @@ columns:
 - [ ] 拍板商业模型三选项（见 docs/business-model-options.md） <!--t:aiw1hs--> #product #decision !1
 - [ ] 拍板首次运行 onboarding 方案（见 docs/onboarding-spec.md） <!--t:jrnlos--> #product #onboarding !2
 - [ ] progress 标记无法清除：--note --clear 不清 ◐，progress 0 被拒，帮助文本承诺的 unset 无法表达 <!--t:krr4qq--> #cli #bug !2
-- [ ] web.spec.ts 串行共享真实 TODO.md 无逐例重置，前序写入导致 quadrant 分组用例失败并中断其余 11 项 <!--t:1bcg1t--> #desktop #test #bug !2
+- [x] web.spec.ts 串行共享真实 TODO.md 无逐例重置，前序写入导致 quadrant 分组用例失败并中断其余 11 项 <!--t:1bcg1t--> #desktop #test #bug !2 🔗8e51f852281dcb7b27df2a29707853e3149d923c..ad1dd82e79f1f49c52df8ad60edad9fda5125945
+      ↳ 实因非串行状态泄漏：多来源落地后任务标识变为 [来源,ID] 复合键，web 规格仍按裸 ID 选择；且快速新增/扫描/历史在聚合浏览下禁用。已改为经 helper 构造复合键并显式选择来源，14/14 通过 <!--n:1bcg1t-->
 
 ## Doing
 - [ ] 人工验收看板任务写回 TODO.md <!--t:h4m9zc--> #desktop #manual !1 ^3000
