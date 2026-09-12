@@ -23,11 +23,12 @@ columns:
 - [ ] hooks context 改为跨平台进程树终止 <!--t:z5t7gq--> #cli #agents !2 ^7000
 - [ ] 评估 list 接入 SQLite 投影的触发条件 <!--t:b6r1vy--> #cli #perf !3 ^8000
 - [ ] 产出可分发的桌面端 release 构建 <!--t:d3l8hn--> #desktop #release !3 ^9000
-- [ ] 补前端 Playwright 交互层回归并纳入 CI <!--t:3zvv9u--> #desktop #test !2 🔗15ef0bb0a98a9c8c2db3ec80b9fe50e194b92c34..b45e0740b0211d5cb71f1f24a865102ae8ec7be0
-      ↳ Playwright 交互层与 web 全链路回归已纳入 CI：pnpm e2e 14 项、e2e-web.sh 5 项，ci.yml 两步骤均已接入 <!--n:3zvv9u-->
+- [x] 补前端 Playwright 交互层回归并纳入 CI <!--t:3zvv9u--> #desktop #test !2 🔗15ef0bb0a98a9c8c2db3ec80b9fe50e194b92c34..b45e0740b0211d5cb71f1f24a865102ae8ec7be0
+      ↳ 交互层 98 项通过、web 全链路 14 项已接入 CI 两个 job；2026-09-04 的 1654316 误将本项改回未完成（完成说明行被保留即为误覆盖佐证），此处恢复 <!--n:3zvv9u-->
 - [ ] 拍板商业模型三选项（见 docs/business-model-options.md） <!--t:aiw1hs--> #product #decision !1
 - [ ] 拍板首次运行 onboarding 方案（见 docs/onboarding-spec.md） <!--t:jrnlos--> #product #onboarding !2
 - [ ] progress 标记无法清除：--note --clear 不清 ◐，progress 0 被拒，帮助文本承诺的 unset 无法表达 <!--t:krr4qq--> #cli #bug !2
+- [ ] web.spec.ts 串行共享真实 TODO.md 无逐例重置，前序写入导致 quadrant 分组用例失败并中断其余 11 项 <!--t:1bcg1t--> #desktop #test #bug !2
 
 ## Doing
 - [ ] 人工验收看板任务写回 TODO.md <!--t:h4m9zc--> #desktop #manual !1 ^3000
