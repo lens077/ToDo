@@ -72,9 +72,11 @@
 |---|---|
 | 首购 | 按当前功能范围定 |
 | **续费** | **首购价的 50%–60%** |
-| 断档后回来 | 按当时标价的首购价（规则简单优先，复杂补差表会带来客服成本） |
+| 断档后回来 | **无惩罚**：停多久都按当时续费价，续费即拿到当时最新版并重新开启窗口（Panic Nova 模型） |
 
-参照：JetBrains 对连续订阅给到最高 40% 的 continuity discount，同类做法成熟。
+参照：Panic Nova 续费 $49 / 首购 $99（49%），CleanShot X 续费 $19 / 首购 $35（54%）；JetBrains 对连续订阅给到最高 40% 的 continuity discount。50%–60% 是市场实践的中心，不是拍脑袋。
+
+**断档无惩罚**是刻意的：它让规则只剩一句话，消除「停了两个月回来为什么要按首购价」这类客服争议；代价是用户可以隔年续、只在想要的功能出现时才付。这把续费收入直接绑到交付质量上——与 4.3 的交付纪律同向，不是漏洞。
 
 **续费价显著低于首购价不是促销技巧，而是这个模型能否自洽的前提。**
 
@@ -203,8 +205,8 @@
 |---|---|
 | 形态 | 买断 + 12 个月更新窗口 |
 | 首购 | $19 / ¥88（早鸟起步价） |
-| 续费 | 半价 $9 / ¥44，跟随当时标价 |
-| 免费层 | 单仓库免费，含完整核心能力 |
+| 续费 | 半价 $9 / ¥44，跟随当时标价；断档无惩罚 |
+| 免费层 | 单仓库免费，含完整核心能力（口径待定，见该项目决策④） |
 | 未来订阅 | 云同步 / 移动推送 / 团队空间，独立可选 |
 | 授权校验 | 离线验签 + 更新端点鉴权 |
 
@@ -212,7 +214,31 @@
 
 ---
 
+## 11. 市场案例（2026-05 按官方页面核对）
+
+| 产品 | 形态 | 首购 | 窗口 | 续费 | 备注 |
+|---|---|---|---|---|---|
+| **Panic Nova** | 买断 + 窗口 | $99 | 1 年 | $49/年（49%） | **断档无惩罚**；可选自动续费，取消后保留已有版本。与本文模型最接近 |
+| **CleanShot X** | 买断 + 窗口 **+ 可选云订阅** | $35 | 1 年 | $19/年（54%） | Cloud Pro $10/用户/月另售；官方明言「云不是使用本体的前提」。第 4 节双轨的完整样本 |
+| Sublime Text | 买断 + 窗口 | $99 | 3 年 | 升级另购 | 个人买断、商业订阅双轨 |
+| Agenda | 买断 + **按功能**解锁 | 一次付费 | 12 个月内新增功能永久归你 | 再付同价 | 按功能而非按时间计，需自建 license server |
+| Sketch（2016→2021） | 买断 + 窗口 → 推订阅 | $99 | 1 年 | $79→$99 | **反面教材**：推订阅后逐步阉割买断档（去云、去分享、藏定价页），被「perpetual fallback 软件清单」除名 |
+
+两条可直接复用的结论：
+
+- **续费比例的市场中心在 49%–54%**，与本文建议的 50%–60% 一致。
+- **双轨模型的长期风险不在第一年，在第三年**：Sketch 的路径是先承诺「不是订阅」，再把买断档做得不值得买。第 3 节第 5 条「数据不作人质」和第 4 节「不扣本体为人质」防的就是这条路。
+
+第三方评测页给出的 CleanShot 价格（$29 / $8）与官方页（$35 / $10）不一致，本表以官方页为准；差异本身说明「起步价随功能上调」是常规操作。
+
+---
+
 ## 证据来源
+
+- [Panic Nova 购买 FAQ](https://help.nova.app/faqs/purchasing/)、[Nova 发布博客](https://blog.panic.com/nova-is-here/)——买断 + 1 年更新 + $49 续费，断档无惩罚
+- [CleanShot X 定价页](https://cleanshot.com/pricing)——买断 + 1 年更新 + 可选 Cloud Pro 订阅
+- [Agenda 高级功能说明](https://agenda.com/manual/en/premium-features/)——按功能解锁的 12 个月窗口
+- [Sketch 2016 许可博客](https://www.sketch.com/blog/versioning-licensing-and-sketch-4-0/)、[The Register 2021 报道](https://www.theregister.com/software/2021/05/12/big-updates-to-mac-design-app-sketch-add-real-time-collaboration-but-youll-need-to-fork-out-for-a-subscription/1531459)——双轨被逐步阉割的过程
 
 - [Sublime Text store](https://www.sublimehq.com/store/text)——「once off purchase, and come with 3 years of updates」；个人买断 + 商业订阅双轨
 - [Things 官方说明](https://culturedcode.com/things/support/articles/2803552/)——买断制在本地优先工具上可长期存活的样本
