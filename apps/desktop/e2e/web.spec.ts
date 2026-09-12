@@ -35,6 +35,35 @@ async function taskFile(): Promise<string> {
   return readFile(fixturePath, 'utf8');
 }
 
+/**
+ * A served project aggregates several task files, so the UI addresses a task by
+ * its source and stable id together, and writes that pair into the DOM as the
+ * key built by `src/lib/taskSources.ts`. The mock suite never assigns a source,
+ * so a bare id still matches there; only these specs, which run against a real
+ * server, have to spell the pair out.
+ */
+function domKey(id: string, source = 'TODO.md'): string {
+  return JSON.stringify([source, id]);
+}
+
+function groupRoot(id: string): string {
+  return `[data-group-root='${domKey(id)}']`;
+}
+
+function taskNode(id: string): string {
+  return `[data-task-id='${domKey(id)}']`;
+}
+
+/**
+ * Scanning, history and the alignment prompt each act on one task file, so the
+ * UI refuses them while the project is being browsed as an aggregate. Narrowing
+ * the source filter is what a user does first, and these specs have to do the
+ * same to reach those controls at all.
+ */
+async function selectSingleSource(page: import('@playwright/test').Page): Promise<void> {
+  await page.getByRole('combobox', { name: '任务来源' }).selectOption({ label: 'TODO.md · 已管理' });
+}
+
 function taskLine(source: string, id: string): string {
   const line = source.split(/\r?\n/).find((candidate) => candidate.includes(`<!--t:${id}-->`));
   if (!line) throw new Error(`task ${id} is missing from fixture`);
@@ -90,12 +119,12 @@ test.describe('web transport', () => {
     const before = await taskFile();
     await page.goto('/');
     await page.getByRole('button', { name: '象限' }).click();
-    const group = page.locator('[data-group-root="parent1"]');
+    const group = page.locator(groupRoot('parent1'));
     await expect(group).toBeVisible();
-    await expect(group.locator('[data-task-id="child01"]')).toBeVisible();
-    await expect(group.locator('[data-task-id="child02"]')).toBeVisible();
-    await expect(group.locator('[data-task-id="child01"]')).toHaveAttribute('draggable', 'false');
-    await expect(page.getByRole('region', { name: '!2 高' }).locator('[data-group-root="parent1"]')).toBeVisible();
+    await expect(group.locator(taskNode('child01'))).toBeVisible();
+    await expect(group.locator(taskNode('child02'))).toBeVisible();
+    await expect(group.locator(taskNode('child01'))).toHaveAttribute('draggable', 'false');
+    await expect(page.getByRole('region', { name: '!2 高' }).locator(groupRoot('parent1'))).toBeVisible();
     expect(await taskFile()).toBe(before);
   });
 
@@ -109,7 +138,7 @@ test.describe('web transport', () => {
     await parent.dragTo(page.getByRole('region', { name: '!1 最高' }));
     await expect(page.getByRole('dialog')).toHaveCount(0);
     const highest = page.getByRole('region', { name: '!1 最高' });
-    await expect(highest.locator('[data-group-root="parent1"]')).toBeVisible();
+    await expect(highest.locator(groupRoot('parent1'))).toBeVisible();
     await expect(highest.getByText('发布桌面版', { exact: true })).toBeVisible();
     await expect(highest.getByText('构建 macOS 安装包', { exact: true })).toBeVisible();
     await expect(highest.getByText('编写安装说明', { exact: true })).toBeVisible();
@@ -129,13 +158,13 @@ test.describe('web transport', () => {
     await page.getByRole('button', { name: '象限' }).click();
     const before = await taskFile();
     const historyBefore = await (await page.request.get('/api/v1/history')).json();
-    const parent = page.locator('[data-task-id="parent1"]');
+    const parent = page.locator(taskNode('parent1'));
     await parent.getByRole('button', { name: '打开“发布桌面版”的任务菜单', exact: true }).click();
     await page.getByRole('menuitem', { name: '优先级…', exact: true }).click();
     await page.getByRole('menuitem', { name: /^!3 中/ }).click();
     await expect(page.getByRole('menu')).toHaveCount(0);
     await expect(page.getByRole('dialog')).toHaveCount(0);
-    await expect(page.getByRole('region', { name: '!3 中' }).locator('[data-group-root="parent1"]')).toBeVisible();
+    await expect(page.getByRole('region', { name: '!3 中' }).locator(groupRoot('parent1'))).toBeVisible();
     const after = await taskFile();
     for (const id of ['parent1', 'child01', 'child02']) {
       expect(taskLine(after, id)).toBe(taskLine(before, id).replace('!1', '!3'));
@@ -151,7 +180,7 @@ test.describe('web transport', () => {
     await page.goto('/');
     await page.getByRole('button', { name: '象限' }).click();
     const before = await taskFile();
-    await page.locator('[data-task-id="parent1"]').getByRole('button', { name: '打开“发布桌面版”的任务菜单', exact: true }).click();
+    await page.locator(taskNode('parent1')).getByRole('button', { name: '打开“发布桌面版”的任务菜单', exact: true }).click();
     const priority = page.getByRole('menuitem', { name: '优先级…', exact: true });
     await priority.focus();
     await priority.press('ArrowRight');
@@ -170,7 +199,7 @@ test.describe('web transport', () => {
     await page.getByRole('button', { name: '象限' }).click();
     const before = await taskFile();
     expect(taskLine(before, 'child01')).toMatch(/^    - \[ \]/);
-    const card = page.locator('[data-task-id="parent1"]');
+    const card = page.locator(taskNode('parent1'));
 
     for (const priority of [1, 2, 1, 2, 1, 2]) {
       const destination = page.getByRole('region', { name: priority === 1 ? '!1 最高' : '!2 高' });
@@ -187,10 +216,10 @@ test.describe('web transport', () => {
         expected = expected.replace(taskLine(before, id), taskLine(before, id).replace('!2', `!${priority}`));
       }
       await expect.poll(taskFile).toBe(expected);
-      const group = destination.locator('[data-group-root="parent1"]');
+      const group = destination.locator(groupRoot('parent1'));
       await expect(group).toBeVisible();
-      await expect(group.locator('[data-task-id="child01"]')).toBeVisible();
-      await expect(group.locator('[data-task-id="child02"]')).toBeVisible();
+      await expect(group.locator(taskNode('child01'))).toBeVisible();
+      await expect(group.locator(taskNode('child02'))).toBeVisible();
       await expect(page.getByRole('dialog')).toHaveCount(0);
     }
     expect(await taskFile()).toBe(before);
@@ -203,10 +232,10 @@ test.describe('web transport', () => {
     await page.getByRole('button', { name: '象限' }).click();
     const before = await taskFile();
     const destination = page.getByRole('region', { name: '!1 最高' });
-    const parent = page.locator('[data-task-id="parent1"]');
+    const parent = page.locator(taskNode('parent1'));
     expect(await parent.evaluate((node) => getComputedStyle(node).getPropertyValue('-webkit-user-drag'))).toBe('element');
     await parent.dragTo(destination, { sourcePosition: { x: 150, y: 45 } });
-    const group = destination.locator('[data-group-root="parent1"]');
+    const group = destination.locator(groupRoot('parent1'));
     await expect(group).toBeVisible();
     const after = await taskFile();
     for (const id of ['parent1', 'child01', 'child02']) {
@@ -236,15 +265,15 @@ test.describe('web transport', () => {
     try {
       await page.getByRole('button', { name: '重新载入 Snapshot' }).click();
       await readCaptured;
-      const card = page.locator('[data-task-id="parent1"]');
+      const card = page.locator(taskNode('parent1'));
       await card.focus();
       await card.press('4');
       const destination = page.getByRole('region', { name: '!4 低' });
-      await expect(destination.locator('[data-group-root="parent1"]')).toBeVisible();
+      await expect(destination.locator(groupRoot('parent1'))).toBeVisible();
       const oldResponse = page.waitForResponse((response) => response.url().endsWith('/api/v1/snapshot'));
       releaseRead();
       await oldResponse;
-      await expect(destination.locator('[data-group-root="parent1"]')).toBeVisible();
+      await expect(destination.locator(groupRoot('parent1'))).toBeVisible();
     } finally {
       releaseRead();
       await page.unrouteAll({ behavior: 'wait' });
@@ -298,6 +327,11 @@ test.describe('web transport', () => {
   test('writes reach the file through the API', async ({ page }) => {
     await page.goto('/');
 
+    // A served project can aggregate several task files, so quick-add stays
+    // disabled until one is named: writing a task into an unstated file is the
+    // ambiguity this control exists to prevent.
+    await page.getByRole('combobox', { name: '新增到来源' }).selectOption('TODO.md');
+
     const input = page.getByPlaceholder(/新增|添加/).first();
     await input.fill('从 Web 端新建的任务');
     await input.press('Enter');
@@ -311,6 +345,7 @@ test.describe('web transport', () => {
 
   test('scanning runs against the real repository', async ({ page }) => {
     await page.goto('/');
+    await selectSingleSource(page);
     await page.getByRole('button', { name: /扫描与历史/ }).click();
     await page.getByRole('button', { name: '扫描', exact: true }).click();
 
@@ -321,10 +356,12 @@ test.describe('web transport', () => {
     // Self-sufficient: specs run in parallel against one server, so this cannot
     // depend on another test having written first.
     await page.goto('/');
+    await page.getByRole('combobox', { name: '新增到来源' }).selectOption('TODO.md');
     const input = page.getByPlaceholder(/新增|添加/).first();
     await input.fill(`历史用例 ${Date.now()}`);
     await input.press('Enter');
 
+    await selectSingleSource(page);
     await page.getByRole('button', { name: /扫描与历史/ }).click();
     await page.getByRole('button', { name: '刷新历史' }).click();
 
