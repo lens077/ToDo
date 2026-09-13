@@ -1337,8 +1337,25 @@ export const desktop = {
       await call<void>(mode === 'reuse' ? 'open_session_window' : 'open_external', { url });
       return;
     }
-    if (!useHttp()) {
-      (window.__todoMockOpenSessions ??= []).push({ url, mode });
+    if (!useHttp()) (window.__todoMockOpenSessions ??= []).push({ url, mode });
+    if (mode === 'reuse-existing') {
+      const channel = 'todo-dsh-firefox-v1';
+      const requestId = crypto.randomUUID();
+      const result = await new Promise<{ ok: boolean; error?: string }>((resolve) => {
+        let settled = false;
+        const finish = (value: { ok: boolean; error?: string }) => { if (!settled) { settled = true; window.removeEventListener('message', onMessage); resolve(value); } };
+        const onMessage = (event: MessageEvent) => {
+          if (event.source === window && event.data?.channel === channel && event.data?.type === 'open-session-result' && event.data.requestId === requestId) finish(event.data);
+        };
+        window.addEventListener('message', onMessage);
+        window.postMessage({ channel, type: 'open-session', requestId, url, expiresAt: Date.now() + 1500 }, window.location.origin);
+        window.setTimeout(() => finish({ ok: false, error: 'Firefox 扩展未响应' }), 2000);
+      });
+      if (result.ok) return;
+      // Extension unavailable: retain the existing safe web reuse behavior.
+      window.open(url, SESSION_TAB_NAME);
+      // Fallback is a successful user-visible navigation, not an operation error.
+      return;
     }
     if (mode === 'reuse') window.open(url, SESSION_TAB_NAME);
     else window.open(url, '_blank', 'noopener,noreferrer');

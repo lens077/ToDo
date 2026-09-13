@@ -1,0 +1,1 @@
+{"name":"dsh-todo-browser-firefox","private":true,"scripts":{"test":"node --test"},"type":"commonjs"}

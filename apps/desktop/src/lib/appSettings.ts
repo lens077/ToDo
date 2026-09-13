@@ -25,11 +25,12 @@ export const LAYOUT_DENSITIES: ReadonlyArray<{ value: LayoutDensity; label: stri
  *   another session navigates it instead of adding a tab.
  * - `new-tab`: the system browser, a new tab every time.
  */
-export type OpenSessionMode = 'reuse' | 'new-tab';
+export type OpenSessionMode = 'reuse' | 'new-tab' | 'reuse-existing';
 
 export const OPEN_SESSION_MODES: ReadonlyArray<{ value: OpenSessionMode; label: string; note: string }> = [
   { value: 'reuse', label: '复用同一窗口', note: '在 ToDo 自带的窗口里打开 DSH，再次打开时切换会话，不新开标签页。' },
   { value: 'new-tab', label: '每次新开标签页', note: '用系统默认浏览器打开。' },
+  { value: 'reuse-existing', label: '复用已打开的 DSH 标签页', note: 'Firefox 扩展会定位已打开的 DSH 标签页；扩展不可用时回退为复用同一窗口。' },
 ];
 
 /**
@@ -59,7 +60,7 @@ function isDensity(value: unknown): value is LayoutDensity {
 }
 
 function isOpenSessionMode(value: unknown): value is OpenSessionMode {
-  return value === 'reuse' || value === 'new-tab';
+  return value === 'reuse' || value === 'new-tab' || value === 'reuse-existing';
 }
 
 function normalize(value: unknown): AppSettings {
