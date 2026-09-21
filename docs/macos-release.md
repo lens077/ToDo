@@ -1,6 +1,6 @@
 # macOS 发布、签名与公证
 
-本文档供发布维护者使用，说明如何生成 macOS CLI 与 `Todo.app`，以及如何用 Developer ID 完成签名和 Apple 公证。
+本文档供发布维护者使用，说明如何生成 macOS CLI 与 `Sumery Virgo.app`，以及如何用 Developer ID 完成签名和 Apple 公证。
 
 > 本仓库没有可用于发布的 Developer ID 证书或 Apple 公证凭据。所有依赖真实凭据的验收项均标记为 `〔待验证〕`。本地 ad-hoc 签名不能替代 Developer ID 签名。
 
@@ -88,8 +88,8 @@ make package-macos OUTPUT_DIR=target/my-release
 `Makefile` 调用 `scripts/package-macos.sh`。脚本执行以下操作：
 
 1. 使用 `cargo build --locked --release -p todo-cli` 构建 CLI。
-2. 使用 Tauri 构建 `Todo.app`。
-3. 对本地 `Todo.app` 应用 ad-hoc 深签名，并用 `codesign --verify --deep --strict` 检查 bundle 完整性。
+2. 使用 Tauri 构建 `Sumery Virgo.app`。
+3. 对本地 `Sumery Virgo.app` 应用 ad-hoc 深签名，并用 `codesign --verify --deep --strict` 检查 bundle 完整性。
 4. 生成 CLI 压缩包、应用压缩包与 `SHA256SUMS`。
 5. 给文件名添加 `local-unnotarized` 后缀，并打印不可分发警告。
 
@@ -112,10 +112,10 @@ git push origin v0.1.0
 2. 校验标签与应用版本一致。
 3. 校验所有发布 secrets 都已配置。
 4. 把 `.p12` 证书导入临时 keychain。
-5. 用 Developer ID 签名 CLI，并由 Tauri 签名 `Todo.app`。
+5. 用 Developer ID 签名 CLI，并由 Tauri 签名 `Sumery Virgo.app`。
 6. 用 `codesign --verify --deep --strict` 检查签名，并校验证书类型与 Team ID。
-7. 使用临时 `.p8` API key 文件，分别把 `Todo.app` 和 CLI 提交给 `xcrun notarytool`。只有状态为 `Accepted` 才继续。
-8. 把公证票据 staple 到 `Todo.app`，运行 `stapler validate`，并对应用与 CLI 分别运行 `spctl --assess`。独立 CLI 不能 staple 公证票据，Gatekeeper 会在线查询它的公证记录。
+7. 使用临时 `.p8` API key 文件，分别把 `Sumery Virgo.app` 和 CLI 提交给 `xcrun notarytool`。只有状态为 `Accepted` 才继续。
+8. 把公证票据 staple 到 `Sumery Virgo.app`，运行 `stapler validate`，并对应用与 CLI 分别运行 `spctl --assess`。独立 CLI 不能 staple 公证票据，Gatekeeper 会在线查询它的公证记录。
 9. 生成压缩包和 `SHA256SUMS`。
 10. 构建 job 上传工作流产物；标签触发时，无 Apple 凭据的发布 job 下载已验证产物并附加到 GitHub Release。
 
@@ -150,8 +150,8 @@ spctl --assess --type execute --verbose=2 /tmp/todo-release-check/todo
 以下步骤需要真实证书或 Apple 公证账户，本次实现无法在本地诚实复现：
 
 1. `〔待验证〕` GitHub Actions 能从 `macos-release` Environment 导入真实 `.p12` 证书，并解码真实 App Store Connect `.p8` 私钥。
-2. `〔待验证〕` Tauri 生成的 `Todo.app` 和独立 CLI 均显示正确的 Developer ID Application authority 与 Team ID。
-3. `〔待验证〕` Apple 公证服务使用团队 API key 对两个产物返回 `Accepted`，且 `Todo.app` 能成功 staple 公证票据。
-4. `〔待验证〕` 从 GitHub Release 重新下载的 `Todo.app` 与 CLI 均通过 `spctl --assess`，且 CLI 通过 `codesign --verify`。
+2. `〔待验证〕` Tauri 生成的 `Sumery Virgo.app` 和独立 CLI 均显示正确的 Developer ID Application authority 与 Team ID。
+3. `〔待验证〕` Apple 公证服务使用团队 API key 对两个产物返回 `Accepted`，且 `Sumery Virgo.app` 能成功 staple 公证票据。
+4. `〔待验证〕` 从 GitHub Release 重新下载的 `Sumery Virgo.app` 与 CLI 均通过 `spctl --assess`，且 CLI 通过 `codesign --verify`。
 
 完成这些验证后，把工作流 URL、产物 SHA-256 和验证命令输出记录到发布记录中。不要只记录「工作流为绿色」。

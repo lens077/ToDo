@@ -1,5 +1,9 @@
 # ToDo
 
+**Sumery Virgo**（室女座）——给 AI 协作开发者的本地任务对账器，Markdown 是唯一事实源。
+
+**Sumery** 是品牌，**Virgo** 是桌面产品名（`Sumery Virgo` / 菜单栏 `Virgo` / `com.sumery.virgo`）；仓库 `ToDo`、CLI `todo`、`TODO.md` 格式是工程名，不改。规则见 Sumery 品牌系统（Libra 仓库 `docs/brand/DESIGN.md`），`apps/desktop/src/identity.test.ts` 把字段钉死。
+
 给 AI 协作开发者的本地任务对账器。任务状态与代码现实发生漂移时，人和 agent 可能被过期任务误导，重复已经完成的工作。
 
 ToDo 把每个仓库的 Project Task 保存在该仓库的 `TODO.md` 中，以可审计的 Git 物证辅助对账；回写只修改工具识别的字节区间，未识别内容逐字节保留；对账结论只报告，不擅自改写完成状态。CLI 是标准接口，桌面看板是同一事实源的视图和编辑入口。

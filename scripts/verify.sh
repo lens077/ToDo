@@ -17,6 +17,7 @@ cargo fmt --all -- --check
 cargo test --workspace --locked
 cargo clippy --workspace --all-targets --locked -- -D warnings
 pnpm typecheck
+pnpm --filter @todo/desktop test:identity
 pnpm build
 pnpm e2e
 ./scripts/e2e-web.sh

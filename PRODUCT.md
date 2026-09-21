@@ -8,7 +8,7 @@
 
 web
 
-- 桌面端是 Tauri 2 壳（bundle `productName` `Todo`，标识 `dev.todo.desktop`，主窗口 1180×780，另有预创建的隐藏速记窗口）内的同一份 React 构建；同一构建也由 `todo serve --web-root` 在浏览器中运行，并带 PWA manifest（`apps/desktop/public/manifest.webmanifest`，`display: standalone`，描述文案「本地优先的 Markdown 任务看板」）。字段取 `web` 的原因：渲染的是 HTML/CSS，Impeccable 的 web 工具链（live、检测器、audit）适用。
+- 桌面端是 Tauri 2 壳（bundle `productName` `Sumery Virgo`，标识 `com.sumery.virgo`，主窗口 1180×780，另有预创建的隐藏速记窗口）内的同一份 React 构建；同一构建也由 `todo serve --web-root` 在浏览器中运行，并带 PWA manifest（`apps/desktop/public/manifest.webmanifest`，`display: standalone`，名称「Sumery Virgo」）。字段取 `web` 的原因：渲染的是 HTML/CSS，Impeccable 的 web 工具链（live、检测器、audit）适用。
 - **绑定约束（2026-09-06，产品负责人）：桌面端遵循 macOS 原生惯例。** 原话记录，不在此展开。
 - **已裁定（2026-09-06）：** 产品负责人确认改为遵循 macOS 惯例，替换 `docs/desktop-mvp-spec.md` §2 原「工程笔记与编辑台」视觉方向（其中明确禁止系统字体，并未禁止原生控件）。旧外观只作证据与反参照；本轮选择「市政简报」`civic-bureau-prospectus-late-modern`，新的视觉权威为 `apps/desktop/DESIGN.md`，覆盖整个应用（四个视图、对话框、菜单）。
 - 移动端不是当前平台：`todo serve --read-only` 是「在手机上看」的既定路径（所有写入端点返回 403，前端探测到只读后直接拒绝写操作）；Tauri 移动端列为首版不做，形态见 `DECISIONS.md` 决策③（未决）。
@@ -60,7 +60,9 @@ web
 
 ## Brand Commitments
 
-- 名称：产品叫 **ToDo**，桌面端窗口标题与 bundle `productName` 为 `Todo`，界面品牌标记 `FIELD / TODO · LOCAL WORK MEMORY`（缩写标记 `FT`）。
+- 名称：品牌 **Sumery**，桌面产品 **Virgo**（室女座）。Finder、Spotlight、窗口标题与 bundle `productName` 为 `Sumery Virgo`，菜单栏 `Virgo`，标识符 `com.sumery.virgo`。仓库名 `ToDo`、CLI `todo`、crate `todo-*`、文件格式 `TODO.md` 不改——CLI 是格式的工具，不是品牌产品。旧标记 `FIELD / TODO · LOCAL WORK MEMORY`（`FT`）已移除，侧栏品牌区按品牌系统 §4：产品图标 + `SUMERY · VIRGO` kicker + `Virgo`。
+- 命名、操作系统字段、图标外壳、页脚与定价原则以 Sumery 品牌系统为准（Libra 仓库 `docs/brand/DESIGN.md`）；`apps/desktop/src/identity.test.ts` 把这些字段钉死。
+- 色相是琥珀：图标渐变 `#ffb347 → #ffe08a`；界面文字/线条强调 `--accent #b45309`（琥珀本身在纸面上不可读），填充控件 `--primary-fill #f5a524` 配深色字 `#1b1547`。图标由品牌生成器出（麦穗：一记粗勾 + 三颗递减的奶油色星点）。
 - **视觉承诺（2026-09-06 产品负责人确认）：** 桌面端遵循 macOS 原生惯例；外观跟随系统，浅色与深色两套都做；工艺标尺是 Linear 与 Raycast 的 Mac 版（键盘优先、命令面板、紧凑密度）。本文件不记录视觉配方；系统化记录归 `apps/desktop/DESIGN.md`。
 - 已作废的旧约定（仅作证据与反参照）：`docs/desktop-mvp-spec.md` §2「工程笔记与编辑台」——暖纸色底、墨蓝黑正文、钴蓝强调、Bricolage Grotesque 与 JetBrains Mono、「不用系统字体、不默认暗色」。现有界面截图存于 `apps/desktop/.impeccable/review/incumbent/`。
 - 语言：界面与文档为简体中文；ID、日期、物证、快捷键用等宽字体。

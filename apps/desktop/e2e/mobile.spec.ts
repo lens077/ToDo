@@ -174,7 +174,7 @@ test('PWA manifest and declared icons load', async ({ request }) => {
     lang: string;
     icons: Array<{ src: string; purpose: string }>;
   };
-  expect(manifest).toMatchObject({ name: 'Todo', display: 'standalone', lang: 'zh-CN' });
+  expect(manifest).toMatchObject({ name: 'Sumery Virgo', display: 'standalone', lang: 'zh-CN' });
   expect(manifest.icons.some((icon) => icon.purpose === 'maskable')).toBe(true);
 
   for (const icon of manifest.icons) {

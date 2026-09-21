@@ -1,13 +1,13 @@
 {
-  "name": "Todo",
-  "short_name": "Todo",
-  "description": "本地优先的 Markdown 任务看板",
+  "name": "Sumery Virgo",
+  "short_name": "Virgo",
+  "description": "给 AI 协作开发者的本地任务对账器，Markdown 是唯一事实源",
   "lang": "zh-CN",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
-  "background_color": "#F3F0E8",
-  "theme_color": "#1C2733",
+  "background_color": "#f7f7fa",
+  "theme_color": "#1b1547",
   "orientation": "any",
   "icons": [
     {

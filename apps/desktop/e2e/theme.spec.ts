@@ -35,12 +35,12 @@ for (const scheme of ['light', 'dark'] as const) {
     if (scheme === 'light') {
       // Tinted paper: the surface stays bright, the ink is the page ink.
       expect(colors.darkest).toBeGreaterThan(0.8);
-      expect(colors.background).toBe('linear-gradient(rgb(245, 243, 254) 0%, rgb(237, 234, 251) 100%)');
+      expect(colors.background).toBe('linear-gradient(rgb(255, 248, 236) 0%, rgb(253, 241, 220) 100%)');
       expect(colors.color).toBe('rgb(27, 21, 71)');
     } else {
       // Night: one step above the panel, never a bright block.
       expect(colors.brightest).toBeLessThan(0.06);
-      expect(colors.background).toContain('rgb(35, 32, 73)');
+      expect(colors.background).toContain('rgb(42, 35, 64)');
       expect(colors.color).toBe('rgb(236, 234, 247)');
     }
   });

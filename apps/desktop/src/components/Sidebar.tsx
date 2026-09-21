@@ -46,11 +46,11 @@ export function Sidebar({
 
   return (
     <aside className="sidebar">
-      <div className="sidebar__brand" aria-label="Field Todo">
-        <span className="sidebar__brand-mark">FT</span>
+      <div className="sidebar__brand" aria-label="Sumery Virgo">
+        <img alt="" className="sidebar__brand-mark" height={22} src="./favicon.svg" width={22} />
         <div>
-          <strong>FIELD / TODO</strong>
-          <span>LOCAL WORK MEMORY</span>
+          <span className="sidebar__brand-kicker">SUMERY · VIRGO</span>
+          <strong>Virgo</strong>
         </div>
       </div>
 

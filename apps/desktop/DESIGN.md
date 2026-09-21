@@ -1,18 +1,23 @@
 ---
-name: ToDo / 市政简报
+name: Virgo / 市政简报
+brand: ../../../work/docs/brand/DESIGN.md
 description: 骨白纸面、发丝分带与丝带线焦点组成的本地工作台，三档密度共用一套语法。
 colors:
   paper: "#f7f7fa"
   panel: "#ffffff"
   ink: "#1b1547"
-  violet: "#6b5ce7"
-  violet-wash: "#eeebfc"
+  virgo: "#ffb347"
+  virgo-light: "#ffe08a"
+  accent: "#b45309"
+  accent-wash: "#fdf1dc"
+  primary-fill: "#f5a524"
+  primary-ink: "#1b1547"
   danger: "#c93e33"
   danger-fill: "#c93e33"
   night: "#0f0d22"
   panel-dark: "#171433"
   ink-dark: "#eceaf7"
-  violet-dark: "#8c80f0"
+  accent-dark: "#fbbf24"
   danger-dark: "#f3857b"
 typography:
   body:
@@ -35,8 +40,8 @@ spacing:
   workspace: "28px"
 components:
   button-primary:
-    backgroundColor: "{colors.violet}"
-    textColor: "{colors.panel}"
+    backgroundColor: "{colors.primary-fill}"
+    textColor: "{colors.primary-ink}"
     rounded: "{rounded.control}"
     padding: "0 16px"
   input:
@@ -45,13 +50,13 @@ components:
     rounded: "{rounded.control}"
     padding: "0 11px"
   nav-selected:
-    backgroundColor: "{colors.violet-wash}"
-    textColor: "{colors.violet}"
+    backgroundColor: "{colors.accent-wash}"
+    textColor: "{colors.accent}"
     rounded: "{rounded.control}"
     padding: "6px 9px"
   tag:
-    backgroundColor: "{colors.violet-wash}"
-    textColor: "{colors.violet}"
+    backgroundColor: "{colors.accent-wash}"
+    textColor: "{colors.accent}"
     rounded: "{rounded.chip}"
     padding: "2px 7px"
   task-card:
@@ -60,17 +65,23 @@ components:
     rounded: "{rounded.panel}"
     padding: "12px 14px 12px"
 ---
-# Design System: ToDo / 市政简报
+# Design System: Virgo / 市政简报
+
+品牌、命名、图标外壳、页脚与定价原则见 Sumery 品牌系统（Libra 仓库 `docs/brand/DESIGN.md`）。本文件只定义 Virgo 的强调色、界面语言与组件。
+
+## 色相
+
+Virgo 的色相是琥珀：图标渐变 `#ffb347 → #ffe08a`。琥珀本身在纸面上不可读（对比度不足 4.5:1），所以界面分两层：文字、线条、选中态用 `--accent #b45309`（夜版 `#fbbf24`），填充控件用 `--primary-fill #f5a524` 配深色字 `--primary-ink #1b1547`。原「工作紫」`#6b5ce7` 已退役，下文凡说「紫」处按此映射读：文字紫 → `--accent`，紫洗底 → `--accent-wash`，实心按钮紫 → `--primary-fill`。
 ## Overview
 **Creative North Star: "市政简报"**
-一份市政简报做成的工作台：骨白纸面、发丝分带、丝带线焦点。采用用户选定的 `civic-bureau-prospectus-late-modern`；系统字体、macOS 惯例与 Linear / Raycast 的 Mac 版工艺标尺优先，不照搬营销页构图。外观跟随系统。**2026-09-07 用户裁定：推进中任务卡不再是深色漆面**（反差过大、体量过重），改为「衬色纸面」——比页面高一档的紫洗底、同一主墨、卡片顶边一条 2px 青→丁香→紫丝带线；夜版为比面板略亮一档的深底，同样带丝带线。
+一份市政简报做成的工作台：骨白纸面、发丝分带、丝带线焦点。采用用户选定的 `civic-bureau-prospectus-late-modern`；系统字体、macOS 惯例与 Linear / Raycast 的 Mac 版工艺标尺优先，不照搬营销页构图。外观跟随系统。**2026-09-07 用户裁定：推进中任务卡不再是深色漆面**（反差过大、体量过重），改为「衬色纸面」——比页面高一档的琥珀洗底、同一主墨、卡片顶边一条 2px 青→淡琥珀→琥珀丝带线；夜版为比面板略亮一档的深底，同样带丝带线。
 **Key Characteristics:**
 - 纸面分带、系统字体两字重；页面上没有任何深色色块。
 - 推进中任务以衬色纸面与顶边丝带线区分，丝带仍是唯一多彩物。
 - 三档布局密度（正常 / 中等 / 效率）共用同一语法，由本机设置切换。
 范围是 Tauri / Web 共用的整个 React UI。产品事实继承根 `PRODUCT.md`，Operate 模式与页面策略留在 `.impeccable/surfaces/src-app-tsx.md`。依据完整 `src/style.css`、`Ribbon.tsx`、主要组件及最新 desktop/mobile/dark 截图抽取，不是静态稿还原。`finish-verdict.md` 的 ship 仅覆盖待办列扁平化修复，不代表整应用可访问性认证。
 ## Colors
-Primary 为工作紫：主操作、选中、今天与部分完成。CSS `--primary-fill` 两种外观均保持浅色紫，夜版仅文字紫提亮；实心按钮悬停浅色为 `#5a4bd6`、夜版为 `#7c6ef0`，配白字。
+Primary 为琥珀：主操作、选中、今天与部分完成。CSS `--primary-fill #f5a524` 两种外观相同，配深字 `#1b1547`；悬停浅色为 `#e3941a`、夜版为 `#fbbf24`。文字与线条用可读的 `--accent #b45309`（夜版 `#fbbf24`）。
 Secondary 为语义朱红与证据青：危险文字采用 frontmatter 的浅深配对；失败实心提交固定 danger-fill。浅色成功文字 `#177a71`，夜版 `#7fd8d0`。丝带端点为 `#7fd8d0`、`#c9b8f0`、`#5b4fd6`，焦点进度条可复用。
 Neutral 为纸地、面板与主墨。次级面浅/深为 `#f1f1f6` / `#1e1a40`，次墨为 `#4b5165` / `#b4b2cc`，注释墨为 `#6c7189` / `#8b89a8`；发丝为 `#e6e7ee` / `#2a2652`，加强发丝为 `#d3d4e0` / `#3a3568`。主墨不用纯黑。复用核心令牌在 frontmatter；其余精确语义洗色与材料以 CSS 为准，不制造平行全量令牌库。
 **The Semantic Fill Rule.** 危险文字与危险实心底色是两个角色；夜版提亮文字，不提亮失败按钮底色。

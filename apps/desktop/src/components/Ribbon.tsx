@@ -2,7 +2,7 @@ import * as React from 'react';
 
 /**
  * The one coloured object in the interface: a silk ribbon of teal, lilac and
- * violet light rendered by a fragment shader. It reacts to the pointer (the
+ * amber light rendered by a fragment shader. It reacts to the pointer (the
  * crest bends a few pixels toward the cursor) and otherwise holds still, so it
  * reads as material rather than as motion. Without WebGL, or under reduced
  * motion, a static frame is drawn once and the pointer is ignored.
@@ -23,7 +23,7 @@ uniform float u_phase;    // stable fold geometry across mounts
 
 vec3 teal = vec3(0.498, 0.847, 0.816);
 vec3 lilac = vec3(0.788, 0.722, 0.941);
-vec3 violet = vec3(0.357, 0.310, 0.839);
+vec3 amber = vec3(0.961, 0.647, 0.141);
 
 void main() {
   vec2 uv = gl_FragCoord.xy / u_res;
@@ -50,7 +50,7 @@ void main() {
   float shade = 0.82 + 0.18 * cos((x * 3.7 + 1.2 + u_phase) * 3.14159);
 
   vec3 col = mix(teal, lilac, smoothstep(0.05, 0.55, x));
-  col = mix(col, violet, smoothstep(0.5, 1.0, x));
+  col = mix(col, amber, smoothstep(0.5, 1.0, x));
   col = col * shade + sheen;
   col += u_glow * 0.12;
 

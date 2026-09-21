@@ -41,7 +41,7 @@ build: ## Build the release CLI and production web assets
 	$(CARGO) build --locked --release -p todo-cli
 	$(PNPM) --filter @todo/desktop build
 
-bundle-macos: ## Build target/release/bundle/macos/Todo.app
+bundle-macos: ## Build "target/release/bundle/macos/Sumery Virgo.app"
 	env \
 	  -u APPLE_SIGNING_IDENTITY \
 	  -u APPLE_ID \

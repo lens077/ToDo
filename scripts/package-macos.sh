@@ -68,13 +68,14 @@ cd "$ROOT"
 VERSION="$(node -e 'const fs = require("fs"); const config = JSON.parse(fs.readFileSync("apps/desktop/src-tauri/tauri.conf.json", "utf8")); process.stdout.write(config.version);')"
 HOST_TRIPLE="$(rustc -vV | awk '/^host:/ { host = $2 } END { print host }')"
 CLI_BIN="$ROOT/target/release/todo"
-APP_BUNDLE="$ROOT/target/release/bundle/macos/Todo.app"
+# The bundle is named after tauri.conf.json productName ("Sumery Virgo").
+APP_BUNDLE="$ROOT/target/release/bundle/macos/Sumery Virgo.app"
 ARTIFACT_QUALIFIER=""
 if [[ "$SIGN_AND_NOTARIZE" == "0" ]]; then
   ARTIFACT_QUALIFIER="-local-unnotarized"
 fi
 CLI_ARCHIVE="todo-${VERSION}-${HOST_TRIPLE}${ARTIFACT_QUALIFIER}.tar.gz"
-APP_ARCHIVE="Todo-${VERSION}-${HOST_TRIPLE}${ARTIFACT_QUALIFIER}.app.zip"
+APP_ARCHIVE="Sumery-Virgo-${VERSION}-${HOST_TRIPLE}${ARTIFACT_QUALIFIER}.app.zip"
 STAGING_DIR="$(mktemp -d "${TMPDIR:-/tmp}/todo-release.XXXXXX")"
 
 cleanup() {
@@ -125,7 +126,7 @@ if [[ "$SIGN_AND_NOTARIZE" == "1" ]]; then
   codesign --force --options runtime --timestamp \
     --sign "$APPLE_SIGNING_IDENTITY" "$CLI_BIN"
 
-  echo "==> building and signing Todo.app"
+  echo "==> building and signing Sumery Virgo.app"
   env \
     -u APPLE_ID \
     -u APPLE_PASSWORD \
@@ -135,7 +136,7 @@ if [[ "$SIGN_AND_NOTARIZE" == "1" ]]; then
     -u APPLE_API_KEY_PATH \
     pnpm --filter @todo/desktop tauri build --bundles app
 else
-  echo "==> building Todo.app for local validation"
+  echo "==> building Sumery Virgo.app for local validation"
   env \
     -u APPLE_SIGNING_IDENTITY \
     -u APPLE_ID \
@@ -159,13 +160,13 @@ fi
 if [[ "$SIGN_AND_NOTARIZE" == "1" ]]; then
   echo "==> verifying Developer ID signatures"
   verify_developer_id_signature "$CLI_BIN" "todo CLI"
-  verify_developer_id_signature "$APP_BUNDLE" "Todo.app"
+  verify_developer_id_signature "$APP_BUNDLE" "Sumery Virgo.app"
 
-  echo "==> submitting Todo.app for notarization"
-  APP_NOTARY_ARCHIVE="$STAGING_DIR/Todo-notarization.zip"
-  APP_NOTARY_RESULT="$STAGING_DIR/Todo-notarization.json"
+  echo "==> submitting Sumery Virgo.app for notarization"
+  APP_NOTARY_ARCHIVE="$STAGING_DIR/Virgo-notarization.zip"
+  APP_NOTARY_RESULT="$STAGING_DIR/Virgo-notarization.json"
   ditto -c -k --sequesterRsrc --keepParent "$APP_BUNDLE" "$APP_NOTARY_ARCHIVE"
-  submit_for_notarization "$APP_NOTARY_ARCHIVE" "Todo.app" "$APP_NOTARY_RESULT"
+  submit_for_notarization "$APP_NOTARY_ARCHIVE" "Sumery Virgo.app" "$APP_NOTARY_RESULT"
   xcrun stapler staple "$APP_BUNDLE"
   xcrun stapler validate "$APP_BUNDLE"
   spctl --assess --type execute --verbose=2 "$APP_BUNDLE"
