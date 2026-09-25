@@ -16,16 +16,20 @@ columns:
 ## Todo
 
 - [x] init 与 adopt 改用原子创建，消除 TOCTOU 窗口 <!--t:kq3n8w--> #core #safety !1 ^1000 🔗08171d57b008cf32d33455f9b91efc61b84c3c7c..8673510ea9dea7ff61b7a7f948c0f5c9f5a57a21
-- [x] 人工验收原生文件选择器打开项目 <!--t:p7v2ld--> #desktop #manual !1 ^2000
+- [ ] 人工验收原生文件选择器打开项目 <!--t:p7v2ld--> #desktop #manual !1 ^2000
 - [ ] 人工验收外部编辑后界面刷新 <!--t:w8s5rt--> #desktop #manual !1 ^4000
 - [ ] 移除 research 文档中的本机绝对路径 <!--t:c2j6xb--> #docs !2 ^5000
-- [ ] 为 CLI 增加 release 构建与安装说明 <!--t:n9f4pk--> #cli #docs !2 ^6000
+- [x] 为 CLI 增加 release 构建与安装说明 <!--t:n9f4pk--> #cli #docs !2 ^6000
+      ↳ 0a84a18 已交付 CLI release 构建、源码安装说明与 macOS 发布文档 <!--n:n9f4pk-->
 - [ ] hooks context 改为跨平台进程树终止 <!--t:z5t7gq--> #cli #agents !2 ^7000
-- [ ] 评估 list 接入 SQLite 投影的触发条件 <!--t:b6r1vy--> #cli #perf !3 ^8000
-- [ ] 产出可分发的桌面端 release 构建 <!--t:d3l8hn--> #desktop #release !3 ^9000
+- [ ] 按既定触发条件让 todo serve 与桌面端使用 SQLite 投影 <!--t:b6r1vy--> #cli #perf !3 ^8000
+      ↳ 评估已完成：约 10000 任务或常驻进程需要投影；当前 serve 与桌面端仍只调用内存 project_document，尚未打开 Projection 数据库 <!--n:b6r1vy-->
+- [ ] 产出可分发的桌面端 release 构建 <!--t:d3l8hn--> #desktop #release !3 ^9000 ◐80
+      ↳ release workflow、打包脚本与发布文档已完成；待真实 Developer ID 签名与 Apple 公证凭据验收 <!--n:d3l8hn-->
 - [x] 补前端 Playwright 交互层回归并纳入 CI <!--t:3zvv9u--> #desktop #test !2 🔗15ef0bb0a98a9c8c2db3ec80b9fe50e194b92c34..b45e0740b0211d5cb71f1f24a865102ae8ec7be0
       ↳ 交互层 98 项通过、web 全链路 14 项已接入 CI 两个 job；2026-09-04 的 1654316 误将本项改回未完成（完成说明行被保留即为误覆盖佐证），此处恢复 <!--n:3zvv9u-->
-- [ ] 拍板商业模型三选项（见 docs/business-model-options.md） <!--t:aiw1hs--> #product #decision !1
+- [ ] 拍板商业模型剩余决策：涨价时机、边界条款、授权服务、隐私政策与收款渠道 <!--t:aiw1hs--> #product #decision !1
+      ↳ 组合双轨、价格、续费、试用、更新窗口与联网校验均已定；剩余项以 DECISIONS.md 决策④为准 <!--n:aiw1hs-->
 - [ ] 拍板首次运行 onboarding 方案（见 docs/onboarding-spec.md） <!--t:jrnlos--> #product #onboarding !2
 - [ ] progress 标记无法清除：--note --clear 不清 ◐，progress 0 被拒，帮助文本承诺的 unset 无法表达 <!--t:krr4qq--> #cli #bug !2
 - [x] web.spec.ts 串行共享真实 TODO.md 无逐例重置，前序写入导致 quadrant 分组用例失败并中断其余 11 项 <!--t:1bcg1t--> #desktop #test #bug !2 🔗8e51f852281dcb7b27df2a29707853e3149d923c..ad1dd82e79f1f49c52df8ad60edad9fda5125945
