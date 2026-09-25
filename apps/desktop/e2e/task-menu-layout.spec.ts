@@ -49,10 +49,14 @@ test.describe('wide task menu positioning', () => {
   test.use({ viewport: { width: 986, height: 800 } });
 
   test('Move to submenu keeps its items inside the visible panel when opened left', async ({ page }) => {
+    await page.addStyleTag({ content: 'body { overflow: hidden !important; }' });
     const { menu, moveTrigger, moveMenu } = await openTaskMenu(page);
-    await menu.evaluate((element) => {
-      element.style.left = '730px';
-    });
+    const rootBoxBeforeOpen = await menu.boundingBox();
+    expect(rootBoxBeforeOpen).not.toBeNull();
+    const viewport = page.viewportSize()!;
+    await menu.evaluate((element, left) => {
+      element.style.left = `${left}px`;
+    }, viewport.width - rootBoxBeforeOpen!.width - 8);
     await moveTrigger.click();
     await expect(moveMenu).toBeVisible();
     await expect(menu).toHaveClass(/opens-left/);
@@ -63,6 +67,10 @@ test.describe('wide task menu positioning', () => {
     expect(rootBox).not.toBeNull();
     expect(triggerBox).not.toBeNull();
     expect(panel).not.toBeNull();
+    expect(panel!.x).toBeGreaterThanOrEqual(8);
+    expect(panel!.x + panel!.width).toBeLessThanOrEqual(viewport.width - 8);
+    expect(panel!.y).toBeGreaterThanOrEqual(8);
+    expect(panel!.y + panel!.height).toBeLessThanOrEqual(viewport.height - 7);
     expect(panel!.x + panel!.width).toBeLessThanOrEqual(rootBox!.x);
     expect(Math.abs(panel!.y - triggerBox!.y)).toBeLessThanOrEqual(8);
     for (const item of await moveMenu.getByRole('menuitem').all()) {
