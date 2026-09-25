@@ -307,6 +307,22 @@ fn structural_document(document: &Document, report: &mut ReconcileReport) {
     }
     for task in &document.tasks {
         let Some(id) = task.id.clone() else { continue };
+        let has_evidence = task
+            .metadata
+            .iter()
+            .any(|token| matches!(token.kind, TokenKind::Evidence { .. }));
+        if task.completed && !has_evidence {
+            report.suspected.push(report_only_finding(
+                &id,
+                "completed-without-evidence",
+                Evidence {
+                    kind: "completion-claim".into(),
+                    value: "task is checked without a Git evidence range".into(),
+                    path: None,
+                    line: Some(line_number(document, task.line_range.start)),
+                },
+            ));
+        }
         for token in &task.metadata {
             if let TokenKind::Dependency(dep) = &token.kind {
                 if !ids.contains(dep) {

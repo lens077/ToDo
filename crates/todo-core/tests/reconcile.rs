@@ -129,6 +129,28 @@ fn shallow_and_partial_repositories_skip_evidence_checks() {
 }
 
 #[test]
+fn completed_task_without_evidence_is_reported_for_manual_judgment() {
+    let dir = repo();
+    fs::write(dir.path().join("code.rs"), "fn done() {}\n").unwrap();
+    git(dir.path(), &["add", "."]);
+    git(dir.path(), &["commit", "-qm", "implement"]);
+
+    let report = Reconciler::new(dir.path())
+        .reconcile(&document("", true), &ReconcileOptions::structural_only())
+        .unwrap();
+
+    let finding = report
+        .suspected
+        .iter()
+        .find(|item| item.judgment == "completed-without-evidence")
+        .expect("unsupported completion claim should be reported");
+    assert_eq!(finding.task_id.as_deref(), Some("aaaaaa"));
+    assert_eq!(finding.evidence[0].kind, "completion-claim");
+    assert!(finding.suggested_change.is_none());
+    assert!(finding.suggested_action.is_none());
+}
+
+#[test]
 fn completed_status_never_moves_backward() {
     let dir = tempdir().unwrap();
     let doc = document("", true);
