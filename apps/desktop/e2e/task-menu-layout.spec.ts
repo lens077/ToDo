@@ -45,6 +45,37 @@ async function expectReachableMenus(page: Page, menu: Locator) {
   }
 }
 
+test.describe('wide task menu positioning', () => {
+  test.use({ viewport: { width: 986, height: 800 } });
+
+  test('Move to submenu keeps its items inside the visible panel when opened left', async ({ page }) => {
+    const { menu, moveTrigger, moveMenu } = await openTaskMenu(page);
+    await menu.evaluate((element) => {
+      element.style.left = '730px';
+    });
+    await moveTrigger.click();
+    await expect(moveMenu).toBeVisible();
+    await expect(menu).toHaveClass(/opens-left/);
+
+    const rootBox = await menu.boundingBox();
+    const triggerBox = await moveTrigger.boundingBox();
+    const panel = await moveMenu.boundingBox();
+    expect(rootBox).not.toBeNull();
+    expect(triggerBox).not.toBeNull();
+    expect(panel).not.toBeNull();
+    expect(panel!.x + panel!.width).toBeLessThanOrEqual(rootBox!.x);
+    expect(Math.abs(panel!.y - triggerBox!.y)).toBeLessThanOrEqual(8);
+    for (const item of await moveMenu.getByRole('menuitem').all()) {
+      const box = await item.boundingBox();
+      expect(box).not.toBeNull();
+      expect(box!.x).toBeGreaterThanOrEqual(panel!.x);
+      expect(box!.y).toBeGreaterThanOrEqual(panel!.y);
+      expect(box!.x + box!.width).toBeLessThanOrEqual(panel!.x + panel!.width);
+      expect(box!.y + box!.height).toBeLessThanOrEqual(panel!.y + panel!.height);
+    }
+  });
+});
+
 for (const width of [600, 680]) {
   test.describe(`task menu at ${width}px`, () => {
     test.use({ viewport: { width, height: 800 } });

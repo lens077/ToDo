@@ -110,9 +110,11 @@ export function TaskContextMenu({
 
   React.useLayoutEffect(() => {
     const submenu = submenuRef.current;
-    if (!submenuOpen || !submenu || window.innerWidth <= 720) return;
+    const trigger = submenuTriggerRef.current;
+    if (!submenuOpen || !submenu || !trigger || window.innerWidth <= 720) return;
     const rect = submenu.getBoundingClientRect();
-    const desiredTop = position.y - 7;
+    const triggerRect = trigger.getBoundingClientRect();
+    const desiredTop = triggerRect.top - 7;
     const viewportTop = Math.max(
       8,
       Math.min(desiredTop, window.innerHeight - rect.height - 8),
