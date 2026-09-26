@@ -89,12 +89,13 @@ export function TaskContextMenu({
   } | null>(null);
   const submenuOpen = submenu?.kind === 'move';
   const priorityOpen = submenu?.kind === 'priority';
-  const [submenuTop, setSubmenuTop] = React.useState(-7);
+  const [submenuPosition, setSubmenuPosition] = React.useState({ x: 0, y: 0 });
   const [position, setPosition] = React.useState({ x, y });
   const actions = React.useMemo(
     () => quickActions(task, targets),
     [targets, task],
   );
+  const opensLeft = position.x + 480 > window.innerWidth;
 
   React.useLayoutEffect(() => {
     const menu = menuRef.current;
@@ -109,18 +110,22 @@ export function TaskContextMenu({
   }, [x, y]);
 
   React.useLayoutEffect(() => {
-    const submenu = submenuRef.current;
-    const trigger = submenuTriggerRef.current;
-    if (!submenuOpen || !submenu || !trigger || window.innerWidth <= 720) return;
-    const rect = submenu.getBoundingClientRect();
+    const panel = submenu?.kind === 'move' ? submenuRef.current : priorityRef.current;
+    const trigger = submenu?.kind === 'move' ? submenuTriggerRef.current : priorityTriggerRef.current;
+    if (!submenu || !panel || !trigger || window.innerWidth <= 720) return;
+    const rect = panel.getBoundingClientRect();
     const triggerRect = trigger.getBoundingClientRect();
-    const desiredTop = triggerRect.top - 7;
-    const viewportTop = Math.max(
-      8,
-      Math.min(desiredTop, window.innerHeight - rect.height - 8),
-    );
-    setSubmenuTop(viewportTop - position.y);
-  }, [columns.length, position.y, submenuOpen]);
+    const gutter = 8;
+    const rootRect = menuRef.current?.getBoundingClientRect();
+    const right = (rootRect?.right ?? triggerRect.right) + 5;
+    const left = (rootRect?.left ?? triggerRect.left) - rect.width - 5;
+    const desiredX = right + rect.width <= window.innerWidth - gutter ? right : left;
+    const desiredY = triggerRect.top - 7;
+    setSubmenuPosition({
+      x: Math.max(gutter, Math.min(desiredX, window.innerWidth - rect.width - gutter)),
+      y: Math.max(gutter, Math.min(desiredY, window.innerHeight - rect.height - gutter)),
+    });
+  }, [columns.length, position.x, position.y, submenu]);
 
   React.useEffect(() => {
     const closeOutside = (event: PointerEvent) => {
@@ -168,6 +173,7 @@ export function TaskContextMenu({
     activate(event, () => onMove(columnId));
   };
   const openSubmenu = (kind: 'move' | 'priority', focusFirst = false) => {
+    if (kind === 'move' && columns.length === 0) return;
     setSubmenu({ kind, focusFirst: focusFirst || focusIsInSubmenu() });
   };
 
@@ -206,9 +212,65 @@ export function TaskContextMenu({
     }
   };
 
-  const opensLeft = position.x + 480 > window.innerWidth;
+  const prioritySubmenu = priorityOpen && onSetPriority && (
+    <div
+      ref={priorityRef}
+      className="task-context-menu task-context-menu__submenu task-context-menu__submenu--portal"
+      role="menu"
+      aria-label="设置优先级"
+      style={window.innerWidth > 720 ? { left: submenuPosition.x, top: submenuPosition.y } : undefined}
+      onKeyDown={handleKeyDown}
+      onPointerDown={(event) => event.stopPropagation()}
+      onClick={(event) => event.stopPropagation()}
+    >
+      {([1, 2, 3, 4, null] as TaskPriority[]).map((priority) => (
+        <button
+          type="button"
+          role="menuitem"
+          key={priority ?? 0}
+          disabled={task.priority === priority && !allowCurrentPriority}
+          onClick={(event) => activate(event, () => onSetPriority(priority))}
+        >
+          <span className={`priority-dot priority-dot--${priority ?? 0}`} />
+          <span>{priority === null ? '清除优先级' : `!${priority} ${['最高', '高', '中', '低'][priority - 1]}`}</span>
+          <kbd>{priority ?? 0}</kbd>
+        </button>
+      ))}
+    </div>
+  );
 
-  return createPortal(
+  const moveSubmenu = submenuOpen && columns.length > 0 && (
+    <div
+      ref={submenuRef}
+      className="task-context-menu task-context-menu__submenu task-context-menu__submenu--portal"
+      role="menu"
+      aria-label="移动到列"
+      style={window.innerWidth > 720 ? { left: submenuPosition.x, top: submenuPosition.y } : undefined}
+      onKeyDown={handleKeyDown}
+      onPointerDown={(event) => event.stopPropagation()}
+      onClick={(event) => event.stopPropagation()}
+    >
+      {columns.map((column) => {
+        const stateAlreadyMatches = task.completed === column.done;
+        const current = task.column === column.id && stateAlreadyMatches;
+        return (
+          <button
+            type="button"
+            role="menuitem"
+            key={column.id}
+            disabled={current}
+            onClick={(event) => runMove(event, column.id)}
+          >
+            <span className={`column-dot column-dot--${column.done ? 'done' : 'active'}`} />
+            <span>{column.name}</span>
+            {current && <span className="task-context-menu__current">当前</span>}
+          </button>
+        );
+      })}
+    </div>
+  );
+
+  const menuPortal = createPortal(
     <div
       ref={menuRef}
       className={`task-context-menu${opensLeft ? ' opens-left' : ''}`}
@@ -256,30 +318,15 @@ export function TaskContextMenu({
           >
             <Icon name="grid" /><span>优先级…</span><Icon name="chevron-right" className="task-context-menu__chevron" />
           </button>
-          {priorityOpen && (
-            <div ref={priorityRef} className="task-context-menu task-context-menu__submenu task-context-menu__priority" role="menu" aria-label="设置优先级">
-              {([1, 2, 3, 4, null] as TaskPriority[]).map((priority) => (
-                <button
-                  type="button"
-                  role="menuitem"
-                  key={priority ?? 0}
-                  disabled={task.priority === priority && !allowCurrentPriority}
-                  onClick={(event) => activate(event, () => onSetPriority(priority))}
-                >
-                  <span className={`priority-dot priority-dot--${priority ?? 0}`} />
-                  <span>{priority === null ? '清除优先级' : `!${priority} ${['最高', '高', '中', '低'][priority - 1]}`}</span>
-                  <kbd>{priority ?? 0}</kbd>
-                </button>
-              ))}
-            </div>
-          )}
+          {window.innerWidth <= 720 && prioritySubmenu}
         </>
       )}
       <button
         ref={submenuTriggerRef}
         type="button"
         role="menuitem"
-        aria-haspopup="menu"
+        disabled={columns.length === 0}
+        aria-haspopup={columns.length > 0 ? 'menu' : undefined}
         aria-expanded={submenuOpen}
         onClick={() => openSubmenu('move', true)}
         onPointerEnter={() => {
@@ -291,36 +338,21 @@ export function TaskContextMenu({
         <span>移动到…</span>
         <Icon name="chevron-right" className="task-context-menu__chevron" />
       </button>
-      {submenuOpen && (
-        <div
-          ref={submenuRef}
-          className="task-context-menu task-context-menu__submenu"
-          role="menu"
-          aria-label="移动到列"
-          style={window.innerWidth > 720 ? { top: submenuTop } : undefined}
-        >
-          {columns.map((column) => {
-            const stateAlreadyMatches = task.completed === column.done;
-            const current = task.column === column.id && stateAlreadyMatches;
-            return (
-              <button
-                type="button"
-                role="menuitem"
-                key={column.id}
-                disabled={current}
-                onClick={(event) => runMove(event, column.id)}
-              >
-                <span
-                  className={`column-dot column-dot--${column.done ? 'done' : 'active'}`}
-                />
-                <span>{column.name}</span>
-                {current && <span className="task-context-menu__current">当前</span>}
-              </button>
-            );
-          })}
-        </div>
+      {columns.length === 0 && (
+        <p className="task-context-menu__hint">当前来源未定义列，无法移动任务。</p>
       )}
+      {window.innerWidth <= 720 && moveSubmenu}
     </div>,
     document.body,
+  );
+
+  return (
+    <>
+      {menuPortal}
+      {window.innerWidth > 720 && submenu && createPortal(
+        submenu.kind === 'move' ? moveSubmenu : prioritySubmenu,
+        document.body,
+      )}
+    </>
   );
 }

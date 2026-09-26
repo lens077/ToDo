@@ -45,18 +45,88 @@ async function expectReachableMenus(page: Page, menu: Locator) {
   }
 }
 
+test.describe('short desktop window', () => {
+  test.use({ viewport: { width: 986, height: 420 } });
+
+  test('priority submenu shifts upward and every option can be clicked', async ({ page }) => {
+    const { priorityTrigger, priorityMenu } = await openTaskMenu(page);
+    await priorityTrigger.click();
+    await expect(priorityMenu.getByRole('menuitem')).toHaveCount(5);
+    const box = (await priorityMenu.boundingBox())!;
+    expect(box.y).toBeGreaterThanOrEqual(8);
+    expect(box.y + box.height).toBeLessThanOrEqual(413);
+    for (const item of await priorityMenu.getByRole('menuitem').all()) {
+      expect(await item.evaluate((element) => {
+        const r = element.getBoundingClientRect();
+        return element.contains(document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2));
+      })).toBe(true);
+    }
+    await priorityMenu.getByRole('menuitem', { name: '清除优先级' }).click();
+    await expect(page.getByRole('menu')).toHaveCount(0);
+  });
+
+  test('Move to also shifts upward and all destinations remain reachable', async ({ page }) => {
+    const { moveTrigger, moveMenu } = await openTaskMenu(page);
+    await moveTrigger.click();
+    await expect(moveMenu.getByRole('menuitem')).toHaveCount(4);
+    const box = (await moveMenu.boundingBox())!;
+    expect(box.y).toBeGreaterThanOrEqual(8);
+    expect(box.y + box.height).toBeLessThanOrEqual(413);
+    for (const item of await moveMenu.getByRole('menuitem').all()) {
+      expect(await item.evaluate((element) => {
+        const r = element.getBoundingClientRect();
+        return element.contains(document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2));
+      })).toBe(true);
+    }
+    await moveMenu.getByRole('menuitem', { name: '待梳理', exact: true }).click();
+    await expect(page.getByRole('menu')).toHaveCount(0);
+  });
+});
+
+test.describe('very short desktop window', () => {
+  test.use({ viewport: { width: 986, height: 180 } });
+
+  test('oversized priority panel scrolls its last item into view', async ({ page }) => {
+    const { priorityTrigger, priorityMenu } = await openTaskMenu(page);
+    await priorityTrigger.click();
+    await priorityMenu.getByRole('menuitem').first().press('End');
+    const last = priorityMenu.getByRole('menuitem', { name: '清除优先级' });
+    await expect(last).toBeFocused();
+    expect(await priorityMenu.evaluate((element) => element.scrollHeight > element.clientHeight)).toBe(true);
+    const box = (await priorityMenu.boundingBox())!;
+    expect(box.y).toBeGreaterThanOrEqual(8);
+    expect(box.y + box.height).toBeLessThanOrEqual(173);
+    expect(await last.evaluate((element) => {
+      const r = element.getBoundingClientRect();
+      return element.contains(document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2));
+    })).toBe(true);
+    await last.click();
+    await expect(page.getByRole('menu')).toHaveCount(0);
+  });
+});
+
 test.describe('wide task menu positioning', () => {
   test.use({ viewport: { width: 986, height: 800 } });
 
+  test('desktop submenus return keyboard focus to their triggers', async ({ page }) => {
+    const { priorityTrigger, priorityMenu, moveTrigger, moveMenu } = await openTaskMenu(page);
+    for (const [trigger, panel] of [[priorityTrigger, priorityMenu], [moveTrigger, moveMenu]]) {
+      await trigger.focus();
+      await page.keyboard.press('ArrowRight');
+      await expect(panel).toBeVisible();
+      await page.keyboard.press('ArrowLeft');
+      await expect(panel).toHaveCount(0);
+      await expect(trigger).toBeFocused();
+    }
+  });
+
   test('Move to submenu keeps its items inside the visible panel when opened left', async ({ page }) => {
-    await page.addStyleTag({ content: 'body { overflow: hidden !important; }' });
-    const { menu, moveTrigger, moveMenu } = await openTaskMenu(page);
-    const rootBoxBeforeOpen = await menu.boundingBox();
-    expect(rootBoxBeforeOpen).not.toBeNull();
+    const { task, menu, moveTrigger, moveMenu } = await openTaskMenu(page);
+    await page.keyboard.press('Escape');
+    const taskBox = (await task.boundingBox())!;
+    // Open via the actual contextmenu path, not a DOM style mutation.
+    await task.click({ button: 'right', position: { x: taskBox.width - 10, y: 10 } });
     const viewport = page.viewportSize()!;
-    await menu.evaluate((element, left) => {
-      element.style.left = `${left}px`;
-    }, viewport.width - rootBoxBeforeOpen!.width - 8);
     await moveTrigger.click();
     await expect(moveMenu).toBeVisible();
     await expect(menu).toHaveClass(/opens-left/);
@@ -73,7 +143,15 @@ test.describe('wide task menu positioning', () => {
     expect(panel!.y + panel!.height).toBeLessThanOrEqual(viewport.height - 7);
     expect(panel!.x + panel!.width).toBeLessThanOrEqual(rootBox!.x);
     expect(Math.abs(panel!.y - triggerBox!.y)).toBeLessThanOrEqual(8);
-    for (const item of await moveMenu.getByRole('menuitem').all()) {
+    const destinations = moveMenu.getByRole('menuitem');
+    await expect(destinations).toHaveCount(4);
+    const destinationText = await destinations.allTextContents();
+    expect(destinationText.every((text) => text.trim().length > 0)).toBe(true);
+    await test.info().attach('move-submenu', {
+      body: await moveMenu.screenshot({ animations: 'disabled' }),
+      contentType: 'image/png',
+    });
+    for (const item of await destinations.all()) {
       const box = await item.boundingBox();
       expect(box).not.toBeNull();
       expect(box!.x).toBeGreaterThanOrEqual(panel!.x);

@@ -73,6 +73,12 @@ test('normal context-menu completion bypasses the checkbox safety gate', async (
 
 test('a collapsed Todo rail remains a visible restore target', async ({ page }) => {
   await page.getByRole('button', { name: '收起待办' }).click();
+  // The grid animates the rail downward. A drag sampled mid-transition can
+  // actually hit Doing; wait for the real destination to settle, not a timeout.
+  await page.locator('.goal-layout').evaluate(async (element) => {
+    await Promise.all(element.getAnimations().map((animation) => animation.finished));
+  });
+  expect((await page.locator('#goal-todo-region').boundingBox())!.height).toBeLessThanOrEqual(48);
   await page.getByRole('article', { name: doneTask }).dragTo(page.locator('#goal-todo-region'));
   await page.getByRole('button', { name: '展开待办' }).click();
 

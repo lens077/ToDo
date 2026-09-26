@@ -6,7 +6,7 @@ const task = (source_path: string, body: string, id = 'same01') => ({
   evidence_availability: { status: 'unavailable', reason: '测试来源没有物证' },
 });
 
-async function project(page: Page, options: { readonly?: boolean; conflict?: boolean; enrollment?: 'all' | 'none' } = {}) {
+async function project(page: Page, options: { readonly?: boolean; conflict?: boolean; enrollment?: 'all' | 'none'; noColumns?: boolean } = {}) {
   const paths = ['TODO.md', 'nested/work.md', 'notes/plain.md', 'broken.md'];
   if (options.enrollment !== 'none') {
     // Most specs are about writes and adoption, not the first-run enrollment
@@ -37,7 +37,7 @@ async function project(page: Page, options: { readonly?: boolean; conflict?: boo
       ? { ...source, loose: true, status: 'unmanaged', writable: false, task_count: source.loose_candidates ?? 0 }
       : source),
     selected_source: selected, warnings: ['普通清单仅作只读发现'],
-    columns: columns.filter((item) => selected === null || item.source_path === selected),
+    columns: columns.filter((item) => (!options.noColumns || item.source_path !== 'TODO.md') && (selected === null || item.source_path === selected)),
     tasks: [
       ...tasks.filter((item) => selected === null || item.source_path === selected),
       ...sources.filter((source) => loose.includes(source.path) && (selected === null || selected === source.path))
@@ -115,6 +115,18 @@ test('新增必须明确选源，来源选择记忆但不是偷偷选第一个',
   expect(mutations[0]).toMatchObject({ source_path: 'nested/work.md', intent: { type: 'add_task', column: 'todo', body: '明确选源的新任务' } });
   await page.reload();
   await expect(page.getByRole('combobox', { name: '新增到来源' })).toHaveValue('nested/work.md');
+});
+
+test('没有定义列的来源说明无法移动，而不是打开空子菜单', async ({ page }) => {
+  const { mutations } = await project(page, { noColumns: true });
+  await page.getByRole('button', { name: '象限', exact: true }).click();
+  await card(page, '来源甲任务').click({ button: 'right' });
+  const move = page.getByRole('menuitem', { name: '移动到…', exact: true });
+  await expect(move).toBeDisabled();
+  await expect(page.getByText('当前来源未定义列，无法移动任务。', { exact: true })).toBeVisible();
+  await move.hover();
+  await expect(page.getByRole('menu', { name: '移动到列', exact: true })).toHaveCount(0);
+  expect(mutations).toHaveLength(0);
 });
 
 test('跨文件移动拒绝且菜单不列出其他来源列', async ({ page }) => {
