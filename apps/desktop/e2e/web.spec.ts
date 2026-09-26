@@ -86,6 +86,70 @@ test.describe('web transport', () => {
     await expect(page.getByText('给登录接口加限流')).toBeVisible();
   });
 
+  test('adopted plain Markdown keeps priority usable and configures empty columns only after preview confirmation', async ({ page, request }) => {
+    if (!fixturePath) throw new Error('E2E_TODO_PATH is required');
+    const { writeFile, readFile, unlink } = await import('node:fs/promises');
+    const { dirname, join } = await import('node:path');
+    const planPath = join(dirname(fixturePath), 'docs/TODO.md');
+    await writeFile(planPath, '# Plain tasks\n\n- [ ] 写迁移脚本\n', { flag: 'wx' });
+    try {
+      const previewResponse = await request.post('/api/v1/sources/adopt/preview', { data: { source_path: 'docs/TODO.md' } });
+      expect(previewResponse.ok()).toBe(true);
+      const preview = await previewResponse.json();
+      const adoptedResponse = await request.post('/api/v1/sources/adopt', { data: { source_path: 'docs/TODO.md', base_hash: preview.base_hash } });
+      expect(adoptedResponse.ok()).toBe(true);
+      const adopted = await adoptedResponse.json();
+      expect(adopted.columns.filter((column: { source_path: string }) => column.source_path === 'docs/TODO.md')).toHaveLength(0);
+      await page.goto('/');
+      await page.getByRole('button', { name: '全部录入', exact: true }).click();
+      await page.getByRole('combobox', { name: '任务来源', exact: true }).selectOption('docs/TODO.md');
+      await page.getByRole('button', { name: '象限', exact: true }).click();
+      const task = page.getByRole('article', { name: '未完成 Project Task：写迁移脚本', exact: true });
+      await task.click({ button: 'right' });
+      await expect(page.getByRole('menuitem', { name: '移动到…', exact: true })).toBeDisabled();
+      await expect(page.getByText('当前来源未定义列，无法移动任务。', { exact: true })).toBeVisible();
+      await page.getByRole('menuitem', { name: '优先级…', exact: true }).click();
+      await page.getByRole('menuitem', { name: '!1 最高' }).click();
+      await expect(page.getByRole('region', { name: '!1 最高', exact: true }).getByRole('article', { name: '未完成 Project Task：写迁移脚本', exact: true })).toBeVisible();
+      const snapshotResponse = await request.get('/api/v1/snapshot?source=docs%2FTODO.md');
+      const snapshot = await snapshotResponse.json();
+      expect(snapshot.tasks.find((item: { body: string }) => item.body === '写迁移脚本')).toMatchObject({ priority: 1, column: null });
+      const beforeColumns = await readFile(planPath, 'utf8');
+      const historyBefore = await (await request.get('/api/v1/history?source=docs%2FTODO.md')).json();
+      const configuration = page.getByRole('dialog', { name: '配置任务列', exact: true });
+      await task.click({ button: 'right' });
+      await page.getByRole('menuitem', { name: '配置任务列…', exact: true }).click();
+      await configuration.getByRole('button', { name: '预览差异', exact: true }).click();
+      await expect(configuration.getByRole('table', { name: '左右对比' })).toContainText('columns:');
+      expect(await readFile(planPath, 'utf8')).toBe(beforeColumns);
+      await page.keyboard.press('Escape');
+      await expect(configuration).toHaveCount(0);
+      expect(await readFile(planPath, 'utf8')).toBe(beforeColumns);
+      expect(await (await request.get('/api/v1/history?source=docs%2FTODO.md')).json()).toHaveLength(historyBefore.length);
+      await task.click({ button: 'right' });
+      await page.getByRole('menuitem', { name: '配置任务列…', exact: true }).click();
+      await configuration.getByRole('button', { name: '预览差异', exact: true }).click();
+      await configuration.getByRole('button', { name: '确认并写入', exact: true }).click();
+      await expect(configuration).toHaveCount(0);
+      const configured = await (await request.get('/api/v1/snapshot?source=docs%2FTODO.md')).json();
+      expect(configured.columns.map((column: { id: string; name: string; done: boolean }) => [column.id, column.name, column.done]))
+        .toEqual([['todo', '待办', false], ['doing', '进行中', false], ['done', '已完成', true]]);
+      expect(configured.tasks).toEqual(snapshot.tasks);
+      expect(await readFile(planPath, 'utf8')).toContain(beforeColumns.slice(beforeColumns.indexOf('# Plain tasks')));
+      expect(await (await request.get('/api/v1/history?source=docs%2FTODO.md')).json()).toHaveLength(historyBefore.length + 1);
+      await task.click({ button: 'right' });
+      await page.getByRole('menuitem', { name: '移动到…', exact: true }).click();
+      await expect(page.getByRole('menu', { name: '移动到列', exact: true }).getByRole('menuitem')).toHaveText(['待办', '进行中', '已完成']);
+      await page.getByRole('menu', { name: '移动到列', exact: true }).getByRole('menuitem', { name: '进行中', exact: true }).click();
+      await expect.poll(async () => {
+        const moved = await (await request.get('/api/v1/snapshot?source=docs%2FTODO.md')).json();
+        return moved.tasks.find((item: { body: string }) => item.body === '写迁移脚本')?.column;
+      }).toBe('doing');
+    } finally {
+      await unlink(planPath);
+    }
+  });
+
   test('quadrant writes only priority tokens and survives a fresh page', async ({ page, browser }) => {
     test.skip(!fixturePath, 'E2E_TODO_PATH is required');
     await page.goto('/');
