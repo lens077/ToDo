@@ -12,8 +12,8 @@ use std::{
 use tauri::{Emitter, Manager, State};
 use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState};
 use todo_core::{
-    AiRecord, AiStore, Capture, CaptureStore, DesktopBackend, DesktopIntent, ProjectSnapshot,
-    TriageResult,
+    AiRecord, AiStore, Capture, CaptureStore, ColumnSetupOptions, ColumnSetupPreview,
+    ColumnSetupSelection, DesktopBackend, DesktopIntent, ProjectSnapshot, TriageResult,
 };
 use watch::{TargetFileWatcher, WatchSignal};
 
@@ -169,6 +169,42 @@ fn apply_adopt(
         project_path.as_deref(),
         loose.unwrap_or(false),
     )
+}
+
+#[tauri::command]
+fn column_setup_options(
+    state: State<'_, AppState>,
+    source_path: String,
+    expected_project_path: String,
+) -> Result<ColumnSetupOptions, String> {
+    state
+        .ops
+        .column_setup_options(&source_path, &expected_project_path)
+}
+
+#[tauri::command]
+fn preview_columns(
+    state: State<'_, AppState>,
+    source_path: String,
+    selection: ColumnSetupSelection,
+    expected_project_path: String,
+) -> Result<ColumnSetupPreview, String> {
+    state
+        .ops
+        .preview_columns(&source_path, &selection, &expected_project_path)
+}
+
+#[tauri::command]
+fn apply_columns(
+    state: State<'_, AppState>,
+    source_path: String,
+    base_hash: String,
+    selection: ColumnSetupSelection,
+    expected_project_path: String,
+) -> Result<ProjectSnapshot, String> {
+    state
+        .ops
+        .apply_columns(&source_path, &base_hash, &selection, &expected_project_path)
 }
 
 #[tauri::command]
@@ -601,6 +637,9 @@ pub fn run() {
             project_mutate,
             preview_adopt,
             apply_adopt,
+            column_setup_options,
+            preview_columns,
+            apply_columns,
             capture_list,
             capture_append,
             capture_delete,

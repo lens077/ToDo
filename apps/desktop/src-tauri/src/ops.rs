@@ -7,8 +7,9 @@ use std::{
     time::Duration,
 };
 use todo_core::{
-    AiListFilter, AiRecord, AiStore, Capture, CaptureProject, CaptureStore, Change, DesktopBackend,
-    DesktopIntent, LockedWriter, ProjectBackend, ProjectSnapshot,
+    AiListFilter, AiRecord, AiStore, Capture, CaptureProject, CaptureStore, Change,
+    ColumnSetupOptions, ColumnSetupPreview, ColumnSetupSelection, DesktopBackend, DesktopIntent,
+    LockedWriter, ProjectBackend, ProjectSnapshot,
 };
 
 pub struct DesktopOps {
@@ -178,6 +179,50 @@ impl DesktopOps {
         }
         backend
             .apply_adopt_with(source, base_hash, loose)
+            .map_err(stringify)
+    }
+    /// Keep the project lock through the core operation: opening another root
+    /// must not race between checking the dialog's binding and using its source.
+    fn column_backend(
+        &self,
+        expected_root: &str,
+    ) -> Result<std::sync::MutexGuard<'_, ProjectBackend>, String> {
+        let backend = self.backend()?;
+        if backend.project_path().and_then(|path| path.to_str()) != Some(expected_root) {
+            return Err(
+                "project changed before column setup; review the current source again".into(),
+            );
+        }
+        Ok(backend)
+    }
+    pub fn column_setup_options(
+        &self,
+        source: &str,
+        expected_root: &str,
+    ) -> Result<ColumnSetupOptions, String> {
+        self.column_backend(expected_root)?
+            .column_setup_options(source)
+            .map_err(stringify)
+    }
+    pub fn preview_columns(
+        &self,
+        source: &str,
+        selection: &ColumnSetupSelection,
+        expected_root: &str,
+    ) -> Result<ColumnSetupPreview, String> {
+        self.column_backend(expected_root)?
+            .preview_columns(source, selection)
+            .map_err(stringify)
+    }
+    pub fn apply_columns(
+        &self,
+        source: &str,
+        base_hash: &str,
+        selection: &ColumnSetupSelection,
+        expected_root: &str,
+    ) -> Result<ProjectSnapshot, String> {
+        self.column_backend(expected_root)?
+            .apply_columns(source, base_hash, selection)
             .map_err(stringify)
     }
     pub fn capture_list(&self) -> Result<Vec<Capture>, String> {
