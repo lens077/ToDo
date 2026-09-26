@@ -283,6 +283,79 @@ impl ProjectBackend {
         backend.mutate(intent)?;
         self.snapshot()
     }
+    /// Inspect only a discovered, managed source; no lock or history is created.
+    pub fn column_setup_options(&self, source: &str) -> Result<crate::ColumnSetupOptions> {
+        let document = self.column_setup_document(source, false)?;
+        Ok(crate::column_setup::options(source, &document))
+    }
+    pub fn preview_columns(
+        &self,
+        source: &str,
+        selection: &crate::ColumnSetupSelection,
+    ) -> Result<crate::ColumnSetupPreview> {
+        let document = self.column_setup_document(source, true)?;
+        let preview = crate::column_setup::preview(source, &document, selection)?;
+        if preview.proposed.len() > MAX_FILE {
+            return Err(invalid("source would exceed 2 MiB read limit"));
+        }
+        Ok(preview)
+    }
+    pub fn apply_columns(
+        &self,
+        source: &str,
+        base_hash: &str,
+        selection: &crate::ColumnSetupSelection,
+    ) -> Result<ProjectSnapshot> {
+        self.column_setup_document(source, true)?;
+        let path = self.validate(source)?;
+        validate_write_paths(&path)?;
+        let writer = LockedWriter::new(&path, self.lock_timeout);
+        let _guard = writer.lock()?;
+        self.validate(source)?;
+        let mut budget = MAX_TOTAL;
+        let content = bounded_read(&path, &mut budget)?;
+        if revision(content.as_bytes()) != base_hash {
+            return Err(Error::ConcurrentModification);
+        }
+        let document = parse(content.clone())?;
+        let preview = crate::column_setup::preview(source, &document, selection)?;
+        if preview.proposed.len() > MAX_FILE {
+            return Err(invalid("source would exceed 2 MiB read limit"));
+        }
+        self.validate(source)?;
+        validate_write_paths(&path)?;
+        if !writable(&path) {
+            return Err(invalid("source is read-only"));
+        }
+        if bounded_read(&path, &mut budget)? != content {
+            return Err(Error::ConcurrentModification);
+        }
+        History::for_file(&path).record(&path, "configure-columns")?;
+        self.validate(source)?;
+        if bounded_read(&path, &mut budget)? != content {
+            return Err(Error::ConcurrentModification);
+        }
+        atomic_write(&path, preview.proposed.as_bytes())?;
+        self.snapshot()
+    }
+    fn column_setup_document(&self, source: &str, require_writable: bool) -> Result<Document> {
+        let (sources, _) = self.discover()?;
+        let found = sources
+            .into_iter()
+            .find(|s| s.info.path == source)
+            .ok_or_else(|| invalid("source is not in the discovered project"))?;
+        let path = self.validate(source)?;
+        if found.info.status != "managed" {
+            return Err(invalid("source must be managed before configuring columns"));
+        }
+        if require_writable {
+            if !found.info.writable {
+                return Err(invalid("source is read-only"));
+            }
+            validate_write_paths(&path)?;
+        }
+        found.document.ok_or(Error::NotTaskFile)
+    }
     pub fn preview_adopt(&self, source: &str) -> Result<AdoptionPreview> {
         self.preview_adopt_with(source, false)
     }

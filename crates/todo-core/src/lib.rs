@@ -2,6 +2,7 @@
 //! Parsed values are a view over the original bytes; writes never serialize Markdown.
 
 mod ai;
+mod column_setup;
 mod desktop;
 mod error;
 mod history;
@@ -18,6 +19,10 @@ mod scan;
 mod write;
 
 pub use ai::*;
+pub use column_setup::{
+    ColumnHeadingOption, ColumnHeadingSelection, ColumnSetupOptions, ColumnSetupPreview,
+    ColumnSetupSelection, PlannedColumn,
+};
 pub use desktop::*;
 pub use error::{Error, Result};
 pub use history::{
