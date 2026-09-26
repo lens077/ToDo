@@ -2,6 +2,7 @@ import * as React from 'react';
 import { AiView } from './components/AiView';
 import { CaptureView } from './components/CaptureView';
 import { CommandBar } from './components/CommandBar';
+import { ColumnSetupDialog } from './components/ColumnSetupDialog';
 import { CompletionDialog, type CompletionDecision } from './components/CompletionDialog';
 import { ConfirmCompleteDialog } from './components/ConfirmCompleteDialog';
 import { EmptyState } from './components/EmptyState';
@@ -48,6 +49,13 @@ export function App() {
   const completionRequestRef = React.useRef<CompletionRequest | null>(null);
   const [priorityRequest, setPriorityRequest] = React.useState<PriorityRequest | null>(null);
   const [confirmTask, setConfirmTask] = React.useState<DesktopTask | null>(null);
+  const [columnSetup, setColumnSetup] = React.useState<{
+    projectPath: string;
+    sourcePath: string;
+    contextKey: string;
+    restoreFocus: HTMLElement | null;
+    startTask?: { localId: string; body: string };
+  } | null>(null);
   const [appSettings] = useAppSettings();
   const model = useDesktop();
   const serverReadOnly = transportCapabilities()?.writable === false;
@@ -92,7 +100,18 @@ export function App() {
     setCompletionRequest(null);
     setConfirmTask(null);
     setPriorityRequest(null);
+    setColumnSetup(null);
   }, [sourceContextKey, model.sourceBusy]);
+  const configureColumns = (task: DesktopTask, restoreFocus: HTMLElement | null, start = false) => {
+    const current = model.snapshot;
+    const latest = current?.tasks.find((item) => item.id === task.id && item.source_path === task.source_path);
+    const source = current?.sources?.find((item) => item.path === task.source_path);
+    if (!current || columnSetup || !latest || readOnly || latest.source_writable === false || !source?.writable || source.status !== 'managed'
+      || current.columns.some((column) => column.source_path === source.path)) return;
+    if (start && (!latest.local_id || latest.column !== null || latest.completed)) return;
+    setColumnSetup({ projectPath: current.project_path, sourcePath: source.path, contextKey: sourceContextKey, restoreFocus,
+      ...(start ? { startTask: { localId: latest.local_id!, body: latest.body } } : {}) });
+  };
   const chooseProject = () => {
     if (desktop.isTauri) void model.chooseProject();
     else setProjectPickerOpen(true);
@@ -305,6 +324,7 @@ export function App() {
               onSetFailed={model.setFailed}
               onMove={(id, column) => void moveTask(id, column)}
               onSetPriority={(id, priority) => model.setPriority(id, priority, 'subtree')}
+              onConfigureColumns={configureColumns}
             />
           ) : snapshot ? (
             <GoalView
@@ -317,6 +337,7 @@ export function App() {
               onMove={moveTask}
               onSetPriority={(id, priority) => { const task = model.snapshot?.tasks.find((item) => item.id === id); if (task) requestPriority(task, priority); }}
               onSetLoose={readOnly ? undefined : setLoose}
+              onConfigureColumns={configureColumns}
             />
           ) : (
             <EmptyState
@@ -329,6 +350,19 @@ export function App() {
         </main>
       </div>
 
+      {columnSetup && columnSetup.contextKey === sourceContextKey && !model.sourceBusy && (
+        <ColumnSetupDialog
+          key={JSON.stringify([columnSetup.projectPath, columnSetup.sourcePath, columnSetup.startTask?.localId])}
+          projectPath={columnSetup.projectPath}
+          sourcePath={columnSetup.sourcePath}
+          restoreFocus={columnSetup.restoreFocus}
+          startTask={columnSetup.startTask}
+          readOnly={serverReadOnly || !model.snapshot?.sources?.some((source) => source.path === columnSetup.sourcePath && source.status === 'managed' && source.writable)
+            || model.snapshot.tasks.some((task) => task.source_path === columnSetup.sourcePath && task.source_writable === false)}
+          onApply={model.applyColumns}
+          onClose={() => setColumnSetup(null)}
+        />
+      )}
       {projectPickerOpen && <ProjectPickerDialog onClose={() => setProjectPickerOpen(false)} />}
       {showEnrollment && model.snapshot && (
         <SourceEnrollmentDialog

@@ -56,9 +56,11 @@ function useDropTargets(
   snapshot: DesktopSnapshot,
   readOnly: boolean,
   onMove: GoalViewProps['onMove'],
+  onConfigureColumns: GoalViewProps['onConfigureColumns'],
 ) {
+  type RegionRole = 'focus' | 'backlog' | 'done';
   const [draggedId, setDraggedId] = React.useState<string | null>(null);
-  const [dropColumn, setDropColumn] = React.useState<string | null>(null);
+  const [dropTarget, setDropTarget] = React.useState<{ column: string | null; role?: RegionRole } | null>(null);
   const [announcement, setAnnouncement] = React.useState('');
 
   const moveTask = React.useCallback(
@@ -91,31 +93,52 @@ function useDropTargets(
     [onMove, readOnly, snapshot.columns, snapshot.tasks],
   );
 
-  const resolveColumn = (id: string | null, taskId: string | null, role?: 'focus' | 'backlog' | 'done') => {
-    if (!role || !snapshot.sources) return id;
+  const writableTask = (taskId: string | null) => {
     const task = snapshot.tasks.find((item) => item.id === taskId);
-    if (!task || task.source_writable === false) return null;
+    if (readOnly || !task?.id || task.source_writable === false) return null;
+    if (snapshot.sources && !snapshot.sources.some((source) => source.path === task.source_path && source.status === 'managed' && source.writable)) return null;
+    return task;
+  };
+  const resolveColumn = (id: string | null, taskId: string | null, role?: RegionRole) => {
+    const task = writableTask(taskId);
+    if (!task) return null;
+    if (!role || !snapshot.sources) return id;
     const own = splitColumns(snapshot.columns.filter((column) => column.source_path === task.source_path));
     return (role === 'focus' ? own.focus : own[role][0])?.id ?? null;
   };
-  const dropProps = (id: string | null, role?: 'focus' | 'backlog' | 'done') => ({
+  const canCreateAndStart = (taskId: string | null, role?: RegionRole) => {
+    const task = writableTask(taskId);
+    return Boolean(role === 'focus' && onConfigureColumns && task?.source_path !== undefined
+      && task?.local_id && task.column === null && !task.completed
+      && !snapshot.columns.some((column) => column.source_path === task.source_path));
+  };
+  const dropProps = (id: string | null, role?: RegionRole) => ({
     onDragOver: (event: React.DragEvent) => {
       const columnId = resolveColumn(id, draggedId, role);
-      if (!draggedId || !columnId) return;
+      if (!draggedId || (!columnId && !canCreateAndStart(draggedId, role))) {
+        event.dataTransfer.dropEffect = 'none';
+        return;
+      }
       event.preventDefault();
       event.dataTransfer.dropEffect = 'move';
-      setDropColumn(columnId);
+      setDropTarget({ column: columnId, role });
     },
     onDragLeave: (event: React.DragEvent) => {
-      if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setDropColumn(null);
+      if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setDropTarget(null);
     },
     onDrop: (event: React.DragEvent) => {
       event.preventDefault();
       const taskId = draggedId ?? event.dataTransfer.getData('text/plain');
       const columnId = resolveColumn(id, taskId, role);
+      const task = writableTask(taskId);
       setDraggedId(null);
-      setDropColumn(null);
+      setDropTarget(null);
       if (taskId && columnId) void moveTask(taskId, columnId);
+      else if (task && canCreateAndStart(taskId, role)) {
+        const opener = Array.from(document.querySelectorAll<HTMLElement>('[data-task-id]')).find((element) => element.dataset.taskId === taskId) ?? null;
+        setAnnouncement('请预览创建默认列并推进此任务的差异；确认前不写入。');
+        onConfigureColumns?.(task, opener, true);
+      }
     },
   });
 
@@ -123,11 +146,12 @@ function useDropTargets(
     onDragStart: (id: string) => setDraggedId(id),
     onDragEnd: () => {
       setDraggedId(null);
-      setDropColumn(null);
+      setDropTarget(null);
     },
   };
 
-  const isDropTarget = (columnId: string | null) => Boolean(columnId && draggedId && dropColumn === columnId);
+  const isDropTarget = (columnId: string | null, role?: RegionRole) => Boolean(draggedId && dropTarget
+    && (role ? dropTarget.role === role : columnId && dropTarget.column === columnId));
 
   return { moveTask, dropProps, cardDragProps, isDropTarget, announcement };
 }
@@ -174,13 +198,14 @@ export function GoalView({
   onMove,
   onSetPriority,
   onSetLoose,
+  onConfigureColumns,
 }: GoalViewProps) {
   const [layout, updateLayout] = useGoalLayout();
   const [{ density }] = useAppSettings();
   const [dueFilter, setDueFilter] = React.useState<DueFilter>('all');
   const columns = React.useMemo(() => splitColumns(snapshot.columns), [snapshot.columns]);
   const bands = React.useMemo(() => dueBands(snapshot), [snapshot]);
-  const drop = useDropTargets(snapshot, readOnly, onMove);
+  const drop = useDropTargets(snapshot, readOnly, onMove, onConfigureColumns);
 
   const tasksIn = (column: DesktopColumn | null) =>
     column ? snapshot.tasks.filter((task) => task.column === column.id) : [];
@@ -223,6 +248,7 @@ export function GoalView({
     onSetFailed,
     onMove: (id: string, column: string) => void drop.moveTask(id, column),
     onSetPriority,
+    onConfigureColumns,
   });
 
   if (snapshot.tasks.length === 0) {
@@ -317,7 +343,7 @@ export function GoalView({
       <div className={layoutClass}>
         {/* ── In flight ─────────────────────────────────────────────── */}
         <section
-          className={`goal-region goal-region--doing${drop.isDropTarget(columns.focus?.id ?? null) ? ' is-drop-target' : ''}`}
+          className={`goal-region goal-region--doing${drop.isDropTarget(columns.focus?.id ?? null, 'focus') ? ' is-drop-target' : ''}`}
           aria-labelledby="goal-doing-title"
           {...drop.dropProps(columns.focus?.id ?? null, 'focus')}
         >
@@ -359,9 +385,12 @@ export function GoalView({
               <div className="focus-empty">
                 <strong>还没有推进中的任务</strong>
                 <p>
-                  {columns.focus
-                    ? `把一项工作拖到这里，或从卡片菜单移到「${focusName}」，它就会在此展开。`
-                    : '当前 TODO.md 没有活动列；在 frontmatter 的 columns 里加一列即可。'}
+                  {readOnly ? '当前只读，不能开始处理或移动任务。'
+                    : columns.focus
+                      ? '把一项工作拖到这里，按它所属来源的推进列开始处理；无列来源会先预览创建列并推进任务。'
+                      : snapshot.columns.length === 0
+                        ? '把一项未归列任务拖到这里，或在任务菜单选择「开始处理」。先预览创建默认列并推进此任务，确认后才写入。'
+                        : '当前来源没有可用的推进列；不会覆盖已有列或借用其他来源的列。'}
                 </p>
               </div>
             )}
@@ -396,7 +425,7 @@ export function GoalView({
         {/* ── Queue ─────────────────────────────────────────────────── */}
         <section
           id="goal-todo-region"
-          className={`goal-region goal-region--todo${layout.todoCollapsed ? ' is-collapsed' : ''}${layout.todoCollapsed && drop.isDropTarget(columns.backlog[0]?.id ?? null) ? ' is-drop-target' : ''}`}
+          className={`goal-region goal-region--todo${layout.todoCollapsed ? ' is-collapsed' : ''}${layout.todoCollapsed && drop.isDropTarget(columns.backlog[0]?.id ?? null, 'backlog') ? ' is-drop-target' : ''}`}
           aria-labelledby="goal-todo-title"
           {...(layout.todoCollapsed ? drop.dropProps(columns.backlog[0]?.id ?? null, 'backlog') : {})}
         >
@@ -485,7 +514,7 @@ export function GoalView({
         {(columns.done.length > 0 || doneTasks.length > 0) && (
           <aside
             id="goal-done-region"
-            className={`goal-region goal-region--done${layout.doneCollapsed ? ' is-collapsed' : ''}${drop.isDropTarget(columns.done[0]?.id ?? null) ? ' is-drop-target' : ''}`}
+            className={`goal-region goal-region--done${layout.doneCollapsed ? ' is-collapsed' : ''}${drop.isDropTarget(columns.done[0]?.id ?? null, 'done') ? ' is-drop-target' : ''}`}
             aria-labelledby="goal-done-title"
             {...drop.dropProps(columns.done[0]?.id ?? null, 'done')}
           >

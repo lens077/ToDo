@@ -1388,6 +1388,41 @@
   .enroll-row__count { min-width: 40px; color: var(--ink-3); text-align: right; font-size: 11.5px; font-variant-numeric: tabular-nums; white-space: nowrap; }
   .enroll-panel__actions { display: flex; justify-content: flex-end; gap: 8px; padding: 14px 24px 18px; border-top: 1px solid var(--hairline); }
 
+  /* Column setup uses a native modal for focus trapping and Escape handling. */
+  .column-setup-dialog { width: min(860px, calc(100vw - 32px)); max-width: none; max-height: calc(100dvh - 32px); margin: auto; padding: 0; color: var(--ink); background: var(--panel); border: 1px solid var(--hairline); border-radius: 14px; box-shadow: var(--shadow-dialog); overflow: hidden; }
+  .column-setup-dialog[open] { display: flex; flex-direction: column; }
+  .column-setup-dialog::backdrop { background: var(--scrim); }
+  .column-setup-dialog__body { display: grid; gap: 18px; min-height: 0; padding: 20px 24px; overflow: auto; overscroll-behavior: contain; }
+  .column-setup-dialog__body > p, .column-setup-preview > p, .column-setup-headings > p { color: var(--ink-2); font-size: 13px; line-height: 1.55; }
+  .column-setup-dialog__header { display: grid; gap: 8px; }
+  .column-setup-dialog__header h2 { font-size: 20px; letter-spacing: -0.015em; }
+  .column-setup-dialog__header p { color: var(--ink-2); font-size: 13px; line-height: 1.55; }
+  .column-setup-dialog__task { padding: 10px 12px; border-left: 2px solid var(--accent); background: var(--accent-wash); overflow-wrap: anywhere; }
+  .column-setup-dialog__task strong { color: var(--ink); font-weight: 500; }
+  .column-setup-dialog__source { display: grid; gap: 4px; margin: 0; padding: 10px 12px; background: var(--panel-2); border-radius: var(--radius-control); font-size: 12px; }
+  .column-setup-dialog__source > div { display: grid; grid-template-columns: 32px minmax(0, 1fr); gap: 10px; }
+  .column-setup-dialog__source dt { color: var(--ink-2); }
+  .column-setup-dialog__source dd { margin: 0; overflow-wrap: anywhere; }
+  .column-setup-choices, .column-setup-headings { display: grid; gap: 8px; min-width: 0; margin: 0; padding: 0; border: 0; }
+  .column-setup-choices legend, .column-setup-headings legend { margin-bottom: 8px; padding: 0; font-size: 13px; font-weight: 500; }
+  .column-setup-choices > label { display: flex; align-items: start; gap: 10px; padding: 12px; border: 1px solid var(--hairline); border-radius: var(--radius-control); cursor: pointer; }
+  .column-setup-choices > label.is-selected { border-color: var(--accent); background: var(--accent-wash); }
+  .column-setup-choices input, .column-setup-heading input { flex: 0 0 auto; margin: 3px 0 0; accent-color: var(--accent); }
+  .column-setup-choices label > span, .column-setup-heading label > span { display: grid; gap: 4px; min-width: 0; }
+  .column-setup-choices strong, .column-setup-heading strong { font-size: 13.5px; font-weight: 500; overflow-wrap: anywhere; }
+  .column-setup-choices small, .column-setup-heading small { color: var(--ink-2); font-size: 12px; line-height: 1.5; }
+  .column-setup-heading { display: flex; flex-wrap: wrap; align-items: start; justify-content: space-between; gap: 8px 16px; padding: 10px 0; border-bottom: 1px solid var(--hairline); }
+  .column-setup-heading > label { display: flex; align-items: start; gap: 8px; min-width: 0; }
+  .column-setup-heading > label:first-child { flex: 1 1 180px; }
+  .column-setup-heading__done { color: var(--ink-2); font-size: 12px; }
+  .column-setup-preview { display: grid; gap: 12px; min-width: 0; }
+  .column-setup-preview h3 { font-size: 15px; }
+  .column-setup-preview ul { display: grid; gap: 6px; margin: 0; padding: 0; list-style: none; }
+  .column-setup-preview li { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 13px; }
+  .column-setup-preview li strong { font-weight: 500; }
+  .column-setup-preview li span { color: var(--ink-2); }
+  .column-setup-dialog__actions { display: flex; flex: 0 0 auto; flex-wrap: wrap; justify-content: flex-end; gap: 8px; padding: 12px 24px; border-top: 1px solid var(--hairline); }
+
   /* Batch adoption: the same list, each row opening onto its own diff. */
   .batch-adopt { width: min(760px, 100%); }
   .batch-adopt__item { display: grid; }
@@ -1428,6 +1463,18 @@
   .enroll-row__new, .enroll-row__status { grid-column: 2; justify-self: start; }
   .enroll-row__count { grid-column: 3; grid-row: 1; }
   .enroll-panel__actions { padding: 12px 14px calc(12px + env(safe-area-inset-bottom)); }
+}
+
+/* A configuration confirmation must show both sides even on narrow screens. */
+.column-setup-dialog .diff-head { grid-template-columns: 1fr 1fr; }
+.column-setup-dialog .diff-row { grid-template-columns: 30px minmax(0, 1fr) 30px minmax(0, 1fr); }
+.column-setup-dialog .diff-head > span:last-child, .column-setup-dialog .diff-row > :nth-child(n + 3) { display: block; }
+.column-setup-dialog .diff-body { max-height: 38dvh; }
+@media (max-width: 719px) {
+  .column-setup-dialog { width: calc(100vw - 16px); max-height: calc(100dvh - 16px); }
+  .column-setup-dialog__body { padding: 16px; gap: 14px; }
+  .column-setup-dialog__actions { padding: 10px 12px; }
+  .column-setup-dialog__actions > button { min-height: 44px; }
 }
 
 /* ── 象限: a fixed 2×2 matrix on one panel, hairlines crossing at the centre ── */

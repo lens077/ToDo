@@ -16,6 +16,7 @@ export interface TaskCardActions {
   onSetFailed: (taskId: string, note: string) => Promise<boolean>;
   onMove: (taskId: string, columnId: string) => void;
   onSetPriority?: (taskId: string, priority: TaskPriority) => void;
+  onConfigureColumns?: (task: DesktopTask, restoreFocus: HTMLElement | null, start?: boolean) => void;
 }
 
 interface TaskCardProps extends TaskCardActions {
@@ -156,6 +157,7 @@ export function TaskCard({
   onSetFailed,
   onMove,
   onSetPriority,
+  onConfigureColumns,
   isInFocus = false,
   allowCurrentPriority = false,
   children,
@@ -173,7 +175,8 @@ export function TaskCard({
     restoreFocus: HTMLElement | null;
   } | null>(null);
   const focus = variant === 'focus';
-  const movable = Boolean(task.id && (columns.length > 1 || onSetPriority) && !busy && !readOnly);
+  const configurable = Boolean(onConfigureColumns && task.source_path !== undefined && columns.length === 0 && !readOnly);
+  const movable = Boolean(task.id && (columns.length > 1 || onSetPriority || configurable) && !busy && !readOnly);
   const dueTone = task.due && !task.completed && task.due < localDateKey() ? 'overdue' : 'normal';
   const canRecord = Boolean(task.id) && !readOnly && !task.completed;
   const supportsPriority = Boolean(task.id && onSetPriority && !busy && !readOnly);
@@ -388,6 +391,8 @@ export function TaskCard({
           onClose={closeMenu}
           onMove={(columnId) => onMove(task.id!, columnId)}
           onSetPriority={onSetPriority ? (priority) => onSetPriority(task.id!, priority) : undefined}
+          onConfigureColumns={configurable ? () => onConfigureColumns?.(task, contextMenu.restoreFocus) : undefined}
+          onStartUnclassified={configurable && task.local_id && task.column === null && !task.completed ? () => onConfigureColumns?.(task, contextMenu.restoreFocus, true) : undefined}
           allowCurrentPriority={allowCurrentPriority}
         />
       )}

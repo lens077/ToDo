@@ -90,10 +90,12 @@ export interface DiffViewProps {
   diff: TextDiff;
   leftLabel: string;
   rightLabel: string;
+  /** Keep every backend-supplied context line visible for a full-file review. */
+  fullContext?: boolean;
 }
 
-export function DiffView({ diff, leftLabel, rightLabel }: DiffViewProps) {
-  const rows = useMemo(() => collapse(pairHunks(diff.hunks)), [diff]);
+export function DiffView({ diff, leftLabel, rightLabel, fullContext = false }: DiffViewProps) {
+  const rows = useMemo(() => fullContext ? pairHunks(diff.hunks) : collapse(pairHunks(diff.hunks)), [diff, fullContext]);
 
   if (diff.added === 0 && diff.removed === 0) {
     return <p className="diff-empty">两侧内容相同，没有需要确认的改动。</p>;
@@ -105,7 +107,7 @@ export function DiffView({ diff, leftLabel, rightLabel }: DiffViewProps) {
         <span role="columnheader">{leftLabel}</span>
         <span role="columnheader">{rightLabel}</span>
       </div>
-      <div className="diff-body">
+      <div className="diff-body" tabIndex={fullContext ? 0 : undefined} role={fullContext ? 'rowgroup' : undefined} aria-label={fullContext ? '完整差异，可滚动查看' : undefined}>
         {rows.map((row, index) => {
           if ('skipped' in row) {
             return (

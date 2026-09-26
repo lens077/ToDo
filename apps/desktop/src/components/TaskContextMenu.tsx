@@ -17,6 +17,8 @@ interface TaskContextMenuProps {
   y: number;
   onMove: (columnId: string) => void;
   onSetPriority?: (priority: TaskPriority) => void;
+  onConfigureColumns?: () => void;
+  onStartUnclassified?: () => void;
   allowCurrentPriority?: boolean;
   onClose: (restoreFocus?: boolean) => void;
 }
@@ -75,6 +77,8 @@ export function TaskContextMenu({
   y,
   onMove,
   onSetPriority,
+  onConfigureColumns,
+  onStartUnclassified,
   allowCurrentPriority = false,
   onClose,
 }: TaskContextMenuProps) {
@@ -286,6 +290,12 @@ export function TaskContextMenu({
       }}
     >
       <span className="task-context-menu__task" aria-hidden="true">{task.body}</span>
+      {onStartUnclassified && <button type="button" role="menuitem" onClick={(event) => activate(event, onStartUnclassified)}>
+        <Icon name="arrow" /><span>开始处理</span>
+      </button>}
+      {task.column === null && !task.completed && columns.length > 0 && !targets.doing && (
+        <p className="task-context-menu__hint">此来源没有可用的推进列，不能开始处理；不会覆盖已有列。</p>
+      )}
       {actions.map((action) => (
         <button
           key={action.column.id}
@@ -338,9 +348,12 @@ export function TaskContextMenu({
         <span>移动到…</span>
         <Icon name="chevron-right" className="task-context-menu__chevron" />
       </button>
-      {columns.length === 0 && (
+      {columns.length === 0 && <>
         <p className="task-context-menu__hint">当前来源未定义列，无法移动任务。</p>
-      )}
+        {onConfigureColumns && <button type="button" role="menuitem" onClick={(event) => activate(event, onConfigureColumns)}>
+          <Icon name="grid" /><span>配置任务列…</span>
+        </button>}
+      </>}
       {window.innerWidth <= 720 && moveSubmenu}
     </div>,
     document.body,
