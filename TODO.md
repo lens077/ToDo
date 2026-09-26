@@ -38,5 +38,9 @@ columns:
 ## Doing
 - [ ] 人工验收看板任务写回 TODO.md <!--t:h4m9zc--> #desktop #manual !1 ^3000
 - [ ] 用 todo 自身管理本项目后续开发 <!--t:1pevv2--> #process !2 🔗2e112404a57360d0d054543cbbdff4ace9862afd..9142b5b6dfed7ee34d7991c60a882c398496a43a
+- [x] 配置任务列：保真预览、确认写入与 ecommerce 实战适配 <!--t:57wlfi--> !1
+      ↳ 已实现配置任务列入口、默认/现有标题选择、保真预览与指纹确认；Rust门禁、126项前端、15项真实服务、37项WebKit通过；ecommerce真实副本验收原文件SHA未变，边界见docs/verification-log.md <!--n:57wlfi-->
+- [x] 未归列任务可直接拖入推进中，并在无列时一次确认创建列和推进 <!--t:angi74--> !1
+      ↳ 已支持直接拖入/开始处理；无列时合并预览后一个历史点原子配置并推进，保留完整Markdown列表项；Rust门禁、132项前端、43项WebKit、15项真实服务及ecommerce副本拖放通过 <!--n:angi74-->
 
 ## Done
