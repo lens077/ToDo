@@ -5,8 +5,11 @@ import { open } from '@tauri-apps/plugin-dialog';
 import { sourceKey, sourceQuery } from './taskSources';
 import type { AiListResult, AiOutcome, AiRecord, AiState } from './ai';
 import type { OpenSessionMode } from './appSettings';
+import { readColumnSetupOptions, readColumnSetupPreview, type ColumnSetupOptions, type ColumnSetupPreview, type ColumnSetupSelection } from './columnSetup';
+export type { ColumnSetupOptions, ColumnSetupPreview, ColumnSetupSelection } from './columnSetup';
 import {
   api,
+  HttpError,
   apiBase,
   detectTransport,
   probeHttp,
@@ -578,6 +581,7 @@ function classifyError(message: string): DesktopBridgeError['kind'] {
 
 function asBridgeError(value: unknown): DesktopBridgeError {
   if (value instanceof DesktopBridgeError) return value;
+  if (value instanceof HttpError && value.status === 409) return new DesktopBridgeError(value.message, 'conflict');
   if (value instanceof Error) return new DesktopBridgeError(value.message);
   if (typeof value === 'string') return new DesktopBridgeError(value);
   return new DesktopBridgeError('桌面后端返回了未知错误');
@@ -643,7 +647,7 @@ function normalizeSnapshot(raw: unknown): DesktopSnapshot {
       id: localId === null ? null : sourceKey(source, localId),
       column: task.column === null ? null : sourceKey(source, task.column),
       parent_id: task.parent_id === null ? null : sourceKey(source, task.parent_id),
-      source_writable: entry?.status === 'managed' && entry.writable,
+      source_writable: raw.source_writable !== false && entry?.status === 'managed' && entry.writable,
     };
   };
   const tasks = Array.isArray(value.tasks) ? value.tasks.map(projectTask) : [];
@@ -1117,6 +1121,43 @@ export const desktop = {
     if (isTauriRuntime()) return normalizeSnapshot(await call<unknown>('apply_adopt', { sourcePath, baseHash, projectPath, loose }));
     if (useHttp()) return normalizeSnapshot(await api<unknown>('/sources/adopt', { method: 'POST', body: { source_path: sourcePath, base_hash: baseHash, loose } }));
     throw new DesktopBridgeError('演示模式不能接管真实文件。');
+  },
+
+  async columnSetupOptions(sourcePath: string, expectedProjectPath: string): Promise<ColumnSetupOptions> {
+    try {
+      if (isTauriRuntime()) return readColumnSetupOptions(await call<unknown>('column_setup_options', { sourcePath, expectedProjectPath }), sourcePath);
+      if (useHttp()) {
+        const path = `${sourceQuery('/sources/columns', sourcePath)}&expected_project_path=${encodeURIComponent(expectedProjectPath)}`;
+        return readColumnSetupOptions(await api<unknown>(path), sourcePath);
+      }
+      throw new DesktopBridgeError('演示模式不支持配置任务列，请连接真实项目服务或使用桌面版。');
+    } catch (error) { throw asBridgeError(error); }
+  },
+
+  async previewColumns(sourcePath: string, selection: ColumnSetupSelection, expectedProjectPath: string): Promise<ColumnSetupPreview> {
+    try {
+      if (httpCapabilities?.writable === false) throw new DesktopBridgeError('服务端只读，不能配置任务列。');
+      if (isTauriRuntime()) return readColumnSetupPreview(await call<unknown>('preview_columns', { sourcePath, selection, expectedProjectPath }), sourcePath, selection);
+      if (useHttp()) return readColumnSetupPreview(await api<unknown>('/sources/columns/preview', {
+        method: 'POST', body: { source_path: sourcePath, selection, expected_project_path: expectedProjectPath },
+      }), sourcePath, selection);
+      throw new DesktopBridgeError('演示模式不支持配置任务列，请连接真实项目服务或使用桌面版。');
+    } catch (error) { throw asBridgeError(error); }
+  },
+
+  async applyColumns(preview: ColumnSetupPreview, expectedProjectPath: string): Promise<DesktopSnapshot> {
+    try {
+      if (httpCapabilities?.writable === false) throw new DesktopBridgeError('服务端只读，不能配置任务列。');
+      const { source_path, base_hash, selection } = preview;
+      // Deliberately omit proposed/diff/columns: Rust recomputes the controlled edit.
+      if (isTauriRuntime()) return normalizeSnapshot(await call<unknown>('apply_columns', {
+        sourcePath: source_path, baseHash: base_hash, selection, expectedProjectPath,
+      }));
+      if (useHttp()) return normalizeSnapshot(await api<unknown>('/sources/columns', {
+        method: 'POST', body: { source_path, base_hash, selection, expected_project_path: expectedProjectPath },
+      }));
+      throw new DesktopBridgeError('演示模式不支持配置任务列，请连接真实项目服务或使用桌面版。');
+    } catch (error) { throw asBridgeError(error); }
   },
 
   async captureList(): Promise<Capture[]> {

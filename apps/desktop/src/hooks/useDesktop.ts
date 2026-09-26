@@ -4,6 +4,8 @@ import { requireSource, sourceMutation } from '../lib/taskSources';
 import {
   desktop,
   DesktopBridgeError,
+  transportCapabilities,
+  type ColumnSetupPreview,
   type Capture,
   type DesktopMutation,
   type DesktopSnapshot,
@@ -239,6 +241,7 @@ export function useDesktop() {
 
     return () => {
       cancelled = true;
+      contextSequence.current += 1;
       snapshotReadSequence.current += 1;
       unsubscribe?.();
     };
@@ -278,12 +281,27 @@ export function useDesktop() {
     }
   }, [applySnapshot]);
 
-  const acceptWrite = React.useCallback(async (next: DesktopSnapshot, context: number) => {
-    if (context !== contextSequence.current) return;
-    const selected = selectedSourceRef.current;
-    const displayed = next.sources && (selected !== null || looseSourcesRef.current.length) ? await desktop.snapshot(selected, looseSourcesRef.current) : next;
-    if (context !== contextSequence.current) return;
-    applySnapshot(displayed, true);
+  const acceptWrite = React.useCallback(async function readAfterWrite(next: DesktopSnapshot, context: number): Promise<void> {
+    if (context !== contextSequence.current || snapshotRef.current?.project_path !== next.project_path) return;
+    if (!next.sources) {
+      applySnapshot(next, true);
+      return;
+    }
+    // A delayed write response may predate a watcher update (including revoked
+    // permissions). This post-write read shares the refresh sequence/epoch; an
+    // intervening newer read or write requires another read, never a hash test.
+    const request = ++snapshotReadSequence.current;
+    const epoch = snapshotEpoch.current;
+    try {
+      const displayed = await desktop.snapshot(selectedSourceRef.current, looseSourcesRef.current);
+      if (context !== contextSequence.current || snapshotRef.current?.project_path !== next.project_path || displayed.project_path !== next.project_path) return;
+      if (request !== snapshotReadSequence.current || epoch !== snapshotEpoch.current) return readAfterWrite(next, context);
+      applySnapshot(displayed, true);
+    } catch (error) {
+      if (context !== contextSequence.current || snapshotRef.current?.project_path !== next.project_path) return;
+      if (request !== snapshotReadSequence.current || epoch !== snapshotEpoch.current) return readAfterWrite(next, context);
+      throw error;
+    }
   }, [applySnapshot]);
 
   const runMutation = React.useCallback(
@@ -316,6 +334,60 @@ export function useDesktop() {
     },
     [acceptWrite, refreshSnapshot, withBusy, sourceBusy],
   );
+
+  const applyColumns = React.useCallback(async (preview: ColumnSetupPreview, expectedProjectPath: string): Promise<boolean> => {
+    const context = contextSequence.current;
+    const assertTarget = () => {
+      const current = snapshotRef.current;
+      if (context !== contextSequence.current || !current?.sources || sourceBusy || current.project_path !== expectedProjectPath) {
+        throw new DesktopBridgeError('项目或来源已切换，请重新打开配置。');
+      }
+      if (transportCapabilities()?.writable === false) throw new DesktopBridgeError('服务端只读，不能配置任务列。');
+      requireSource(current, preview.source_path);
+      if (current.tasks.some((task) => task.source_path === preview.source_path && task.source_writable === false)) {
+        throw new DesktopBridgeError('此来源只读，不能配置任务列。');
+      }
+      if (current.columns.some((column) => column.source_path === preview.source_path)) {
+        throw new DesktopBridgeError('此来源已定义任务列，请重新读取。', 'conflict');
+      }
+      const selection = preview.selection;
+      if (selection.mode === 'defaults_and_start') {
+        const task = current.tasks.find((item) => item.source_path === preview.source_path && item.local_id === selection.task_id);
+        if (!task || task.completed || task.column !== null || task.source_writable === false) {
+          throw new DesktopBridgeError('任务已变化；仅能开始处理未归列、未完成的可写任务。', 'conflict');
+        }
+      }
+    };
+    assertTarget();
+    try {
+      await withBusy(`columns:${preview.source_path}`, () => {
+        const write = mutationQueue.current.then(async () => {
+          // Validate again at queue execution, not only when Confirm was clicked.
+          assertTarget();
+          snapshotEpoch.current += 1;
+          try {
+            const next = await desktop.applyColumns(preview, expectedProjectPath);
+            if (next.project_path !== expectedProjectPath) throw new DesktopBridgeError('写入结果的项目不一致，请重新读取。');
+            await acceptWrite(next, context);
+          } finally {
+            // Also invalidate reads started during a write whose result was lost.
+            // A project/source content hash is not a monotonic freshness counter.
+            snapshotEpoch.current += 1;
+          }
+        });
+        mutationQueue.current = write.catch(() => undefined);
+        return write;
+      });
+      if (context !== contextSequence.current || snapshotRef.current?.project_path !== expectedProjectPath) return false;
+      setBanner(null);
+      return true;
+    } catch (error) {
+      if (context !== contextSequence.current || snapshotRef.current?.project_path !== expectedProjectPath) return false;
+      // The dialog owns the failure message and discards its stale confirmation.
+      void refreshSnapshot();
+      throw error;
+    }
+  }, [acceptWrite, refreshSnapshot, sourceBusy, withBusy]);
 
   const chooseProject = React.useCallback(async () => {
     const context = ++contextSequence.current;
@@ -514,6 +586,7 @@ export function useDesktop() {
     setNewTaskSource,
     adoptSource,
     adoptSources,
+    applyColumns,
     looseSources,
     setLooseSources,
     status,
