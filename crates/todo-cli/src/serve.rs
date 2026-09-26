@@ -18,8 +18,9 @@ use std::{
 };
 use todo_core::{
     diff_lines, import_text, parse_file, review_alignment, scan, AiListFilter, AiRecord, AiStore,
-    CaptureProject, Change, DesktopBackend, DesktopIntent, History, LockedWriter, MoveTarget,
-    PriorityScope, ProjectBackend, ProjectSnapshot, ScanOptions,
+    CaptureProject, Change, ColumnSetupOptions, ColumnSetupPreview, ColumnSetupSelection,
+    DesktopBackend, DesktopIntent, History, LockedWriter, MoveTarget, PriorityScope,
+    ProjectBackend, ProjectSnapshot, ScanOptions,
 };
 use tower_http::{cors::CorsLayer, services::ServeDir};
 
@@ -145,6 +146,11 @@ pub fn router_with_ai_store(
         .route("/mutate", post(project_mutate))
         .route("/sources/adopt/preview", post(preview_adopt))
         .route("/sources/adopt", post(apply_adopt))
+        .route(
+            "/sources/columns",
+            get(column_setup_options).post(apply_columns),
+        )
+        .route("/sources/columns/preview", post(preview_columns))
         .route("/tasks", post(create_task))
         .route("/tasks/{id}/completed", post(set_completed))
         .route("/tasks/{id}/progress", post(set_progress))
@@ -278,6 +284,74 @@ async fn apply_adopt(
         &hash,
         input.loose,
     )?))
+}
+
+#[derive(Deserialize)]
+struct ColumnSetupQuery {
+    source: String,
+    expected_project_path: Option<String>,
+}
+#[derive(Deserialize)]
+struct ColumnPreviewInput {
+    source_path: String,
+    selection: ColumnSetupSelection,
+    expected_project_path: Option<String>,
+}
+#[derive(Deserialize)]
+struct ColumnApplyInput {
+    source_path: String,
+    base_hash: String,
+    selection: ColumnSetupSelection,
+    expected_project_path: Option<String>,
+}
+/// The HTTP server cannot switch projects, but a client may have changed servers
+/// since opening its dialog. When supplied, bind even read/preview to that root.
+fn column_backend(
+    state: &ServeState,
+    expected_root: Option<&str>,
+) -> Result<ProjectBackend, ApiError> {
+    let backend = state.backend()?;
+    if expected_root
+        .is_some_and(|root| backend.project_path().and_then(|path| path.to_str()) != Some(root))
+    {
+        return Err(ApiError {
+            status: StatusCode::CONFLICT,
+            message: "project changed before column setup; review the current source again".into(),
+        });
+    }
+    Ok(backend)
+}
+async fn column_setup_options(
+    State(state): State<Arc<ServeState>>,
+    Query(query): Query<ColumnSetupQuery>,
+) -> ApiResult<ColumnSetupOptions> {
+    Ok(Json(
+        column_backend(&state, query.expected_project_path.as_deref())?
+            .column_setup_options(&query.source)?,
+    ))
+}
+async fn preview_columns(
+    State(state): State<Arc<ServeState>>,
+    Json(input): Json<ColumnPreviewInput>,
+) -> ApiResult<ColumnSetupPreview> {
+    state.writable()?;
+    Ok(Json(
+        column_backend(&state, input.expected_project_path.as_deref())?
+            .preview_columns(&input.source_path, &input.selection)?,
+    ))
+}
+async fn apply_columns(
+    State(state): State<Arc<ServeState>>,
+    Json(input): Json<ColumnApplyInput>,
+) -> ApiResult<ProjectSnapshot> {
+    state.writable()?;
+    Ok(Json(
+        column_backend(&state, input.expected_project_path.as_deref())?.apply_columns(
+            &input.source_path,
+            &input.base_hash,
+            &input.selection,
+        )?,
+    ))
 }
 
 // Legacy per-task endpoints retain their single-source contract. Multi-source
