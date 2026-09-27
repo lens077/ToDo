@@ -395,3 +395,29 @@ async fn the_alignment_prompt_is_reachable() {
     assert_eq!(status, 200);
     assert!(body.contains("核对 TODO 与代码现实"));
 }
+
+#[tokio::test]
+async fn body_endpoint_rewrites_the_markdown_text_and_records_history() {
+    let dir = fixture();
+    let base = start(dir.path(), false).await;
+
+    let (status, body) = post(
+        &format!("{base}/tasks/aaaaaa/body"),
+        "{\"body\":\"**加粗** 与 `code`\"}",
+    )
+    .await;
+    assert_eq!(status, 200, "{body}");
+    let text = std::fs::read_to_string(dir.path().join("TODO.md")).unwrap();
+    assert!(
+        text.contains("**加粗** 与 `code` <!--t:aaaaaa-->"),
+        "{text}"
+    );
+
+    let before = std::fs::read(dir.path().join("TODO.md")).unwrap();
+    let (status, _) = post(&format!("{base}/tasks/aaaaaa/body"), "{\"body\":\"  \"}").await;
+    assert_eq!(status, 400);
+    assert_eq!(std::fs::read(dir.path().join("TODO.md")).unwrap(), before);
+
+    let (_, history) = get(&format!("{base}/history")).await;
+    assert_eq!(json(&history)[0]["op"], "board-edit");
+}

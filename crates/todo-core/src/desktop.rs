@@ -136,6 +136,12 @@ pub enum DesktopIntent {
         id: String,
         note: String,
     },
+    /// Replaces the Markdown text of a task line, leaving checkbox, metadata,
+    /// and the `↳` note untouched.
+    SetBody {
+        id: String,
+        body: String,
+    },
     SetPriority {
         id: String,
         priority: Option<u8>,
@@ -166,6 +172,7 @@ impl DesktopIntent {
             Self::SetCompleted { .. } => "board-undone",
             Self::SetPartial { .. } => "board-partial",
             Self::SetFailed { .. } => "board-fail",
+            Self::SetBody { .. } => "board-edit",
             Self::SetPriority { .. } => "board-priority",
             Self::MoveTask { .. } => "board-move",
         }
@@ -490,6 +497,7 @@ fn intent_changes(
                 },
             ])
         }
+        DesktopIntent::SetBody { id, body } => set_body_changes(document, id, body),
         DesktopIntent::MoveTask {
             id,
             column,
@@ -549,6 +557,52 @@ fn intent_changes(
             }])
         }
     }
+}
+
+/// Rewrites only the body span of one task line.
+///
+/// The edited text must read back as exactly the same body: text that ends in
+/// something the parser would peel off as metadata (`#tag`, `!1`, a date, …) or
+/// that adds a stable-id comment would silently change the task's meaning, so
+/// it is refused instead of written.
+fn set_body_changes(document: &Document, id: &str, body: &str) -> Result<Vec<Change>> {
+    let body = body.trim();
+    if body.is_empty() {
+        return Err(Error::InvalidTaskLine("task body cannot be empty".into()));
+    }
+    if body.contains(['\n', '\r']) {
+        return Err(Error::InvalidTaskLine(
+            "task body must remain on one line".into(),
+        ));
+    }
+    if body.contains("<!--") || body.contains("-->") {
+        return Err(Error::InvalidTaskLine(
+            "task body must not contain HTML comment markers".into(),
+        ));
+    }
+    let task = find_task(document, id)?;
+    if document.tasks[task].body == body {
+        return Ok(Vec::new());
+    }
+    let changes = vec![Change::SetBody {
+        task,
+        body: body.to_owned(),
+    }];
+    let output = crate::write::apply_changes(document, &changes)?;
+    let reparsed = crate::parse(output)?;
+    let original = &document.tasks[task];
+    let unchanged_shape = reparsed.tasks.len() == document.tasks.len()
+        && reparsed.tasks.get(task).is_some_and(|written| {
+            written.id == original.id
+                && written.body == body
+                && written.metadata.len() == original.metadata.len()
+        });
+    if !unchanged_shape {
+        return Err(Error::InvalidTaskLine(
+            "task body would be read back as metadata or another task; rephrase the ending".into(),
+        ));
+    }
+    Ok(changes)
 }
 
 pub fn set_priority_changes(

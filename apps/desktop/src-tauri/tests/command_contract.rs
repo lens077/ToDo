@@ -121,6 +121,21 @@ fn mutation_intents_deserialize_from_the_exact_frontend_payloads() {
             .completed
     );
 
+    let edited: DesktopIntent = serde_json::from_value(
+        json!({"type": "set_body", "id": "aaa111", "body": "**edited** in `ui`"}),
+    )
+    .expect("set_body payload must deserialize");
+    let snapshot = fx.ops.mutate(edited).unwrap();
+    assert_eq!(
+        snapshot
+            .tasks
+            .iter()
+            .find(|task| task.id.as_deref() == Some("aaa111"))
+            .unwrap()
+            .body,
+        "**edited** in `ui`"
+    );
+
     // The move seam uses stable task IDs, never array indexes: a stale index
     // would move the wrong task after an external edit.
     let moved: DesktopIntent = serde_json::from_value(json!({

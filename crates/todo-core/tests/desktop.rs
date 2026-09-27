@@ -827,3 +827,51 @@ fn undated_actionable_work_still_appears_on_the_landing_view() {
         "undated work must not be forced into a dated band"
     );
 }
+
+#[test]
+fn set_body_rewrites_only_the_markdown_text_of_one_task() {
+    let (dir, backend) = project();
+    let path = dir.path().join("TODO.md");
+    let before = fs::read_to_string(&path).unwrap();
+
+    let snapshot = backend
+        .mutate(DesktopIntent::SetBody {
+            id: "aaaaaa".into(),
+            body: "  **未完成** · 修复 `inventory.go` 的扣减  ".into(),
+        })
+        .unwrap();
+    let task = snapshot
+        .tasks
+        .iter()
+        .find(|task| task.id.as_deref() == Some("aaaaaa"))
+        .unwrap();
+    assert_eq!(task.body, "**未完成** · 修复 `inventory.go` 的扣减");
+    assert_eq!(task.due.as_deref(), Some("2026-01-01"));
+    let after = fs::read_to_string(&path).unwrap();
+    assert_eq!(
+        after,
+        before.replace(
+            "- [ ] overdue <!--t:aaaaaa-->",
+            "- [ ] **未完成** · 修复 `inventory.go` 的扣减 <!--t:aaaaaa-->"
+        )
+    );
+
+    for rejected in [
+        "",
+        "   ",
+        "two\nlines",
+        "ends with a tag #core",
+        "fake <!--t:zzzzzz-->",
+    ] {
+        assert!(
+            backend
+                .mutate(DesktopIntent::SetBody {
+                    id: "aaaaaa".into(),
+                    body: rejected.into(),
+                })
+                .is_err(),
+            "{rejected:?} must be refused"
+        );
+    }
+    assert_eq!(fs::read_to_string(&path).unwrap(), after);
+}

@@ -155,6 +155,7 @@ pub fn router_with_ai_store(
         .route("/tasks/{id}/completed", post(set_completed))
         .route("/tasks/{id}/progress", post(set_progress))
         .route("/tasks/{id}/fail", post(set_failed))
+        .route("/tasks/{id}/body", post(set_body))
         .route("/tasks/{id}/priority", post(set_priority))
         .route("/tasks/{id}/move", post(move_task))
         .route("/scan", get(run_scan))
@@ -507,6 +508,26 @@ async fn set_failed(
         &state,
         input.source_path.as_deref(),
         DesktopIntent::SetFailed { id, note },
+    )
+}
+#[derive(Deserialize)]
+struct BodyInput {
+    body: String,
+    source_path: Option<String>,
+}
+async fn set_body(
+    State(state): State<Arc<ServeState>>,
+    AxumPath(id): AxumPath<String>,
+    Json(input): Json<BodyInput>,
+) -> ApiResult<ProjectSnapshot> {
+    state.writable()?;
+    mutate(
+        &state,
+        input.source_path.as_deref(),
+        DesktopIntent::SetBody {
+            id,
+            body: input.body,
+        },
     )
 }
 #[derive(Deserialize)]
