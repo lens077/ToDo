@@ -1,4 +1,5 @@
 import * as React from 'react';
+import { renderInlineMarkdown } from '../lib/inlineMarkdown';
 import { useColumnSetup, type ColumnSetupDialogProps } from '../hooks/useColumnSetup';
 import { DiffView } from './DiffView';
 
@@ -59,7 +60,7 @@ export function ColumnSetupDialog(props: ColumnSetupDialogProps) {
           <p id="column-setup-description">{props.startTask
             ? '为此来源配置默认列，并将下面这项未归列任务及其子任务移到「进行中」顶部。保留勾选状态、备注和元数据，不移动其他任务。确认后一次写入；取消不会创建列或移动任务。'
             : '只配置此来源的任务列，不移动或重排现有任务，不改变任务勾选状态。确认前不会写入文件。'}</p>
-          {props.startTask && <p className="column-setup-dialog__task"><strong>{props.startTask.body}</strong></p>}
+          {props.startTask && <p className="column-setup-dialog__task">{renderInlineMarkdown(props.startTask.body)}</p>}
           <dl className="column-setup-dialog__source">
             <div><dt>项目</dt><dd><code>{props.projectPath}</code></dd></div>
             <div><dt>来源</dt><dd><code>{props.sourcePath}</code></dd></div>

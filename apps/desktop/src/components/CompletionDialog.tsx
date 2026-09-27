@@ -1,4 +1,5 @@
 import * as React from 'react';
+import { renderInlineMarkdown } from '../lib/inlineMarkdown';
 import type { DesktopTask, EvidenceRange } from '../lib/desktop';
 
 export type CompletionDecision =
@@ -54,7 +55,7 @@ export function CompletionDialog({ task, initialOutcome = 'done', busy, onCancel
       <section className="completion-panel" role="dialog" aria-modal="true" aria-labelledby="completion-dialog-title">
         <header className="completion-panel__header">
           <h2 id="completion-dialog-title">确认任务结局</h2>
-          <p>{task.body}</p>
+          <p>{renderInlineMarkdown(task.body)}</p>
         </header>
         <form className="completion-form" onSubmit={(event) => {
           event.preventDefault();

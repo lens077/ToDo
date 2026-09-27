@@ -1,4 +1,5 @@
 import * as React from 'react';
+import { plainInlineMarkdown, renderInlineMarkdown } from '../lib/inlineMarkdown';
 import type { DesktopColumn, DesktopSnapshot, DesktopTask, TaskPriority } from '../lib/desktop';
 import {
   clampFocusLimit,
@@ -74,15 +75,15 @@ function useDropTargets(
         && task.column === columnId
         && task.completed === destination.done
       ) {
-        setAnnouncement(`“${task.body}”仍在${destination.name}`);
+        setAnnouncement(`“${plainInlineMarkdown(task.body)}”仍在${destination.name}`);
         return;
       }
-      setAnnouncement(`正在把“${task.body}”移动到${destination.name}顶部`);
+      setAnnouncement(`正在把“${plainInlineMarkdown(task.body)}”移动到${destination.name}顶部`);
       const succeeded = await onMove(taskId, columnId);
       setAnnouncement(
         succeeded
-          ? `“${task.body}”已移动到${destination.name}顶部`
-          : `“${task.body}”没有移动，仍保留原位置`,
+          ? `“${plainInlineMarkdown(task.body)}”已移动到${destination.name}顶部`
+          : `“${plainInlineMarkdown(task.body)}”没有移动，仍保留原位置`,
       );
       requestAnimationFrame(() => {
         const card = Array.from(document.querySelectorAll<HTMLElement>('[data-task-id]'))
@@ -195,6 +196,7 @@ export function GoalView({
   onSetCompleted,
   onSetPartial,
   onSetFailed,
+  onSetBody,
   onMove,
   onSetPriority,
   onSetLoose,
@@ -246,6 +248,7 @@ export function GoalView({
     onSetCompleted: (id: string, completed: boolean) => void onSetCompleted(id, completed),
     onSetPartial,
     onSetFailed,
+    onSetBody,
     onMove: (id: string, column: string) => void drop.moveTask(id, column),
     onSetPriority,
     onConfigureColumns,
@@ -401,7 +404,7 @@ export function GoalView({
                 <ul>
                   {queued.map((task) => (
                     <li key={task.id ?? task.body}>
-                      <span className="focus-queue__body">{task.body}{task.source_path && <small className="task-source"> · {task.source_path}</small>}</span>
+                      <span className="focus-queue__body">{renderInlineMarkdown(task.body)}{task.source_path && <small className="task-source"> · {task.source_path}</small>}</span>
                       {task.progress !== null && <span className="task-partial">◐ {task.progress}%</span>}
                       {!readOnly && task.source_writable !== false && task.id && columns.focus && (
                         <button

@@ -3,7 +3,9 @@ import type { DragEvent } from 'react';
 import type { DesktopColumn, DesktopTask, TaskPriority } from '../lib/desktop';
 import { formatDueDate, shortId } from '../lib/format';
 import { splitColumns } from '../lib/goal';
+import { plainInlineMarkdown, renderInlineMarkdown } from '../lib/inlineMarkdown';
 import { Icon } from './Icon';
+import { TaskBodyEditor } from './TaskBodyEditor';
 import { TaskContextMenu, type TaskMoveTargets } from './TaskContextMenu';
 
 export type TaskCardVariant = 'card' | 'compact' | 'focus' | 'quadrant';
@@ -14,6 +16,8 @@ export interface TaskCardActions {
   onSetPartial: (taskId: string, percent: number, note: string) => Promise<boolean>;
   /** Writes a `⚠` failed attempt. Resolves `true` when the file accepted it. */
   onSetFailed: (taskId: string, note: string) => Promise<boolean>;
+  /** Rewrites the Markdown body of the task line. Absent means the body is view-only. */
+  onSetBody?: (taskId: string, body: string) => Promise<boolean>;
   onMove: (taskId: string, columnId: string) => void;
   onSetPriority?: (taskId: string, priority: TaskPriority) => void;
   onConfigureColumns?: (task: DesktopTask, restoreFocus: HTMLElement | null, start?: boolean) => void;
@@ -69,6 +73,7 @@ function OutcomeInline({
   const percentValid = percent >= 1 && percent <= 99;
   const canSubmit = Boolean(trimmed) && (outcome !== 'partial' || percentValid) && !busy;
   const noteLabel = outcome === 'partial' ? '进度说明' : '失败原因';
+  const plainBody = plainInlineMarkdown(task.body);
 
   const submit = async () => {
     if (!canSubmit || !task.id) return;
@@ -81,7 +86,7 @@ function OutcomeInline({
   return (
     <form
       className={`outcome-inline outcome-inline--${outcome}`}
-      aria-label={outcome === 'partial' ? `记录“${task.body}”的部分完成` : `记录“${task.body}”的失败`}
+      aria-label={outcome === 'partial' ? `记录“${plainBody}”的部分完成` : `记录“${plainBody}”的失败`}
       onSubmit={(event) => {
         event.preventDefault();
         void submit();
@@ -155,6 +160,7 @@ export function TaskCard({
   onSetCompleted,
   onSetPartial,
   onSetFailed,
+  onSetBody,
   onMove,
   onSetPriority,
   onConfigureColumns,
@@ -163,12 +169,15 @@ export function TaskCard({
   children,
 }: TaskCardProps) {
   readOnly = readOnly || task.source_writable === false;
+  const plainBody = plainInlineMarkdown(task.body);
   if (task.source_path !== undefined) {
     columns = columns.filter((column) => column.source_path === task.source_path);
     const local = splitColumns(columns);
     moveTargets = { todo: local.backlog[0] ?? null, doing: local.focus, done: local.done[0] ?? null };
   }
   const [inline, setInline] = React.useState<InlineOutcome | null>(null);
+  const [editingBody, setEditingBody] = React.useState(false);
+  const bodyRef = React.useRef<HTMLParagraphElement>(null);
   const [contextMenu, setContextMenu] = React.useState<{
     x: number;
     y: number;
@@ -180,13 +189,26 @@ export function TaskCard({
   const dueTone = task.due && !task.completed && task.due < localDateKey() ? 'overdue' : 'normal';
   const canRecord = Boolean(task.id) && !readOnly && !task.completed;
   const supportsPriority = Boolean(task.id && onSetPriority && !busy && !readOnly);
+  const bodyEditable = Boolean(task.id && onSetBody && !readOnly);
+  const openBodyEditor = () => {
+    setContextMenu(null);
+    setEditingBody(true);
+  };
+  const closeBodyEditor = React.useCallback((restoreFocus = true) => {
+    setEditingBody(false);
+    if (!restoreFocus) return;
+    requestAnimationFrame(() => {
+      const card = bodyRef.current?.closest<HTMLElement>('.task-card');
+      if (card?.isConnected) card.focus({ preventScroll: true });
+    });
+  }, []);
 
   React.useEffect(() => {
     if (task.completed) setInline(null);
   }, [task.completed]);
 
   const startDrag = (event: DragEvent<HTMLElement>) => {
-    if (!task.id) return;
+    if (!task.id || editingBody) return;
     setContextMenu(null);
     event.dataTransfer.effectAllowed = 'move';
     event.dataTransfer.setData('text/plain', task.id);
@@ -194,7 +216,7 @@ export function TaskCard({
   };
 
   const openMenuAt = (x: number, y: number, restoreFocus: HTMLElement | null) => {
-    if (movable && !inline) setContextMenu({ x, y, restoreFocus });
+    if (movable && !inline && !editingBody) setContextMenu({ x, y, restoreFocus });
   };
   const closeMenu = (restoreFocus = false) => {
     const target = contextMenu?.restoreFocus;
@@ -210,7 +232,7 @@ export function TaskCard({
     <button
       type="button"
       className="move-menu"
-      aria-label={`打开“${task.body}”的任务菜单`}
+      aria-label={`打开“${plainBody}”的任务菜单`}
       aria-haspopup="menu"
       aria-expanded={Boolean(contextMenu)}
       title="任务菜单"
@@ -229,7 +251,7 @@ export function TaskCard({
     <button
       type="button"
       className={`outcome-button outcome-button--partial${inline === 'partial' ? ' is-open' : ''}`}
-      aria-label={`部分完成“${task.body}”`}
+      aria-label={`部分完成“${plainBody}”`}
       aria-expanded={inline === 'partial'}
       title="记录部分完成"
       disabled={busy}
@@ -244,7 +266,7 @@ export function TaskCard({
     <button
       type="button"
       className={`outcome-button outcome-button--failed${inline === 'failed' ? ' is-open' : ''}`}
-      aria-label={`记录“${task.body}”的失败`}
+      aria-label={`记录“${plainBody}”的失败`}
       aria-expanded={inline === 'failed'}
       title="记录失败"
       disabled={busy}
@@ -259,17 +281,22 @@ export function TaskCard({
     <article
       className={`task-card task-card--${variant}${isInFocus ? ' is-in-focus' : ''}${task.completed ? ' is-complete' : ''}${busy ? ' is-busy' : ''}${readOnly ? ' is-read-only' : ''}${inline ? ' is-editing' : ''}`}
       data-task-id={task.id ?? undefined}
-      draggable={movable && !inline}
+      draggable={movable && !inline && !editingBody}
       aria-disabled={readOnly || undefined}
       onDragStart={startDrag}
       onDragEnd={onDragEnd}
       onContextMenu={(event) => {
-        if (!movable || inline) return;
+        if (!movable || inline || editingBody) return;
         event.preventDefault();
         openMenuAt(event.clientX, event.clientY, event.currentTarget);
       }}
       onKeyDown={(event) => {
         if (inline || event.target !== event.currentTarget) return;
+        if ((event.key === 'Enter' || event.key === 'F2') && !event.metaKey && !event.ctrlKey && !event.altKey && task.id) {
+          event.preventDefault();
+          openBodyEditor();
+          return;
+        }
         if (supportsPriority && /^[0-4]$/.test(event.key) && !event.metaKey && !event.ctrlKey && !event.altKey) {
           event.preventDefault();
           onSetPriority?.(task.id!, event.key === '0' ? null : Number(event.key) as TaskPriority);
@@ -287,13 +314,13 @@ export function TaskCard({
         }
       }}
       tabIndex={0}
-      aria-label={`${task.completed ? '已完成' : '未完成'} Project Task：${task.body}`}
+      aria-label={`${task.completed ? '已完成' : '未完成'} Project Task：${plainBody}`}
     >
       <div className="task-card__topline">
         <button
           className="task-check"
           type="button"
-          aria-label={task.completed ? `将“${task.body}”标为未完成` : `完成“${task.body}”`}
+          aria-label={task.completed ? `将“${plainBody}”标为未完成` : `完成“${plainBody}”`}
           aria-pressed={task.completed}
           disabled={readOnly || !task.id || busy}
           onClick={() => task.id && onSetCompleted(task.id, !task.completed)}
@@ -316,7 +343,20 @@ export function TaskCard({
 
       {variant === 'quadrant' && isInFocus && <span className="task-card__focus-mark">推进中</span>}
       {variant === 'quadrant' && task.column === null && <span className="task-card__orphan-mark">未归列</span>}
-      <p className="task-card__body">{task.body}</p>
+      <p
+        ref={bodyRef}
+        className={`task-card__body${editingBody ? ' is-editing-body' : ''}`}
+        title={bodyEditable ? '点击编辑正文（Enter / F2）' : '点击查看并选择文字'}
+        onClick={(event) => {
+          // Links inside the rendered Markdown keep their own behaviour.
+          if ((event.target as HTMLElement).closest('a')) return;
+          if (!task.id) return;
+          if (editingBody) closeBodyEditor(false);
+          else openBodyEditor();
+        }}
+      >
+        {renderInlineMarkdown(task.body)}
+      </p>
 
       {focus && task.progress !== null && !task.completed && (
         <div className="task-card__progress" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={task.progress} aria-label="完成比例">
@@ -394,6 +434,17 @@ export function TaskCard({
           onConfigureColumns={configurable ? () => onConfigureColumns?.(task, contextMenu.restoreFocus) : undefined}
           onStartUnclassified={configurable && task.local_id && task.column === null && !task.completed ? () => onConfigureColumns?.(task, contextMenu.restoreFocus, true) : undefined}
           allowCurrentPriority={allowCurrentPriority}
+        />
+      )}
+
+      {editingBody && bodyRef.current && task.id && (
+        <TaskBodyEditor
+          task={task}
+          anchor={bodyRef.current}
+          readOnly={!bodyEditable}
+          busy={busy}
+          onSave={(body) => onSetBody ? onSetBody(task.id!, body) : Promise.resolve(false)}
+          onClose={closeBodyEditor}
         />
       )}
 

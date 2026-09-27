@@ -1,4 +1,5 @@
 import * as React from 'react';
+import { renderInlineMarkdown } from '../lib/inlineMarkdown';
 import type { DesktopTask } from '../lib/desktop';
 import { Icon } from './Icon';
 
@@ -55,7 +56,7 @@ export function ConfirmCompleteDialog({ task, busy, onCancel, onConfirm }: Confi
           <Icon name="check" />
         </span>
         <h2 id="confirm-complete-title">标为完成？</h2>
-        <p id="confirm-complete-body" className="confirm-panel__body">{task.body}</p>
+        <p id="confirm-complete-body" className="confirm-panel__body">{renderInlineMarkdown(task.body)}</p>
         <p className="confirm-panel__hint">会写入 TODO.md 并建立还原点；可以在设置里关闭这一步确认。</p>
         <footer className="confirm-panel__actions">
           <button type="button" className="text-action" onClick={onCancel} disabled={busy}>

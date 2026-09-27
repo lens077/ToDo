@@ -206,6 +206,7 @@ export type DesktopMutation =
   | { type: 'set_completed'; id: string; completed: boolean; note?: string; evidence?: EvidenceRange }
   | { type: 'set_partial'; id: string; percent: number; note: string }
   | { type: 'set_failed'; id: string; note: string }
+  | { type: 'set_body'; id: string; body: string }
   | { type: 'set_priority'; id: string; priority: TaskPriority; scope?: PriorityScope }
   | ({ type: 'move_task'; id: string; column: string; target: MoveTarget } & MoveCompletionDetails);
 
@@ -850,6 +851,10 @@ async function mockMutate(intent: DesktopMutation): Promise<DesktopSnapshot> {
     mockTasks = mockTasks.map((task) => task.id === intent.id
       ? { ...task, failed_on: MOCK_TODAY, note: intent.note.trim() }
       : task);
+  } else if (intent.type === 'set_body') {
+    const body = intent.body.trim();
+    if (!body) throw new DesktopBridgeError('任务正文不能为空');
+    mockTasks = mockTasks.map((task) => task.id === intent.id ? { ...task, body } : task);
   } else if (intent.type === 'set_priority') {
     const root = mockTasks.findIndex((task) => task.id === intent.id);
     const rootTask = mockTasks[root];
@@ -1089,6 +1094,8 @@ export const desktop = {
               ? { path: `/tasks/${intent.id}/progress`, payload: { percent: intent.percent, note: intent.note } }
               : intent.type === 'set_failed'
                 ? { path: `/tasks/${intent.id}/fail`, payload: { note: intent.note } }
+                : intent.type === 'set_body'
+                  ? { path: `/tasks/${intent.id}/body`, payload: { body: intent.body } }
                 : intent.type === 'set_priority'
                   ? {
                       path: `/tasks/${intent.id}/priority`,

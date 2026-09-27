@@ -1,4 +1,5 @@
 import * as React from 'react';
+import { plainInlineMarkdown, renderInlineMarkdown } from '../lib/inlineMarkdown';
 import type { DesktopSnapshot, TaskPriority } from '../lib/desktop';
 import { useDragAutoScroll } from '../lib/dragScroll';
 import { formatDueDate } from '../lib/format';
@@ -56,9 +57,9 @@ export function QuadrantView({ snapshot, busyKeys, readOnly, onSetPriority, ...a
   const setGroupPriority = async (group: QuadrantGroup, priority: TaskPriority) => {
     if (!group.task.id || readOnly || group.task.source_writable === false || groupBusy(group)) return;
     const destination = priority === null ? '未定级' : `!${priority}`;
-    setAnnouncement(`正在把“${group.task.body}”整组移到${destination}`);
+    setAnnouncement(`正在把“${plainInlineMarkdown(group.task.body)}”整组移到${destination}`);
     const written = await onSetPriority(group.task.id, priority);
-    setAnnouncement(written ? `“${group.task.body}”整组已移到${destination}` : `“${group.task.body}”整组没有改动`);
+    setAnnouncement(written ? `“${plainInlineMarkdown(group.task.body)}”整组已移到${destination}` : `“${plainInlineMarkdown(group.task.body)}”整组没有改动`);
   };
   const dropProps = (priority: TaskPriority) => ({
     onDragOver: (event: React.DragEvent) => {
@@ -90,7 +91,7 @@ export function QuadrantView({ snapshot, busyKeys, readOnly, onSetPriority, ...a
             <button
               className="task-check"
               type="button"
-              aria-label={task.completed ? `将“${task.body}”标为未完成` : `完成“${task.body}”`}
+              aria-label={task.completed ? `将“${plainInlineMarkdown(task.body)}”标为未完成` : `完成“${plainInlineMarkdown(task.body)}”`}
               aria-pressed={task.completed}
               disabled={readOnly || task.source_writable === false || !task.id || busyKeys.has(`task:${task.id}`)}
               onClick={() => task.id && actions.onSetCompleted(task.id, !task.completed)}
@@ -98,7 +99,7 @@ export function QuadrantView({ snapshot, busyKeys, readOnly, onSetPriority, ...a
               {task.completed && <Icon name="check" />}
             </button>
             <div className="quadrant-child__content">
-              <span className="quadrant-child__body">{task.body}</span>
+              <span className="quadrant-child__body">{renderInlineMarkdown(task.body)}</span>
               <div className="quadrant-child__metadata">
                 <span>{task.priority === null ? '未定级' : `!${task.priority}`}</span>
                 {task.due && <time dateTime={task.due}>{formatDueDate(task.due)}</time>}
@@ -109,7 +110,7 @@ export function QuadrantView({ snapshot, busyKeys, readOnly, onSetPriority, ...a
               {task.note && <p className="task-note">↳ {task.note}</p>}
             </div>
           </div>
-          {children.length > 0 && descendants(children, task.body)}
+          {children.length > 0 && descendants(children, plainInlineMarkdown(task.body))}
         </li>
       ))}
     </ul>
@@ -137,7 +138,7 @@ export function QuadrantView({ snapshot, busyKeys, readOnly, onSetPriority, ...a
           {children.length > 0 && (
             <div className="quadrant-group__children">
               <p className="quadrant-group__summary">{members.length - 1} 个子任务 · 整组改档{mixed && <span> · 组内原优先级不同</span>}</p>
-              {descendants(children, task.body)}
+              {descendants(children, plainInlineMarkdown(task.body))}
             </div>
           )}
         </TaskCard>

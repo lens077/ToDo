@@ -23,13 +23,13 @@ function task(source_path: string, body: string, column: string | null = null) {
 
 async function fixture(page: Page, options: {
   readOnly?: boolean; writable?: boolean; taskWritable?: boolean; optionsErrorOnce?: boolean;
-  conflictOnce?: boolean; configured?: boolean; ownColumns?: 'active' | 'done-only';
+  conflictOnce?: boolean; configured?: boolean; ownColumns?: 'active' | 'done-only'; sourceBody?: string;
 } = {}) {
   const paths = ['TODO.md', source, otherSource];
   await page.addInitScript(({ root, paths }) => {
     localStorage.setItem(`todo.source-enrollment.v1:${root}`, JSON.stringify({ enrolled: paths, seen: paths }));
   }, { root, paths });
-  const tasks = [task('TODO.md', '已有列任务', 'todo'), task(source, '源文档任务'), task(otherSource, '第二来源任务')]
+  const tasks = [task('TODO.md', '已有列任务', 'todo'), task(source, options.sourceBody ?? '源文档任务'), task(otherSource, '第二来源任务')]
     .map((item) => ({ ...item, source_writable: item.source_path !== source || options.taskWritable !== false }));
   const sources = paths.map((path) => ({
     path, status: 'managed', writable: path !== source || options.writable !== false,
@@ -437,3 +437,18 @@ for (const options of [{ readOnly: true }, { writable: false }, { taskWritable: 
     expect(calls.previews).toEqual([]);
   });
 }
+
+test('the task being started renders its Markdown and its menu header is plain text', async ({ page }) => {
+  await fixture(page, { sourceBody: '**未完成 · 库存释放**：`ReleaseReserve` 仍为 panic' });
+  const plain = '未完成 · 库存释放：ReleaseReserve 仍为 panic';
+  await card(page, plain).focus();
+  await card(page, plain).press('Shift+F10');
+  const menu = page.getByRole('menu', { name: `“${plain}”的任务菜单` });
+  await expect(menu.locator('.task-context-menu__task')).toHaveText(plain);
+  await page.getByRole('menuitem', { name: '开始处理', exact: true }).press('Enter');
+  const start = page.getByRole('dialog', { name: '创建列并推进任务', exact: true });
+  const quoted = start.locator('.column-setup-dialog__task');
+  await expect(quoted.locator('strong')).toHaveText('未完成 · 库存释放');
+  await expect(quoted.locator('code')).toHaveText('ReleaseReserve');
+  await expect(quoted).not.toContainText('**');
+});

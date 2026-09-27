@@ -322,6 +322,7 @@ export function App() {
               onSetCompleted={setCompleted}
               onSetPartial={model.setPartial}
               onSetFailed={model.setFailed}
+              onSetBody={readOnly ? undefined : model.setBody}
               onMove={(id, column) => void moveTask(id, column)}
               onSetPriority={(id, priority) => model.setPriority(id, priority, 'subtree')}
               onConfigureColumns={configureColumns}
@@ -334,6 +335,7 @@ export function App() {
               onSetCompleted={setCompleted}
               onSetPartial={model.setPartial}
               onSetFailed={model.setFailed}
+              onSetBody={readOnly ? undefined : model.setBody}
               onMove={moveTask}
               onSetPriority={(id, priority) => { const task = model.snapshot?.tasks.find((item) => item.id === id); if (task) requestPriority(task, priority); }}
               onSetLoose={readOnly ? undefined : setLoose}

@@ -1,4 +1,5 @@
 import * as React from 'react';
+import { plainInlineMarkdown } from '../lib/inlineMarkdown';
 import { createPortal, flushSync } from 'react-dom';
 import type { DesktopColumn, DesktopTask, TaskPriority } from '../lib/desktop';
 import { Icon } from './Icon';
@@ -279,7 +280,7 @@ export function TaskContextMenu({
       ref={menuRef}
       className={`task-context-menu${opensLeft ? ' opens-left' : ''}`}
       role="menu"
-      aria-label={`“${task.body}”的任务菜单`}
+      aria-label={`“${plainInlineMarkdown(task.body)}”的任务菜单`}
       style={{ left: position.x, top: position.y }}
       onKeyDown={handleKeyDown}
       onPointerDown={(event) => event.stopPropagation()}
@@ -289,7 +290,7 @@ export function TaskContextMenu({
         event.stopPropagation();
       }}
     >
-      <span className="task-context-menu__task" aria-hidden="true">{task.body}</span>
+      <span className="task-context-menu__task" aria-hidden="true">{plainInlineMarkdown(task.body)}</span>
       {onStartUnclassified && <button type="button" role="menuitem" onClick={(event) => activate(event, onStartUnclassified)}>
         <Icon name="arrow" /><span>开始处理</span>
       </button>}

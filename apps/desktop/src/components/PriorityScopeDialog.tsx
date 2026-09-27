@@ -1,4 +1,5 @@
 import * as React from 'react';
+import { renderInlineMarkdown } from '../lib/inlineMarkdown';
 import { createPortal } from 'react-dom';
 import type { DesktopTask, TaskPriority } from '../lib/desktop';
 
@@ -57,7 +58,7 @@ export function PriorityScopeDialog({
     >
       <section ref={dialogRef} className="priority-scope-dialog" role="dialog" aria-modal="true" aria-labelledby="priority-scope-title">
         <h2 id="priority-scope-title">这个任务包含子任务</h2>
-        <p>将「{task.body}」移到 {destination}。选择这次要改动的范围。</p>
+        <p>将「{renderInlineMarkdown(task.body)}」移到 {destination}。选择这次要改动的范围。</p>
         <div className="priority-scope-dialog__actions">
           <button type="button" className="button-primary" disabled={busy} onClick={() => onConfirm('task')}>
             仅修改这一项
