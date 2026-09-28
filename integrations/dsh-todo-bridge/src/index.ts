@@ -74,6 +74,8 @@ export interface Config {
 
 /** Default `open_url` template: the deep link the bundle's client half handles. */
 export const DEFAULT_OPEN_URL_TEMPLATE = '{base}/?session={sessionId}'
+/** Revision advertised to ToDo so stale bridge installs are visible. */
+export const BRIDGE_SOURCE_REVISION = 'dsh-todo-bridge/0.2.0'
 
 /** Schemastery validation for {@link Config}. */
 export const Config: z<Config> = z.object({
@@ -178,6 +180,7 @@ export function apply(ctx: Context, config: Config = {}): void {
     const state = classify(digest, row, meta, Date.now())
     if (state === null) return
     publisher.schedule(buildRecord({
+      sourceRevision: BRIDGE_SOURCE_REVISION,
       meta,
       digest,
       row,
@@ -322,6 +325,14 @@ export function apply(ctx: Context, config: Config = {}): void {
 
   // A session attached later (resume) folds its projections on first read.
   ctx.on('session/created', (session: Session) => { evaluateLive(session) })
+  // A disposed live session can still have a cold projection. Re-evaluate it
+  // so ToDo does not keep showing a stale running row after DSH tears it down.
+  ctx.on('session/disposed', (session: Session) => {
+    touch(session.id)
+    void evaluateById(session.id).catch((error: unknown) => {
+      ctx.logger.warn(`todo-bridge: re-evaluation after session disposal for "${session.id}" failed: ${String(error)}`)
+    })
+  })
 
   // Initial snapshot: every attached session, then every persisted one the
   // query seam lists (cold rows read the projection cache, as the session

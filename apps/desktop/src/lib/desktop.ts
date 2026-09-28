@@ -703,6 +703,7 @@ function normalizeAiRecord(raw: unknown): AiRecord {
   const text = (value: unknown): string | null => (typeof value === 'string' && value.length > 0 ? value : null);
   const files = Array.isArray(record.changed_files) ? record.changed_files.filter((item): item is string => typeof item === 'string') : [];
   return {
+    ...(typeof record.ai_feed_source_revision === 'string' ? { ai_feed_source_revision: record.ai_feed_source_revision } : {}),
     source: record.source,
     session_id: record.session_id,
     workspace: typeof record.workspace === 'string' ? record.workspace : '',

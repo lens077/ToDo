@@ -81,6 +81,8 @@ export type FeedState = 'running' | 'waiting' | 'unread' | 'seen' | 'failed' | '
 /** One ai-feed-spec 1 record as the host writes it (§1.1). */
 export interface FeedRecord {
   readonly 'ai-feed-spec': 1
+  /** Optional source revision so ToDo can identify a newer bridge. */
+  readonly 'ai-feed-source-revision'?: string
   readonly source: 'dsh'
   readonly session_id: string
   readonly workspace: string

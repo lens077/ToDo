@@ -238,7 +238,7 @@ export function AiView({ feed, snapshot, newTaskSource, readOnly }: AiViewProps)
             )}
           </p>
         </div>
-        <p className="view-heading__note">来自 agent 宿主的会话状态。它们不是 Project Task；标记与移除只记在本机。</p>
+        <p className="view-heading__note">来自 agent 宿主的实时快照。它们不是 Project Task；标记与移除只记在本机。</p>
       </header>
 
       <div className="ai-toolbar">

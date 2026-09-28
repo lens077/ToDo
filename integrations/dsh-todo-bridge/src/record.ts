@@ -92,6 +92,8 @@ function segments(path: string): string[] {
 
 /** Inputs of {@link buildRecord}. */
 export interface BuildRecordInput {
+  /** Revision of the bridge contract implementation, surfaced for consumers. */
+  readonly sourceRevision?: string
   readonly meta: BridgeSessionMeta
   readonly digest: BridgeDigest | undefined
   readonly row: BridgeInboxRow | undefined
@@ -142,6 +144,7 @@ export function buildRecord(input: BuildRecordInput): FeedRecord {
   const changedFileCount = Math.max(digest?.changedFileCount ?? 0, digest?.changedFiles.length ?? 0)
   return {
     'ai-feed-spec': 1,
+    ...(input.sourceRevision ? { 'ai-feed-source-revision': input.sourceRevision } : {}),
     source: 'dsh',
     session_id: truncateUtf8(meta.sessionId, CONTRACT_LIMITS.sessionIdBytes).text,
     workspace: meta.workspace,

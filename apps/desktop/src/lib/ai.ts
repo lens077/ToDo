@@ -12,6 +12,8 @@ export type AiState = 'running' | 'waiting' | 'unread' | 'seen' | 'failed' | 'ha
 export type AiOutcome = 'completed' | 'error' | 'aborted' | 'blocked' | 'max-tokens' | 'interrupted';
 
 export interface AiRecord {
+  /** Optional source revision from the DSH bridge. */
+  ai_feed_source_revision?: string;
   source: string;
   session_id: string;
   workspace: string;

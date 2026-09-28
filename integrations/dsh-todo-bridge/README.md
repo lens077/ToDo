@@ -6,7 +6,7 @@ DeepSeek Harness（DSH）扩展包，含宿主与 Web 客户端两半：宿主�
 
 ## 做什么
 
-- 订阅 `ctx.sessionProjections.onChanged`（`sessionDigest`、`title`、`sessionListMetadata`）、`session-inbox/changed`、`agent/status`、`approval/request` 与 `user-questions/request` 两条 waterfall，以及工作区归档集合的变化。
+- 订阅 `ctx.sessionProjections.onChanged`（`sessionDigest`、`title`、`sessionListMetadata`）、`session-inbox/changed`、`agent/status`、`approval/request` 与 `user-questions/request` 两条 waterfall、工作区归档集合变化，以及 `session/created` / `session/disposed` 生命周期变化；这保证 DSH 释放 live session 后不会把 ToDo 留在旧的「运行中」。
 - 按 DSH 客户端 `ui-digest/src/client/select.ts` 的规则在宿主侧复刻分类（`unread | seen | running | needsYou | failed | handled | snoozed`），再映射为契约 `state`：`running → running`、`needsYou → waiting`、`unread → unread`、`seen → seen`、`failed → failed`、`handled → handled`；`snoozed`、已归档、空白、子代理会话不发布。
 - 按会话去抖（默认 300 ms）并合并为最新一条；同一会话串行发送，旧记录不会追过新记录；内容（`event_at` 以外）与上次成功发布相同的记录不再发送，避免无谓推进 `event_at` 而清掉 ToDo 侧的 `acked_at`。
 - `event_at` 取来源侧事件时间的最大值：摘要的 `questionAt` / `repliedAt`、收件箱行的 `updatedAt`、宿主运行时信号（agent 状态翻转、审批或提问开始与结束、归档切换）的观测时间；不使用发送时刻。
