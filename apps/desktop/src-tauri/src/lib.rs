@@ -1,4 +1,5 @@
 pub mod ops;
+mod reading;
 mod preferences;
 mod watch;
 
@@ -619,6 +620,9 @@ pub fn run() {
                 })
                 .build(),
         )
+        .manage(reading::ReadingState {
+            store: reading::runtime_reading_store(),
+        })
         .manage(AppState {
             ops,
             watcher: Mutex::new(None),
@@ -657,7 +661,15 @@ pub fn run() {
             ai_to_task,
             open_external,
             open_session_window,
-            desktop_status
+            desktop_status,
+            reading::reading_list,
+            reading::reading_add,
+            reading::reading_get,
+            reading::reading_progress,
+            reading::reading_set_read,
+            reading::reading_remove,
+            reading::reading_annotation_upsert,
+            reading::reading_annotation_delete
         ])
         .setup(move |app| {
             let shortcut = if cfg!(target_os = "macos") {

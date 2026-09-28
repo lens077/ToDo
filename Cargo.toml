@@ -25,3 +25,7 @@ axum = "0.8"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "signal"] }
 tower-http = { version = "0.6", features = ["cors", "fs"] }
 reqwest = { version = "0.13.4", default-features = false, features = ["blocking", "json", "rustls"] }
+readabilityrs = "0.1.4"
+ammonia = "4.2"
+encoding_rs = "0.8"
+regex = "1"

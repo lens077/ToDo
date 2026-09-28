@@ -25,7 +25,11 @@ export type IconName =
   | 'panel-bottom-collapsed'
   | 'minus'
   | 'settings'
-  | 'sparkle';
+  | 'sparkle'
+  | 'book'
+  | 'link'
+  | 'highlighter'
+  | 'external';
 
 const paths: Record<IconName, React.ReactNode> = {
   grid: <path d="M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4zM14 14h6v6h-6z" />,
@@ -105,6 +109,33 @@ const paths: Record<IconName, React.ReactNode> = {
     </>
   ),
   minus: <path d="M6 12h12" />,
+  book: (
+    <>
+      <path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H20v15H6.5A2.5 2.5 0 0 0 4 20.5z" />
+      <path d="M4 20.5A2.5 2.5 0 0 1 6.5 18H20" />
+      <path d="M9 7h7M9 11h5" />
+    </>
+  ),
+  link: (
+    <>
+      <path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1.5 1.5" />
+      <path d="M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1.5-1.5" />
+    </>
+  ),
+  highlighter: (
+    <>
+      <path d="m9 11 4-4 6 6-4 4z" />
+      <path d="m5 15 4-4 6 6-2 2H7z" />
+      <path d="M3 21h18" />
+    </>
+  ),
+  external: (
+    <>
+      <path d="M14 4h6v6" />
+      <path d="M20 4 10 14" />
+      <path d="M18 13v6H5V6h6" />
+    </>
+  ),
   settings: (
     <>
       <circle cx="12" cy="12" r="3" />

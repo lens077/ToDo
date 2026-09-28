@@ -76,6 +76,16 @@ pub enum Error {
     InvalidAiFile { path: PathBuf, message: String },
     #[error("ai session not found: {0}")]
     AiSessionNotFound(String),
+    #[error("阅读记录不存在: {0}")]
+    ReadingArticleNotFound(String),
+    #[error("{0}")]
+    InvalidReadingUrl(String),
+    #[error("抓取失败: {0}")]
+    ReadingFetch(String),
+    #[error("无法提取正文: {0}")]
+    ReadingExtract(String),
+    #[error("标记无效: {0}")]
+    InvalidReadingAnnotation(String),
 }
 
 impl Error {

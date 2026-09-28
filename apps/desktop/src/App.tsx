@@ -10,6 +10,8 @@ import { GoalView } from './components/GoalView';
 import { PriorityScopeDialog } from './components/PriorityScopeDialog';
 import { ProjectPickerDialog } from './components/ProjectPickerDialog';
 import { QuadrantView } from './components/QuadrantView';
+import { ReaderView } from './components/ReaderView';
+import { ReadingView } from './components/ReadingView';
 import { ProviderSettings } from './components/ProviderSettings';
 import { ReviewView } from './components/ReviewView';
 import { SettingsDialog } from './components/SettingsDialog';
@@ -17,6 +19,7 @@ import { Sidebar, type MainView } from './components/Sidebar';
 import { StatusBanner } from './components/StatusBanner';
 import { useAiFeed } from './hooks/useAiFeed';
 import { useDesktop } from './hooks/useDesktop';
+import { useReading } from './hooks/useReading';
 import { useAppSettings } from './lib/appSettings';
 import { desktop, transportCapabilities, type DesktopTask, type TaskPriority } from './lib/desktop';
 import { quadrantGroups } from './lib/quadrant';
@@ -58,6 +61,7 @@ export function App() {
   } | null>(null);
   const [appSettings] = useAppSettings();
   const model = useDesktop();
+  const readingModel = useReading();
   const serverReadOnly = transportCapabilities()?.writable === false;
   const readOnly = serverReadOnly || model.sourceBusy;
 
@@ -231,6 +235,7 @@ export function App() {
       <Sidebar
         activeView={activeView}
         status={model.status}
+        readingCount={readingModel.badge}
         goalCount={goalCount}
         captureCount={model.captures.length}
         unrankedCount={unrankedCount}
@@ -287,7 +292,13 @@ export function App() {
             />
           )}
           <div className="source-content" key={sourceContextKey}>
-          {activeView === 'capture' && transportCapabilities() ? (
+          {activeView === 'reading' && transportCapabilities() ? (
+            <p className="source-unavailable" role="status">HTTP 项目服务不开放个人阅读库，请使用桌面版。</p>
+          ) : activeView === 'reading' && readingModel.open ? (
+            <ReaderView key={readingModel.open.id} detail={readingModel.open} model={readingModel} />
+          ) : activeView === 'reading' ? (
+            <ReadingView model={readingModel} />
+          ) : activeView === 'capture' && transportCapabilities() ? (
             <p className="source-unavailable" role="status">HTTP 项目服务不开放个人随记，请使用桌面版。不会显示或写入模拟随记。</p>
           ) : activeView === 'capture' ? (
             <CaptureView

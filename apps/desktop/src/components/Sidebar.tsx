@@ -2,11 +2,13 @@ import type { WorkspaceStatus } from '../hooks/useDesktop';
 import { shortProjectName } from '../lib/desktop';
 import { Icon, type IconName } from './Icon';
 
-export type MainView = 'goal' | 'quadrant' | 'capture' | 'ai' | 'review';
+export type MainView = 'reading' | 'goal' | 'quadrant' | 'capture' | 'ai' | 'review';
 
 interface SidebarProps {
   activeView: MainView;
   status: WorkspaceStatus;
+  /** Saved articles not yet finished: the count shown beside 阅读. */
+  readingCount: number;
   /** Tasks in flight right now: the Doing count shown beside 目标. */
   goalCount: number;
   captureCount: number;
@@ -19,9 +21,11 @@ interface SidebarProps {
   onOpenSettings: () => void;
 }
 
-// 目标 leads: one surface holds what is in flight, what is queued, and what is
-// finished, so "what should I do now" never needs a second view.
+// 阅读 sits first: it is the personal shelf that feeds everything below it.
+// 目标 then holds what is in flight, what is queued, and what is finished, so
+// "what should I do now" never needs a second view.
 const navItems: Array<{ id: MainView; label: string; icon: IconName }> = [
+  { id: 'reading', label: '阅读', icon: 'book' },
   { id: 'goal', label: '目标', icon: 'target' },
   { id: 'quadrant', label: '象限', icon: 'grid' },
   { id: 'capture', label: '随记', icon: 'capture' },
@@ -32,6 +36,7 @@ const navItems: Array<{ id: MainView; label: string; icon: IconName }> = [
 export function Sidebar({
   activeView,
   status,
+  readingCount,
   goalCount,
   captureCount,
   unrankedCount,
@@ -42,7 +47,7 @@ export function Sidebar({
   onOpenSettings,
 }: SidebarProps) {
   const projectName = status.projectPath ? shortProjectName(status.projectPath) : '未选择项目';
-  const countFor = (view: MainView) => (view === 'goal' ? goalCount : view === 'quadrant' ? unrankedCount : view === 'capture' ? captureCount : view === 'ai' ? aiCount : null);
+  const countFor = (view: MainView) => (view === 'reading' ? readingCount : view === 'goal' ? goalCount : view === 'quadrant' ? unrankedCount : view === 'capture' ? captureCount : view === 'ai' ? aiCount : null);
 
   return (
     <aside className="sidebar">

@@ -5,6 +5,7 @@ mod ai;
 mod column_setup;
 mod desktop;
 mod error;
+mod heading_priority;
 mod history;
 mod id;
 mod llm;
@@ -14,6 +15,7 @@ mod parse;
 mod project;
 mod projection;
 mod prompt;
+mod reading;
 mod reconcile;
 mod scan;
 mod write;
@@ -25,6 +27,10 @@ pub use column_setup::{
 };
 pub use desktop::*;
 pub use error::{Error, Result};
+pub use heading_priority::{
+    effective_priorities, heading_priorities, parse_priority_label, EffectivePriority,
+    HeadingPriority, PriorityLabel, PriorityScale, PrioritySource,
+};
 pub use history::{
     diff_document, diff_lines, DiffHunk, DiffKind, History, HistoryEntry, TextDiff, DEFAULT_KEEP,
     STATE_DIR,
@@ -41,6 +47,10 @@ pub use projection::{
 pub use prompt::{
     review_alignment, AlignmentResponse, AlignmentReview, AlignmentVerdict, Confidence,
     RejectedVerdict, Verdict, ALIGNMENT_PROMPT,
+};
+pub use reading::{
+    reading_stats, ReadingAnnotation, ReadingAnnotationInput, ReadingArticle, ReadingArticleDetail,
+    ReadingStore,
 };
 pub use reconcile::*;
 pub use scan::{import_text, scan, CodeComment, LooseCheckbox, ScanOptions, ScanReport, ScanStats};
