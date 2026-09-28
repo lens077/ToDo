@@ -120,6 +120,26 @@ export function SettingsDialog({ onClose, onOpenProviderSettings }: SettingsDial
             </div>
           </section>
 
+          <section className="settings-group" aria-labelledby="settings-analytics">
+            <h3 id="settings-analytics">使用统计</h3>
+            <label className="settings-row">
+              <span className="settings-row__copy">
+                <strong>发送匿名使用统计</strong>
+                <span>只发送打开了哪个视图、用了哪些功能，以及版本号、系统和屏幕尺寸，用来判断哪些界面最常用。不发送任务内容、文件路径或项目名，不设 Cookie、不记录身份。</span>
+              </span>
+              <span className="switch">
+                <input
+                  type="checkbox"
+                  role="switch"
+                  checked={settings.usageAnalytics}
+                  aria-label="发送匿名使用统计"
+                  onChange={(event) => update({ usageAnalytics: event.target.checked })}
+                />
+                <span className="switch__track" aria-hidden="true" />
+              </span>
+            </label>
+          </section>
+
           <p className="settings-footnote">这些偏好只保存在本机，不会写入任何项目文件。</p>
         </div>
       </section>

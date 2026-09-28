@@ -21,6 +21,7 @@ import { useAiFeed } from './hooks/useAiFeed';
 import { useDesktop } from './hooks/useDesktop';
 import { useReading } from './hooks/useReading';
 import { useAppSettings } from './lib/appSettings';
+import { trackEvent, trackView } from './lib/analytics';
 import { desktop, transportCapabilities, type DesktopTask, type TaskPriority } from './lib/desktop';
 import { quadrantGroups } from './lib/quadrant';
 import { SourceControls, SourcePreview } from './components/SourceControls';
@@ -60,6 +61,14 @@ export function App() {
     startTask?: { localId: string; body: string };
   } | null>(null);
   const [appSettings] = useAppSettings();
+  // Which views people actually live in: one page view per switch, so Umami's
+  // Pages and Journey reports show the hot paths through the app.
+  React.useEffect(() => {
+    trackView(`/${activeView}`);
+  }, [activeView]);
+  React.useEffect(() => {
+    if (settingsOpen) trackEvent('settings_open');
+  }, [settingsOpen]);
   const model = useDesktop();
   const readingModel = useReading();
   const serverReadOnly = transportCapabilities()?.writable === false;
@@ -143,6 +152,7 @@ export function App() {
   }, []);
 
   const setCompleted = React.useCallback((id: string, completed: boolean) => {
+    trackEvent(completed ? 'task_complete' : 'task_reopen');
     if (!completed) return model.setCompleted(id, false);
     const task = model.snapshot?.tasks.find((item) => item.id === id);
     if (!task || task.source_writable === false) return Promise.resolve(false);

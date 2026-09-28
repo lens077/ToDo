@@ -45,6 +45,12 @@ export interface AppSettings {
   confirmCompletion: boolean;
   density: LayoutDensity;
   openSession: OpenSessionMode;
+  /**
+   * Send anonymous interface usage (view and action names, never task
+   * content) to the self-hosted Umami. On by default, disclosed in README and
+   * the settings dialog; see lib/analytics.ts for exactly what is sent.
+   */
+  usageAnalytics: boolean;
 }
 
 export const APP_SETTINGS_STORAGE_KEY = 'todo.app-settings.v1';
@@ -53,6 +59,7 @@ export const defaultAppSettings: AppSettings = {
   confirmCompletion: true,
   density: 'normal',
   openSession: 'reuse',
+  usageAnalytics: true,
 };
 
 function isDensity(value: unknown): value is LayoutDensity {
@@ -69,6 +76,7 @@ function normalize(value: unknown): AppSettings {
     confirmCompletion: typeof raw.confirmCompletion === 'boolean' ? raw.confirmCompletion : defaultAppSettings.confirmCompletion,
     density: isDensity(raw.density) ? raw.density : defaultAppSettings.density,
     openSession: isOpenSessionMode(raw.openSession) ? raw.openSession : defaultAppSettings.openSession,
+    usageAnalytics: typeof raw.usageAnalytics === 'boolean' ? raw.usageAnalytics : defaultAppSettings.usageAnalytics,
   };
 }
 
