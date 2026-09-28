@@ -162,7 +162,26 @@ impl ReadingStore {
             return self.get(&existing);
         }
         let fetched = fetch_page(&url)?;
-        let extracted = extract(&fetched, &url)?;
+        self.add_fetched(&url, fetched)
+    }
+
+    /// Imports the HTML currently visible in a browser. This is the escape
+    /// hatch for pages that require a browser session (notably WeChat): the
+    /// browser supplies the authenticated/JS-rendered HTML, while the local
+    /// store still owns sanitizing, extracting, and persisting it.
+    pub fn add_browser_html(&self, url: &str, html: &str) -> Result<ReadingArticleDetail> {
+        let url = normalize_url(url)?;
+        if html.trim().is_empty() || html.len() > MAX_PAGE_BYTES {
+            return Err(Error::ReadingFetch("浏览器页面内容为空或过大".into()));
+        }
+        if let Some(existing) = self.find_by_url(&url)? {
+            return self.get(&existing);
+        }
+        self.add_fetched(&url, FetchedPage { html: html.to_string(), final_url: url.clone() })
+    }
+
+    fn add_fetched(&self, url: &str, fetched: FetchedPage) -> Result<ReadingArticleDetail> {
+        let extracted = extract(&fetched, url)?;
         let id = new_id();
         let image_dir = self.image_dir(&id);
         let localized = localize_images(&extracted.content_html, &url, &image_dir);

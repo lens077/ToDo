@@ -129,6 +129,14 @@ export function ReadingView({ model }: ReadingViewProps) {
 
   const countFor = (filter: ReadingFilter) => (filter === 'all' ? model.articles.length : counts[filter]);
 
+  const importCurrentBrowserPage = async () => {
+    const url = window.prompt('粘贴浏览器当前页面的 URL');
+    if (!url) return;
+    const html = window.prompt('粘贴浏览器复制的页面 HTML（开发者工具中复制 outerHTML）');
+    if (!html) return;
+    await model.importBrowserPage(url, html);
+  };
+
   return (
     <section className="reading-view" aria-labelledby="reading-title">
       <header className="view-heading view-heading--reading">
@@ -171,6 +179,9 @@ export function ReadingView({ model }: ReadingViewProps) {
         />
         <button type="submit" disabled={model.adding || !draft.trim()}>
           {model.adding ? '抓取中…' : '添加'}
+        </button>
+        <button type="button" className="reading-add__browser" disabled={model.adding} onClick={() => void importCurrentBrowserPage()}>
+          从浏览器保存
         </button>
         {model.addError && (
           <p className="reading-add__error" role="alert">{model.addError}</p>

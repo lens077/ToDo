@@ -310,6 +310,11 @@ export const reading = {
     return mockArticles.map(mockSummary);
   },
 
+  async importBrowserPage(url: string, html: string): Promise<ReadingArticleDetail> {
+    if (isTauriRuntime()) return call<ReadingArticleDetail>('reading_import_browser', { url, html });
+    return this.add(url);
+  },
+
   async add(url: string): Promise<ReadingArticleDetail> {
     if (isTauriRuntime()) return call<ReadingArticleDetail>('reading_add', { url });
     await new Promise((resolve) => window.setTimeout(resolve, 600));

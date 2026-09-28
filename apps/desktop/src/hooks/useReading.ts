@@ -62,6 +62,24 @@ export function useReading() {
     setOpen((current) => (current && current.id === summary.id ? { ...current, ...summary } : current));
   }, []);
 
+  const importBrowserPage = React.useCallback(async (url: string, html: string): Promise<boolean> => {
+    setAdding(true);
+    setAddError(null);
+    try {
+      const detail = await reading.importBrowserPage(url, html);
+      setArticles((current) => {
+        const { content_html: _h, markdown: _m, image_dir: _d, annotations: _a, ...summary } = detail;
+        return [summary, ...current.filter((article) => article.id !== summary.id)];
+      });
+      return true;
+    } catch (caught) {
+      setAddError(caught instanceof Error ? caught.message : String(caught));
+      return false;
+    } finally {
+      setAdding(false);
+    }
+  }, []);
+
   const add = React.useCallback(async (raw: string): Promise<boolean> => {
     const url = normalizeInputUrl(raw);
     if (!url) {
@@ -196,6 +214,7 @@ export function useReading() {
     opening,
     refresh,
     add,
+    importBrowserPage,
     openArticle,
     closeArticle,
     saveProgress,

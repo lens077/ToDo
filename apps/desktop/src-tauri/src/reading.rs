@@ -42,6 +42,19 @@ pub fn reading_list(state: State<'_, ReadingState>) -> Result<Vec<ReadingArticle
 }
 
 #[tauri::command]
+pub async fn reading_import_browser(
+    state: State<'_, ReadingState>,
+    url: String,
+    html: String,
+) -> Result<ReadingArticleDetail, String> {
+    let store = state.store()?;
+    tauri::async_runtime::spawn_blocking(move || store.add_browser_html(&url, &html))
+        .await
+        .map_err(|error| format!("浏览器导入任务中断：{error}"))?
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
 pub async fn reading_add(
     state: State<'_, ReadingState>,
     url: String,

@@ -996,6 +996,7 @@
   .reading-add > button { height: 36px; min-width: 72px; padding: 0 16px; color: var(--primary-ink); background: var(--primary-fill); border: 0; border-radius: var(--radius-control); font-size: 13.5px; font-weight: 500; transition: background 0.3s var(--ease-out); }
   .reading-add > button:hover:not(:disabled) { background: var(--primary-fill-hover); }
   .reading-add > button:disabled { color: var(--ink-3); background: var(--panel-2); }
+  .reading-add__browser { color: var(--accent) !important; background: var(--accent-wash) !important; border: 1px solid var(--accent) !important; min-width: 104px !important; }
   .reading-add__error, .reading-add__status { grid-column: 2 / -1; padding: 4px 6px 2px; font-size: 12px; }
   .reading-add__error { color: var(--danger); }
   .reading-add__status { color: var(--ink-3); }

@@ -663,6 +663,7 @@ pub fn run() {
             open_session_window,
             desktop_status,
             reading::reading_list,
+            reading::reading_import_browser,
             reading::reading_add,
             reading::reading_get,
             reading::reading_progress,
