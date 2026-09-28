@@ -203,6 +203,99 @@ todo align --review reply.json  # 校验它的回复
 
 agent 宿主（如 DeepSeek Harness）通过 `todo ai upsert` 发布每个会话的当前状态：`running`、`waiting`、`unread`、`seen`、`failed`、`handled`，以及最近一次提问、收尾回答和改动文件。记录以 `(source, session_id)` 为主键，存放在全局的 `~/.todo/ai/sessions.json`，**不进 `TODO.md`，也不进 Git**；`event_at` 早于已存记录的写入会被忽略并报告 `unchanged`。`todo ai list` 在任何目录下都可运行，不要求当前目录有 `TODO.md`；`ack`、`remove`、`link` 只改 ToDo 本地标记，宿主的后续更新不会覆盖「已移除」和「已关联」。字段、状态语义、排序与退出码见 `docs/ai-feed-spec.md`；测试或脚本可用环境变量 `TODO_AI_STORE` 指向另一份存储文件。
 
+### 集成 DeepSeek Harness（DSH）
+
+ToDo 通过 `integrations/dsh-todo-bridge/` 连接 DSH。桥接插件订阅 DSH 的会话、投影、收件箱和交互状态，并把实时快照写入 ToDo 的 AI 会话存储。首次安装或升级时按以下步骤执行：
+
+1. **准备 CLI 和依赖**
+
+   确认 `todo` 已安装，并确保 DSH 进程可以在 PATH 中找到它。也可以在 DSH 配置中填写 `todoBinary` 的绝对路径：
+
+   ```bash
+   cargo install --path crates/todo-cli --locked
+   todo --version
+   dsh --version
+   ```
+
+2. **构建桥接插件**
+
+   ```bash
+   cd /Users/lens/lens077/ToDo/integrations/dsh-todo-bridge
+   pnpm install
+   pnpm typecheck
+   pnpm build
+   pnpm test
+   ```
+
+   构建会生成宿主端 `lib/index.js`、Web 客户端端 `lib/client.js` 及类型声明。
+
+3. **安装到 DSH 的 web 配置档**
+
+   推荐直接从本地目录安装：
+
+   ```bash
+   dsh plugin --profile web add file:/Users/lens/lens077/ToDo/integrations/dsh-todo-bridge
+   ```
+
+   也可以先打包再安装：
+
+   ```bash
+   pnpm pack --out /tmp/dsh-todo-bridge.tgz
+   dsh plugin --profile web add file:/tmp/dsh-todo-bridge.tgz
+   ```
+
+   `file:` 安装会复制构建产物，不是符号链接。之后重新执行 `pnpm build` 后，必须再次执行 `dsh plugin ... add` 才会把新产物复制进 DSH 配置档。
+
+4. **配置工作区和 CLI 路径**
+
+   编辑 `~/.dsh/profiles/web/cordis.patch.yml`，保留插件 id，并按实际路径修改配置：
+
+   ```yaml
+   - id: todo-bridge
+     name: 'dsh-todo-bridge'
+     config:
+       enabled: true
+       todoBinary: /Users/lens/.cargo/bin/todo
+       workspaces:
+         - /Users/lens/lens077/ToDo
+       debounceMs: 300
+       maxConsecutiveFailures: 5
+       openUrlTemplate: '{base}/?session={sessionId}'
+   ```
+
+   `workspaces` 为空数组表示发布所有工作区；填写后只发布指定目录及其子目录中的 DSH 会话。`todoBinary` 如果已在 PATH 中可写成 `todo`。
+
+5. **重启 DSH Web 并验证**
+
+   新增依赖和客户端 bundle 只在 DSH 重启后生效：
+
+   ```bash
+   dsh --profile web --dump-config | grep -A 8 'id: todo-bridge'
+   dsh web --profile web
+   todo ai list --all
+   todo ai list --workspace /Users/lens/lens077/ToDo --json
+   ```
+
+   DSH Web 运行后，在 ToDo 的 AI 页面应看到当前会话状态。点击「打开会话」会通过 `open_url` 定位到 DSH 对应 session；桥接版本为 `dsh-todo-bridge/0.2.0`，并监听 `session/created` / `session/disposed`，避免 ToDo 保留已释放会话的旧「运行中」状态。
+
+6. **升级或卸载**
+
+   升级桥接插件时，重新构建、重新执行安装命令并重启 DSH Web：
+
+   ```bash
+   cd /Users/lens/lens077/ToDo/integrations/dsh-todo-bridge
+   pnpm build
+   dsh plugin --profile web add file:/Users/lens/lens077/ToDo/integrations/dsh-todo-bridge
+   ```
+
+   卸载：
+
+   ```bash
+   dsh plugin --profile web remove dsh-todo-bridge
+   ```
+
+   更完整的配置字段、状态映射、限制和独立测试方法见 `integrations/dsh-todo-bridge/README.md`。
+
 ## 版本历史
 
 每次写入前自动把改动前的文件存为还原点，放在 `TODO.md` 同级的 `.todo/history/`。该目录用自带的 `.gitignore` 自我屏蔽，不进用户的 git 历史。
