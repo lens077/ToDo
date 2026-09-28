@@ -456,6 +456,22 @@ export function ReaderView({ detail, model }: ReaderViewProps) {
     }, 0);
   };
 
+  const handleArticleLink = (event: React.MouseEvent<HTMLDivElement>) => {
+    const target = (event.target as HTMLElement).closest<HTMLAnchorElement>('a[href]');
+    if (!target || !bodyRef.current?.contains(target)) return;
+    const href = target.href;
+    if (!/^https?:\/\//i.test(href)) {
+      event.preventDefault();
+      return;
+    }
+    const isInternal = new URL(href).hostname === 'mp.weixin.qq.com';
+    if (isInternal) {
+      event.preventDefault();
+      const confirmed = window.confirm('这是另一篇微信文章。点击“确定”将在浏览器中打开；需要离线阅读请复制链接回到阅读列表添加。');
+      if (confirmed) void desktop.openExternal(href);
+    }
+  };
+
   const copyQuote = async (quote: string) => {
     try {
       await navigator.clipboard.writeText(quote);
@@ -538,7 +554,7 @@ export function ReaderView({ detail, model }: ReaderViewProps) {
             </div>
           )}
           <div className="reader-paper" ref={paperRef}>
-            <div className="reader-body" ref={bodyRef} data-testid="reader-body" />
+            <div className="reader-body" ref={bodyRef} data-testid="reader-body" onClick={handleArticleLink} />
             {pendingSelection && (
               <div className="reader-toolbar reader-toolbar--selection" role="toolbar" aria-label="标记操作" style={{ top: pendingSelection.top, left: pendingSelection.left }}>
                 <button type="button" onClick={() => commitSelection(false)}><Icon name="highlighter" /> 标记</button>

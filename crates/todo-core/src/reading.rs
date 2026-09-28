@@ -459,15 +459,47 @@ fn normalize_url(url: &str) -> Result<String> {
     if parsed.host_str().is_none() {
         return Err(Error::InvalidReadingUrl("链接缺少主机名".into()));
     }
+    if url_is_private(&parsed) {
+        return Err(Error::InvalidReadingUrl("不能抓取本机或内网地址".into()));
+    }
     let mut normalized = parsed;
     normalized.set_fragment(None);
     Ok(normalized.to_string())
+}
+
+fn url_is_private(url: &reqwest::Url) -> bool {
+    let host = match url.host_str() {
+        Some(host) => host.trim_matches(['[', ']']),
+        None => return true,
+    };
+    if host.eq_ignore_ascii_case("localhost") || host.ends_with(".localhost") || host.ends_with(".local") {
+        return true;
+    }
+    match host.parse::<std::net::IpAddr>() {
+        Ok(std::net::IpAddr::V4(ip)) => {
+            ip.is_loopback() || ip.is_private() || ip.is_link_local() || ip.is_unspecified()
+                || ip.octets()[0] == 100 && (ip.octets()[1] & 0b1100_0000) == 0b0100_0000
+        }
+        Ok(std::net::IpAddr::V6(ip)) => {
+            ip.is_loopback() || ip.is_unspecified() || ip.is_unique_local() || ip.is_unicast_link_local()
+        }
+        Err(_) => false,
+    }
 }
 
 fn http_client() -> Result<reqwest::blocking::Client> {
     reqwest::blocking::Client::builder()
         .user_agent(USER_AGENT)
         .timeout(Duration::from_secs(30))
+        .redirect(reqwest::redirect::Policy::custom(|attempt| {
+            if attempt.previous().len() >= 5 {
+                attempt.stop()
+            } else if url_is_private(attempt.url()) {
+                attempt.stop()
+            } else {
+                attempt.follow()
+            }
+        }))
         .build()
         .map_err(|error| Error::ReadingFetch(error.to_string()))
 }
@@ -564,25 +596,35 @@ fn extract(page: &FetchedPage, requested_url: &str) -> Result<Extracted> {
         .output_markdown(true)
         .sanitize_content(true)
         .build();
-    let parser = readabilityrs::Readability::new(&html, Some(base_url), Some(options))
-        .map_err(|error| Error::ReadingExtract(error.to_string()))?;
-    let article = parser
-        .parse()
-        .ok_or_else(|| Error::ReadingExtract("没有找到可阅读的正文".into()))?;
+    if is_wechat_error_shell(&html) {
+        return Err(Error::ReadingFetch("微信返回了参数错误页，请在微信或浏览器中打开后使用“保存到阅读”".into()));
+    }
+    let article = readabilityrs::Readability::new(&html, Some(base_url), Some(options))
+        .ok()
+        .and_then(|parser| parser.parse());
+    let fallback = wechat_content_fallback(&html);
     let raw_content = article
-        .content
+        .as_ref()
+        .and_then(|item| item.content.clone())
         .filter(|content| !content.trim().is_empty())
-        .ok_or_else(|| Error::ReadingExtract("正文为空".into()))?;
-    let standardized = readabilityrs::elements::standardize_all(&raw_content, article.title.as_deref());
+        .or_else(|| fallback.clone())
+        .ok_or_else(|| Error::ReadingExtract("没有找到可阅读的正文".into()))?;
+    let title_from_article = article.as_ref().and_then(|item| item.title.clone());
+    let standardized = readabilityrs::elements::standardize_all(&raw_content, title_from_article.as_deref());
     let content_html = sanitize_html(&standardized);
-    let text = article.text_content.clone().unwrap_or_default();
+    let text = article
+        .as_ref()
+        .and_then(|item| item.text_content.clone())
+        .filter(|value| !value.trim().is_empty())
+        .unwrap_or_else(|| html_to_text(&raw_content));
     let (word_count, reading_minutes) = reading_stats(&text);
     let host = reqwest::Url::parse(base_url)
         .ok()
         .and_then(|parsed| parsed.host_str().map(str::to_string))
         .unwrap_or_default();
     let byline = article
-        .byline
+        .as_ref()
+        .and_then(|item| item.byline.clone())
         .map(|byline| collapse_whitespace(&byline))
         .filter(|value| !value.is_empty());
     // WeChat labels every article "微信公众平台"; the account name is what
@@ -591,18 +633,21 @@ fn extract(page: &FetchedPage, requested_url: &str) -> Result<Extracted> {
         byline.clone().unwrap_or_default()
     } else {
         article
-            .site_name
+            .as_ref()
+            .and_then(|item| item.site_name.clone())
             .filter(|name| !name.trim().is_empty())
             .unwrap_or_else(|| host.clone())
     };
     let title = article
-        .title
+        .as_ref()
+        .and_then(|item| item.title.clone())
         .map(|title| title.trim().to_string())
         .filter(|title| !title.is_empty())
         .or_else(|| html_title(&html))
         .unwrap_or_else(|| host.clone());
     let excerpt = article
-        .excerpt
+        .as_ref()
+        .and_then(|item| item.excerpt.clone())
         .map(|excerpt| collapse_whitespace(&excerpt))
         .filter(|excerpt| !excerpt.is_empty())
         .unwrap_or_else(|| first_sentence(&text));
@@ -611,12 +656,46 @@ fn extract(page: &FetchedPage, requested_url: &str) -> Result<Extracted> {
         site_name,
         excerpt: truncate_chars(&excerpt, 160),
         byline,
-        cover_url: article.image.or_else(|| og_image(&html)),
+        cover_url: article
+            .as_ref()
+            .and_then(|item| item.image.clone())
+            .or_else(|| og_image(&html)),
         content_html,
-        markdown: article.markdown_content.filter(|value| !value.trim().is_empty()),
+        markdown: article
+            .as_ref()
+            .and_then(|item| item.markdown_content.clone())
+            .filter(|value| !value.trim().is_empty()),
         word_count,
         reading_minutes,
     })
+}
+
+fn is_wechat_error_shell(html: &str) -> bool {
+    html.contains("weui-msg__title warn")
+        && (html.contains("参数错误") || html.contains("链接已过期") || html.contains("内容不存在"))
+}
+
+fn wechat_content_fallback(html: &str) -> Option<String> {
+    if !html.contains("mp.weixin.qq.com") && !html.contains("id=\"js_content\"") && !html.contains("id='js_content'") {
+        return None;
+    }
+    let patterns = [
+        r#"(?is)<div[^>]*id=["']js_content["'][^>]*>(.*?)</div>"#,
+        r#"(?is)<div[^>]*class=["'][^"']*rich_media_content[^"']*["'][^>]*>(.*?)</div>"#,
+    ];
+    patterns.iter().find_map(|pattern| {
+        Regex::new(pattern).ok()?.captures(html).and_then(|captures| {
+            let body = captures.get(1)?.as_str().trim();
+            (html_to_text(body).chars().count() >= 20).then(|| body.to_string())
+        })
+    })
+}
+
+fn html_to_text(html: &str) -> String {
+    let without_tags = Regex::new(r"(?is)<[^>]+>")
+        .map(|pattern| pattern.replace_all(html, " ").into_owned())
+        .unwrap_or_else(|_| html.to_string());
+    collapse_whitespace(&decode_entities(&without_tags))
 }
 
 /// Site quirks that Readability cannot know about. WeChat hides the body
@@ -798,7 +877,7 @@ fn absolute_url(base: &str, candidate: &str) -> Option<String> {
     }
     let base = reqwest::Url::parse(base).ok()?;
     let joined = base.join(candidate.trim()).ok()?;
-    if !matches!(joined.scheme(), "http" | "https") {
+    if !matches!(joined.scheme(), "http" | "https") || url_is_private(&joined) {
         return None;
     }
     Some(joined.to_string())
@@ -926,10 +1005,29 @@ mod tests {
     fn urls_are_validated_and_fragments_dropped() {
         assert!(normalize_url("file:///etc/passwd").is_err());
         assert!(normalize_url("ftp://example.com/a").is_err());
+        assert!(normalize_url("http://127.0.0.1:8080/private").is_err());
+        assert!(normalize_url("http://169.254.169.254/latest/meta-data").is_err());
+        assert!(absolute_url("https://example.com/a", "http://10.0.0.1/private").is_none());
         assert_eq!(
             normalize_url("https://example.com/a?b=1#frag").unwrap(),
             "https://example.com/a?b=1"
         );
+    }
+
+    #[test]
+    fn wechat_fallback_preserves_article_link_lists() {
+        let html = r#"<html><head><meta property="og:title" content="还没放假吗?"></head><body><div id="js_content"><p>各位彦祖亦菲们，祝大家国庆中秋双节快乐！</p><h2>AI技术</h2><p><a href="https://mp.weixin.qq.com/s/other">JEV：一个不会写代码的模型，为什么拿下4000万美元？</a></p></div></body></html>"#;
+        let page = FetchedPage { html: html.into(), final_url: "https://mp.weixin.qq.com/s/test".into() };
+        let extracted = extract(&page, &page.final_url).unwrap();
+        assert!(extracted.content_html.contains("JEV"));
+        assert!(extracted.content_html.contains("mp.weixin.qq.com/s/other"));
+        assert_eq!(extracted.title, "还没放假吗?");
+    }
+
+    #[test]
+    fn wechat_error_shell_is_not_misreported_as_empty_article() {
+        let html = r#"<div class="weui-msg__title warn">参数错误</div>"#;
+        assert!(is_wechat_error_shell(html));
     }
 
     #[test]
