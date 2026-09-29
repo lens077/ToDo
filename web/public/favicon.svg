@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="62 62 900 900" width="512" height="512">
+  <!-- Sumery Virgo app icon — original work, drawn from geometric primitives in
+       tools/brand-icon/products.mjs; not derived from any existing logo. Generated file: edit products.mjs, not this. -->
+  <defs>
+    <linearGradient id="ground" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#4f3b27"/>
+      <stop offset="1" stop-color="#0a0c1a"/>
+    </linearGradient>
+    <radialGradient id="light" cx="0.22" cy="0.18" r="0.7">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.10"/>
+      <stop offset="1" stop-color="#ffffff" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="stroke" gradientUnits="userSpaceOnUse" x1="300" y1="760" x2="760" y2="260">
+      <stop offset="0" stop-color="#ffb347"/>
+      <stop offset="1" stop-color="#ffe08a"/>
+    </linearGradient>
+    <clipPath id="shell"><path d="M 638 62 c 113.411 0 170.116 0 213.433 22.071 a 202.5 202.5 0 0 1 88.496 88.496 c 22.071 43.317 22.071 100.022 22.071 213.433 L 962 638 c 0 113.411 0 170.116 -22.071 213.433 a 202.5 202.5 0 0 1 -88.496 88.496 c -43.317 22.071 -100.022 22.071 -213.433 22.071 L 386 962 c -113.411 0 -170.116 0 -213.433 -22.071 a 202.5 202.5 0 0 1 -88.496 -88.496 c -22.071 -43.317 -22.071 -100.022 -22.071 -213.433 L 62 386 c 0 -113.411 0 -170.116 22.071 -213.433 a 202.5 202.5 0 0 1 88.496 -88.496 c 43.317 -22.071 100.022 -22.071 213.433 -22.071 Z"/></clipPath>
+  </defs>
+  <g clip-path="url(#shell)">
+    <rect width="1024" height="1024" fill="url(#ground)"/>
+    <rect width="1024" height="1024" fill="url(#light)"/>
+  </g>
+  <g id="glyph-virgo">
+      <path d="M 320 560 L 468 708 L 704 400"
+            fill="none" stroke="url(#stroke)" stroke-width="70" stroke-linecap="round" stroke-linejoin="round"/>
+      <circle cx="560" cy="330" r="38" fill="#fffbf3"/>
+      <circle cx="656" cy="278" r="28" fill="#fffbf3"/>
+      <circle cx="734" cy="250" r="19" fill="#fffbf3"/>
+  </g>
+</svg>
