@@ -125,7 +125,9 @@ ${alternates}
 <meta property="og:locale" content="${c.ogLocale}">
 <meta property="og:image" content="${SITE.origin}/favicon-512.png">
 <meta name="theme-color" content="${SITE.themeColor}">
-<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="icon" href="/favicon-light.png" type="image/png" media="(prefers-color-scheme: light)">
+<link rel="icon" href="/favicon-dark.png" type="image/png" media="(prefers-color-scheme: dark)">
+<link rel="icon" href="/favicon.png" type="image/png">
 <link rel="apple-touch-icon" href="/apple-touch-icon.png">
 <link rel="stylesheet" href="${cssHref}">
 <script defer src="${SITE.umami.src}" data-website-id="${SITE.umami.websiteId}" data-domains="${SITE.umami.domains}" data-exclude-search="true"></script>
@@ -136,7 +138,7 @@ ${alternates}
 <p class="status" role="note"><span class="status-label">${c.status.label}</span> <span>${c.status.text}</span> ${action({ ...c.status.cta, kind: "text" })}</p>
 <header class="top">
   <a class="mark" href="/${lang}/" aria-label="${attr(c.ui.home)}">
-    <img class="mark-icon" src="/favicon.svg" alt="" width="32" height="32">
+    <picture><source srcset="/favicon-dark.png" media="(prefers-color-scheme: dark)"><img class="mark-icon" src="/favicon-light.png" alt="" width="32" height="32"></picture>
     <span class="mark-text"><span class="kicker">${c.brand.kicker}</span><span class="wordmark">${c.brand.name}</span></span>
   </a>
   <nav class="nav" aria-label="${attr(c.ui.nav)}">
@@ -184,7 +186,9 @@ export function renderRouter(content) {
 <link rel="canonical" href="${SITE.origin}/">
 ${alternates}
 <link rel="alternate" hreflang="x-default" href="${SITE.origin}/">
-<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="icon" href="/favicon-light.png" type="image/png" media="(prefers-color-scheme: light)">
+<link rel="icon" href="/favicon-dark.png" type="image/png" media="(prefers-color-scheme: dark)">
+<link rel="icon" href="/favicon.png" type="image/png">
 <meta name="theme-color" content="${SITE.themeColor}">
 <script>
 (function () {

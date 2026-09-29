@@ -62,7 +62,7 @@ web
 
 - 名称：品牌 **Sumery**，桌面产品 **Virgo**（室女座）。Finder、Spotlight、窗口标题与 bundle `productName` 为 `Sumery Virgo`，菜单栏 `Virgo`，标识符 `com.sumery.virgo`。仓库名 `ToDo`、CLI `todo`、crate `todo-*`、文件格式 `TODO.md` 不改——CLI 是格式的工具，不是品牌产品。旧标记 `FIELD / TODO · LOCAL WORK MEMORY`（`FT`）已移除，侧栏品牌区按品牌系统 §4：产品图标 + `SUMERY · VIRGO` kicker + `Virgo`。
 - 命名、操作系统字段、图标外壳、页脚与定价原则以 Sumery 品牌系统为准（Libra 仓库 `docs/brand/DESIGN.md`）；`apps/desktop/src/identity.test.ts` 把这些字段钉死。
-- 色相是琥珀：图标渐变 `#ffb347 → #ffe08a`；界面文字/线条强调 `--accent #b45309`（琥珀本身在纸面上不可读），填充控件 `--primary-fill #f5a524` 配深色字 `#1b1547`。图标由品牌生成器出（麦穗：一记粗勾 + 三颗递减的奶油色星点）。
+- 色相是琥珀：图标渐变 `#ffb347 → #ffe08a`；界面文字/线条强调 `--accent #b45309`（琥珀本身在纸面上不可读），填充控件 `--primary-fill #f5a524` 配深色字 `#1b1547`。图标是审阅通过的品牌图像（清单卡，第一个复选框里的琥珀大勾延出三颗递减星点；浅色纸底 / 深色板岩底两版跟随系统外观，Dock 用深色版）。
 - **视觉承诺（2026-09-06 产品负责人确认）：** 桌面端遵循 macOS 原生惯例；外观跟随系统，浅色与深色两套都做；工艺标尺是 Linear 与 Raycast 的 Mac 版（键盘优先、命令面板、紧凑密度）。本文件不记录视觉配方；系统化记录归 `apps/desktop/DESIGN.md`。
 - 已作废的旧约定（仅作证据与反参照）：`docs/desktop-mvp-spec.md` §2「工程笔记与编辑台」——暖纸色底、墨蓝黑正文、钴蓝强调、Bricolage Grotesque 与 JetBrains Mono、「不用系统字体、不默认暗色」。现有界面截图存于 `apps/desktop/.impeccable/review/incumbent/`。
 - 语言：界面与文档为简体中文；ID、日期、物证、快捷键用等宽字体。

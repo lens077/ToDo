@@ -52,7 +52,7 @@ export function Sidebar({
   return (
     <aside className="sidebar">
       <div className="sidebar__brand" aria-label="Sumery Virgo">
-        <img alt="" className="sidebar__brand-mark" height={22} src="./favicon.svg" width={22} />
+        <picture><source srcSet="./favicon-dark.png" media="(prefers-color-scheme: dark)" /><img alt="" className="sidebar__brand-mark" height={22} src="./favicon-light.png" width={22} /></picture>
         <div>
           <span className="sidebar__brand-kicker">SUMERY · VIRGO</span>
           <strong>Virgo</strong>
