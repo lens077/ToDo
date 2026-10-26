@@ -1,24 +1,25 @@
-# ArgoCD 读取私有 GitHub 仓库的凭据。这是模板，真实私钥不入库：
-# 1. ssh-keygen -t ed25519 -f /tmp/todo-argocd -N ''
-# 2. gh repo deploy-key add /tmp/todo-argocd.pub --title argocd --allow-write=false
-# 3. kubectl -n argocd create secret generic repo-github-todo \
+# ArgoCD 读取私有 GitLab 镜像仓库的凭据。这是模板，真实 token 不入库：
+# 1. 在 GitLab 项目 sumery/virgo 创建 Project Access Token，scope 只勾 read_repository
+# 2. kubectl -n argocd create secret generic repo-gitlab-virgo \
 #      --from-literal=type=git \
-#      --from-literal=url=git@github.com:lens077/ToDo.git \
-#      --from-literal=name=github-todo \
-#      --from-literal=project=virgo \
-#      --from-literal=sshPrivateKey="$(cat /tmp/todo-argocd)"
-# 4. kubectl -n argocd label secret repo-github-todo \
+#      --from-literal=url=https://gitlab.com/sumery/virgo.git \
+#      --from-literal=username=oauth2 \
+#      --from-literal=password=<token> \
+#      --from-literal=name=gitlab-virgo \
+#      --from-literal=project=virgo
+# 3. kubectl -n argocd label secret repo-gitlab-virgo \
 #      argocd.argoproj.io/secret-type=repository
 apiVersion: v1
 kind: Secret
 metadata:
-  name: repo-github-todo
+  name: repo-gitlab-virgo
   namespace: argocd
   labels:
     argocd.argoproj.io/secret-type: repository
 stringData:
   type: git
-  name: github-todo
+  name: gitlab-virgo
   project: virgo
-  url: git@github.com:lens077/ToDo.git
-  sshPrivateKey: <read-only deploy key>
+  url: https://gitlab.com/sumery/virgo.git
+  username: oauth2
+  password: <read_repository project access token>

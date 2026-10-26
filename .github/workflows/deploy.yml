@@ -162,7 +162,7 @@ jobs:
         id: meta
 
   gitops:
-    name: Write the image tag back to Git
+    name: Write the image tag back and mirror to GitLab
     needs: image
     if: |
       github.actor != 'github-actions[bot]' &&
@@ -170,6 +170,10 @@ jobs:
       needs.image.outputs.digest != ''
     runs-on: ubuntu-latest
     timeout-minutes: 10
+
+    env:
+      GITLAB_TOKEN: ${{ secrets.GITLAB_TOKEN }}
+      GITLAB_REPO: ${{ vars.GITLAB_REPO || 'sumery/virgo' }}
 
     steps:
       - name: Check out main
@@ -195,14 +199,25 @@ jobs:
           p.write_text(s2)
           PY
 
-      - name: Commit and push
+      - name: Commit and push to GitHub
         run: |
           if git diff --quiet; then
             echo "镜像 tag 没有变化，跳过提交"
-            exit 0
+          else
+            git config user.name Sumery
+            git config user.email xiconz@qq.com
+            git add web/deploy/chart/virgo/values-prod.yaml
+            git commit -m "chore(site): release ${GITHUB_SHA::7} [skip ci]"
+            git push origin main
           fi
-          git config user.name Sumery
-          git config user.email xiconz@qq.com
-          git add web/deploy/chart/virgo/values-prod.yaml
-          git commit -m "chore(site): release ${GITHUB_SHA::7} [skip ci]"
-          git push origin main
+
+      # ArgoCD 在集群里连 GitHub 不稳定，用 GitLab 镜像作为唯一源。
+      - name: Mirror main to GitLab
+        if: env.GITLAB_TOKEN != ''
+        run: |
+          git remote add gitlab "https://oauth2:${GITLAB_TOKEN}@gitlab.com/${GITLAB_REPO}.git"
+          git push gitlab main
+
+      - name: Warn when the GitLab mirror token is missing
+        if: env.GITLAB_TOKEN == ''
+        run: echo "::warning::GITLAB_TOKEN 未设置，ArgoCD 不会看到这次发布"

@@ -10,7 +10,7 @@ metadata:
 spec:
   description: virgo.apikv.com Helm GitOps project
   sourceRepos:
-    - git@github.com:lens077/ToDo.git
+    - https://gitlab.com/sumery/virgo.git
   destinations:
     - name: in-cluster
       server: https://kubernetes.default.svc

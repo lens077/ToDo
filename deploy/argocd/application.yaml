@@ -1,6 +1,6 @@
-# ArgoCD Application：渲染本仓库 main 分支上的 Helm chart。
-# CI 在 main 发布时回写 values-prod.yaml 的镜像 tag；ArgoCD 轮询（默认 3 分钟）
-# 或收到 GitHub webhook 后自动同步。selfHeal 把手工改动拉回 Git 的状态。
+# ArgoCD Application：渲染 GitLab 镜像仓库 main 分支上的 Helm chart。
+# 集群连 GitHub 不稳定，所以源是 GitLab：CI 回写镜像 tag 后把 main 快进推到
+# GitLab，ArgoCD 每 3 分钟轮询。selfHeal 把手工改动拉回 Git 的状态。
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
@@ -13,7 +13,7 @@ metadata:
 spec:
   project: virgo
   source:
-    repoURL: git@github.com:lens077/ToDo.git
+    repoURL: https://gitlab.com/sumery/virgo.git
     targetRevision: main
     path: web/deploy/chart/virgo
     helm:
@@ -42,4 +42,4 @@ spec:
   revisionHistoryLimit: 10
   info:
     - name: source
-      value: github.com/lens077/ToDo, web/deploy/chart/virgo
+      value: gitlab.com/sumery/virgo (GitHub lens077/ToDo 的部署镜像), web/deploy/chart/virgo
