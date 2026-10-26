@@ -10,31 +10,28 @@ ToDo 把每个仓库的 Project Task 保存在该仓库的 `TODO.md` 中，以�
 
 当前是实验性 MVP。Project Task 随仓库管理；个人 Capture 另以 `~/.todo/inbox.md` 为事实源，不进入 Git，也不受项目 `.todo/history/` 还原点保护，需要单独备份。语义对账默认关闭，需自备 LLM provider 并显式启用；Playwright 与真实服务 E2E 已接入 CI，桌面原生路径仍有人工验收待完成。首次用于真实项目之前，先提交或备份现有任务文件，并审查每次写入的 diff。
 
-**许可未定，仅供授权评估。** 本仓库尚未选定许可证，保留一切权利；未经书面授权，不得使用、复制、修改、分发或衍生。本声明约束的是**源码的使用与分发**，与下方「授权与定价」说明的产品销售方式是两件事：商业模型已定（`DECISIONS.md` 决策④），开源边界与许可证文本仍未定（决策②）。许可证选定前本声明有效。
+**许可未定，仅供授权评估。** 本仓库尚未选定许可证，保留一切权利；未经书面授权，不得使用、复制、修改、分发或衍生。本声明约束的是**源码的使用与分发**，与下方「免费与赞助」说明的收费方式是两件事：产品**目前免费**（`DECISIONS.md` 决策④），开源边界与许可证文本仍未定（决策②）。许可证选定前本声明有效。
 
-- CLI 不需要登录，也不需要网络。桌面端需要周期性联网校验授权，离线可继续使用 30 天。
+- CLI 不需要登录，也不需要网络。桌面端也不需要账号、不需要授权、不做联网校验。
 - 桌面端默认向自托管的 Umami（`umami.apikv.com`）发送匿名使用统计：打开了哪个视图、用了哪些功能、版本号、系统与屏幕尺寸。不发送任务内容、文件路径或项目名，不设 Cookie、不记录身份；可在「设置 → 使用统计」关闭。CLI 不发送任何统计。实现见 `apps/desktop/src/lib/analytics.ts`。
 - SQLite 只是派生投影，可随时从 Markdown 重建。
 
 术语定义见 `CONTEXT.md`；格式规范见 `docs/format-spec-v1.md`；已完成验证与待验收项见 `docs/verification-log.md`。
 
-## 授权与定价（计划）
+## 免费与赞助
 
-当前是实验性 MVP，尚未发售。本节说明已经定下的方向，便于提前判断，**不构成销售要约**；正式发售时以销售页为准。
+当前是实验性 MVP，尚未发布。**产品目前免费**：下载免费、使用免费，功能不做阉割，没有付费墙、没有版本差异、没有试用期限制。
 
-- **本体买断，永久可用。** 一次性付费，含自购买日起 **12 个月**的更新权。窗口到期后软件继续正常工作，只是不再收到此后发布的新版本。到期前后的产品完全一致：不降级、不弹窗、不加水印、不减少任何已有能力。
-- **起步价 $19 / ¥88，续费半价。** 这是按当前功能范围定的**早鸟价**，随能力增加上调；续费按续费当时标价的一半计。**断档不设惩罚**：停多久都可以按当时续费价续上，拿到当时的最新版并重新计 12 个月；也可以在首购时选择自动续费，随时取消，已拿到的版本永远保留。**涨价不影响任何已购用户的永久使用权，也不会缩短已经买到的窗口。**
-- **更新窗口按时间计，不按版本号计。** 购买后 12 个月内发布的版本永久归你，因此版本号如何排列都不影响你的权利。购买后 30 天内发布的大版本同样视为窗口内。
-- **安全修复与数据修复永久免费**，覆盖所有版本，不受更新窗口限制。
-- **未来的云同步、移动推送、团队空间是独立可选订阅**，不影响本体任何功能。不购买订阅，本体照常完整可用。
-- 一份授权覆盖个人的全部设备与操作系统。商业与团队使用另走年度订阅。
-- **桌面端可免费试用 30 天**，试用期内功能与付费版完全相同。到期后桌面端转为只读，可以继续查看，不能再写入；**CLI 与你的 `TODO.md` 不受任何影响**，购买后立即恢复。试用需要用邮箱激活，试用截止日由服务端签发。
-- **桌面端在启动时联网校验授权**，校验通过后离线可继续完整使用 **30 天**；离线超过 30 天转为只读，恢复联网后立即解除。启动时连不上服务器**不会被拒之门外**：只要本机有有效的校验记录就正常进入，后台重试。校验只发送授权 key、版本号和一个随机安装标识，**不发送项目路径、任务内容或机器指纹**。
-- **服务停止保障。** 如果授权服务停止运营，我们承诺在停止前发布一个移除校验的最终版本，或向所有持有者签发永久有效的离线凭据——二者至少做到其一。买断的「永久可用」不以我们的服务器还活着为前提。
+- **「目前免费」不等于永久免费。** 如果将来改变收费方式，**已经免费给你的能力不会收回**；已发布的版本继续可用，任务数据始终是你仓库里的纯文本，随时可以迁出。
+- **不收订阅，不卖授权，不设试用。** 桌面端不需要账号、不需要 license key、不做联网校验。CLI 同样不需要登录，也不需要网络。
+- **可以赞助。** 赞助不构成购买，不换取任何功能，也不影响任何功能。档位 ¥1 / ¥6 / ¥18 / ¥30 / ¥68 / ¥88，另可自定义金额。
+- **赞助渠道**：国内走支付宝与爱发电；国际的 Ko-fi 与 GitHub Sponsors 已列入计划，**目前未开通**。
+- **赞助款用在哪**：Apple Developer 年费与公证、域名与对象存储、CI 时间。页面会如实列出，不做模糊表述。
+- **致谢**：赞助者自愿留名，可匿名，列进页面致谢区。不显示金额，不排序。
 
-明确不做：**本体订阅制**、**lifetime deal 促销**、**任何形式的数据扣押**。任务数据始终是你仓库里的纯文本，随时可以迁出，与是否付费无关。
+明确不做：**付费墙**、**lifetime deal 促销**、**任何形式的数据扣押**、**为促成赞助而制造功能焦虑**。
 
-完整论证见 `docs/business-model-options.md`，结论与待定项见 `DECISIONS.md` 决策④。
+完整的决策记录见 `DECISIONS.md` 决策④；原买断方案的论证保留在 `docs/business-model-options.md`（已被取代，仅作记录）。
 
 ## 环境要求
 
@@ -103,7 +100,7 @@ make dev
 | `todo add <正文> [--column <id>] [--tag <值>] [--due <日期>] [--priority <1-4>]` | 新增任务 |
 | `todo done <id> [--note <文本>] [--evidence]` / `todo undone <id>` | 切换完成状态；`--evidence` 附带建议的 Git 区间，严格模式下 `done` 必须提供说明 |
 | `todo archive` | 把已完成的顶层任务子树移入 `TODO.archive.md` |
-| `todo progress <id> <1-99> [--note <文本>]` | 记录部分完成 |
+| `todo progress <id> <1-99> [--note <文本>]` / `todo progress <id> --clear` | 记录或清除部分完成 |
 | `todo fail <id> [--note <文本>]` | 记录一次失败的尝试；不改变完成状态 |
 | `todo note <id> <文本>` / `todo note <id> --clear` | 写入或清除 `↳` 说明行 |
 | `todo next` | 给出下一个可执行任务 |
@@ -221,7 +218,7 @@ ToDo 通过 `integrations/dsh-todo-bridge/` 连接 DSH。桥接插件订阅 DSH 
 2. **构建桥接插件**
 
    ```bash
-   cd /Users/lens/lens077/ToDo/integrations/dsh-todo-bridge
+   cd /path/to/ToDo/integrations/dsh-todo-bridge
    pnpm install
    pnpm typecheck
    pnpm build
@@ -235,7 +232,7 @@ ToDo 通过 `integrations/dsh-todo-bridge/` 连接 DSH。桥接插件订阅 DSH 
    推荐直接从本地目录安装：
 
    ```bash
-   dsh plugin --profile web add file:/Users/lens/lens077/ToDo/integrations/dsh-todo-bridge
+   dsh plugin --profile web add file:/path/to/ToDo/integrations/dsh-todo-bridge
    ```
 
    也可以先打包再安装：
@@ -256,9 +253,9 @@ ToDo 通过 `integrations/dsh-todo-bridge/` 连接 DSH。桥接插件订阅 DSH 
      name: 'dsh-todo-bridge'
      config:
        enabled: true
-       todoBinary: /Users/lens/.cargo/bin/todo
+       todoBinary: /path/to/.cargo/bin/todo
        workspaces:
-         - /Users/lens/lens077/ToDo
+         - /path/to/ToDo
        debounceMs: 300
        maxConsecutiveFailures: 5
        openUrlTemplate: '{base}/?session={sessionId}'
@@ -274,7 +271,7 @@ ToDo 通过 `integrations/dsh-todo-bridge/` 连接 DSH。桥接插件订阅 DSH 
    dsh --profile web --dump-config | grep -A 8 'id: todo-bridge'
    dsh web --profile web
    todo ai list --all
-   todo ai list --workspace /Users/lens/lens077/ToDo --json
+   todo ai list --workspace /path/to/ToDo --json
    ```
 
    DSH Web 运行后，在 ToDo 的 AI 页面应看到当前会话状态。点击「打开会话」会通过 `open_url` 定位到 DSH 对应 session；桥接版本为 `dsh-todo-bridge/0.2.0`，并监听 `session/created` / `session/disposed`，避免 ToDo 保留已释放会话的旧「运行中」状态。
@@ -284,9 +281,9 @@ ToDo 通过 `integrations/dsh-todo-bridge/` 连接 DSH。桥接插件订阅 DSH 
    升级桥接插件时，重新构建、重新执行安装命令并重启 DSH Web：
 
    ```bash
-   cd /Users/lens/lens077/ToDo/integrations/dsh-todo-bridge
+   cd /path/to/ToDo/integrations/dsh-todo-bridge
    pnpm build
-   dsh plugin --profile web add file:/Users/lens/lens077/ToDo/integrations/dsh-todo-bridge
+   dsh plugin --profile web add file:/path/to/ToDo/integrations/dsh-todo-bridge
    ```
 
    卸载：

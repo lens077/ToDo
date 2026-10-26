@@ -1,5 +1,7 @@
 use serde::Serialize;
 use serde_json::{json, Value};
+#[cfg(unix)]
+use std::os::unix::process::CommandExt;
 use std::{
     fs,
     path::{Path, PathBuf},
@@ -123,6 +125,37 @@ mod tests {
             !invocation.starts_with('\''),
             "fallback must not emit a quoted path: {command}"
         );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn terminate_tree_reaches_descendants() {
+        use std::io::BufRead;
+
+        let mut command = Command::new("sh");
+        command
+            .arg("-c")
+            .arg("sleep 30 & echo $!; wait")
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null())
+            .process_group(0);
+        let mut child = command.spawn().expect("spawn sh");
+        let stdout = child.stdout.take().expect("stdout is piped");
+        let mut reader = std::io::BufReader::new(stdout);
+        let mut line = String::new();
+        reader.read_line(&mut line).expect("read grandchild pid");
+        let grandchild = line.trim().parse::<libc::pid_t>().expect("pid");
+
+        terminate_tree(&mut child);
+
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while unsafe { libc::kill(grandchild, 0) } == 0 {
+            assert!(
+                Instant::now() < deadline,
+                "grandchild {grandchild} survived the timeout"
+            );
+            thread::sleep(Duration::from_millis(10));
+        }
     }
 }
 
@@ -384,12 +417,16 @@ fn run_capture(args: &[&str], deadline: Instant) -> String {
         return String::new();
     }
     let executable = current_executable().unwrap_or_else(|| PathBuf::from("todo"));
-    let mut child = match Command::new(executable)
+    let mut command = Command::new(executable);
+    command
         .args(args)
         .stdout(Stdio::piped())
-        .stderr(Stdio::null())
-        .spawn()
-    {
+        .stderr(Stdio::null());
+    // A new process group lets the timeout path terminate helpers the hook may have
+    // spawned, not just the direct child.
+    #[cfg(unix)]
+    command.process_group(0);
+    let mut child = match command.spawn() {
         Ok(child) => child,
         Err(_) => return String::new(),
     };
@@ -408,12 +445,38 @@ fn run_capture(args: &[&str], deadline: Instant) -> String {
             }
             Ok(None) if Instant::now() < deadline => thread::sleep(Duration::from_millis(5)),
             _ => {
-                let _ = child.kill();
-                let _ = child.wait();
+                terminate_tree(&mut child);
                 return String::new();
             }
         }
     }
+}
+
+/// Terminate the hook child and anything it spawned.
+///
+/// Unix children run in their own process group (see `process_group(0)` above), so
+/// `killpg` reaches descendants that would otherwise survive `Child::kill`.
+/// Windows has no equivalent in `std::process`, so `taskkill /T` walks the tree.
+fn terminate_tree(child: &mut std::process::Child) {
+    #[cfg(unix)]
+    {
+        let pid = child.id() as libc::pid_t;
+        // The child was placed in a new group whose id is its pid.
+        unsafe {
+            libc::killpg(pid, libc::SIGKILL);
+        }
+    }
+    #[cfg(windows)]
+    {
+        let pid = child.id().to_string();
+        let _ = Command::new("taskkill")
+            .args(["/PID", pid.as_str(), "/T", "/F"])
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status();
+    }
+    let _ = child.kill();
+    let _ = child.wait();
 }
 fn detect_indent(raw: &str) -> &str {
     raw.lines()

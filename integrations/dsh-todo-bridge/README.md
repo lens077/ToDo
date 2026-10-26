@@ -34,7 +34,7 @@ ToDo 面板的「打开会话」用系统浏览器打开这条链接。DSH Web �
 在本目录构建：
 
 ```bash
-cd /Users/lens/lens077/ToDo/integrations/dsh-todo-bridge
+cd /path/to/ToDo/integrations/dsh-todo-bridge
 pnpm install
 pnpm build          # 产出 lib/index.js（宿主，ESM）、lib/client.js（客户端）与 .d.ts
 ```
@@ -43,7 +43,7 @@ pnpm build          # 产出 lib/index.js（宿主，ESM）、lib/client.js（�
 
 ```bash
 # 方式一：从本地目录安装（pnpm 会复制 lib、cordis.patch.yml、package.json）
-dsh plugin --profile web add file:/Users/lens/lens077/ToDo/integrations/dsh-todo-bridge
+dsh plugin --profile web add file:/path/to/ToDo/integrations/dsh-todo-bridge
 
 # 方式二：从 tarball 安装
 pnpm pack --out /tmp/dsh-todo-bridge.tgz
@@ -60,7 +60,7 @@ dsh plugin --profile web add file:/tmp/dsh-todo-bridge.tgz
 dsh plugin --profile web remove dsh-todo-bridge
 ```
 
-说明：本目录不属于 ToDo 根 `pnpm-workspace.yaml`（只包含 `apps/*`）；目录内自带 `pnpm-workspace.yaml`，`pnpm install` 只作用于本目录。开发期依赖通过 `link:` 指向 DSH 源码检出 `/Users/lens/lens077/deepseek-harness`，只用于类型检查与测试；宿主半运行时只导入 `@deepseek-ai/schemastery`，由 DSH 安装的依赖闭包提供；客户端半只有类型导入，不从浏览器模块表 `require` 任何模块。
+说明：本目录不属于 ToDo 根 `pnpm-workspace.yaml`（只包含 `apps/*`）；目录内自带 `pnpm-workspace.yaml`，`pnpm install` 只作用于本目录。开发期依赖通过 `link:` 指向 DSH 源码检出 `/path/to/deepseek-harness`，只用于类型检查与测试；宿主半运行时只导入 `@deepseek-ai/schemastery`，由 DSH 安装的依赖闭包提供；客户端半只有类型导入，不从浏览器模块表 `require` 任何模块。
 
 客户端半的声明方式与 `@zseven-w/dsh-openpencil` 相同：`package.json` 的 `dsh.client`（`platform: web`，`inject` 列出 `@deepseek-ai/dsh-api-session-controller`）加 `exports["./client"]` 指向 `lib/client.js`；产物是 `window.__ModuleLoader__.load({ id: 'dsh-todo-bridge', factory })` 形式的 CJS 工厂，由 `tsdown.config.ts` 的第二个条目生成。宿主启动时扫描到该声明即把它并入 Web 页面的插件图，`cordis.patch.yml` 不需要为它加行。
 
@@ -73,9 +73,9 @@ bundle 补丁 `cordis.patch.yml` 插入 `id: todo-bridge` 一行。在 `~/.dsh/p
   name: 'dsh-todo-bridge'
   config:
     enabled: true
-    todoBinary: /Users/lens/.cargo/bin/todo
+    todoBinary: /path/to/.cargo/bin/todo
     workspaces:
-      - /Users/lens/lens077/ToDo
+      - /path/to/ToDo
     debounceMs: 300
     maxConsecutiveFailures: 5
     openUrlTemplate: '{base}/?session={sessionId}'
@@ -107,7 +107,7 @@ bundle 补丁 `cordis.patch.yml` 插入 `id: todo-bridge` 一行。在 `~/.dsh/p
 
 其他字段：`workspace` 取 `session.header.cwd`；`title` 取 `title` 投影；`question` / `reply` / `changed_files` / `outcome` 取 `sessionDigest` 投影，`changed_files` 相对 `workspace` 表示并截到 32 项；`open_url` 由 `ctx.webServer.port` 组成 `http://127.0.0.1:<port>` 代入 `{base}`，无 Web 服务时为 `http://127.0.0.1:3080`。
 
-`changed_files` 的相对化按三步进行：路径位于 `workspace` 或其 realpath 之下时去掉该前缀；否则在路径里查找 `workspace` 末尾若干段（先长后短，至少含末段目录名）首次出现的位置，去掉到该处为止的部分（例如工作区 `/Users/lens/lens077/kubernetes`，会话日志里记录的是 `/Users/sumery/lens077/kubernetes/components/gateway/README.md`，得到 `components/gateway/README.md`）；两者都不成立则原样保留。
+`changed_files` 的相对化按三步进行：路径位于 `workspace` 或其 realpath 之下时去掉该前缀；否则在路径里查找 `workspace` 末尾若干段（先长后短，至少含末段目录名）首次出现的位置，去掉到该处为止的部分（例如工作区 `/work/kubernetes`，会话日志里记录的是 `/mnt/work/kubernetes/components/gateway/README.md`，得到 `components/gateway/README.md`）；两者都不成立则原样保留。
 
 ## 限制
 
@@ -131,7 +131,7 @@ pnpm typecheck && pnpm build && pnpm test
 ```bash
 dsh --profile web --dump-config | grep -A 8 'id: todo-bridge'   # 确认层已合成
 todo ai list                                                   # 重启 dsh web 后应看到会话
-todo ai list --workspace /Users/lens/lens077/ToDo --json
+todo ai list --workspace /path/to/ToDo --json
 ```
 
 不想影响正在运行的 `dsh web` 时，可以用独立的 Harness 主目录做演练：

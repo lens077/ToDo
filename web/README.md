@@ -6,11 +6,11 @@
 | --- | --- |
 | `build.mjs` | 渲染 `dist/`：`/en/`、`/zh/` 两份完整页面，外加根路径的语言路由页、`sitemap.xml`、`robots.txt` |
 | `src/content.en.mjs` / `src/content.zh.mjs` | 两种语言的全部文案。两份结构必须一致，构建会校验，缺一段直接失败 |
-| `src/page.mjs` | 六屏骨架（首屏 / 怎么用 / 边界 / 视图 / 上线通知 / 页脚），见 `work/docs/brand/LANDING.md` |
+| `src/page.mjs` | 六屏骨架（首屏 / 怎么用 / 边界 / 视图 / 免费与赞助 / 上线通知 / 页脚），见 `work/docs/brand/LANDING.md` |
 | `src/art.mjs` | 首屏的产品物件：一张 `TODO.md` 和它的对账结果，用文字渲染，随语言切换 |
 | `src/site.css` | 品牌「小桌面」样式。只有顶部 Product tokens 一段是 Virgo 专有的 |
 | `src/site.mjs` | 站点常量：Pages 项目、Umami 站点 ID、备案信息 |
-| `public/` | 原样拷进 `dist/`：品牌图标（`work/tools/brand-icon/out/virgo/`）、`_headers` |
+| `public/` | 原样拷进 `dist/`：品牌图标（`work/tools/brand-icon/out/virgo/`）、界面截图（`screens/`，桌面端 mock 数据；桌面端界面目前只有中文，英文页图注已注明）、`_headers` |
 
 文案出处是 `docs/site-copy.md`；英文版按 `CONTEXT.md` 的术语翻译，事实与中文逐条对应。
 

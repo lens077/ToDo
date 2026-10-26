@@ -92,11 +92,14 @@ enum Command {
         #[arg(long)]
         subtree: bool,
     },
-    /// Record partial completion: `todo progress <id> 60 --note "…"`.
+    /// Record partial completion: `todo progress <id> 60 --note "…"`; `--clear` removes it.
     Progress {
         id: String,
-        /// Percent complete, 1-99. Use `todo done` for 100 and leave it unset for 0.
-        percent: u8,
+        /// Percent complete, 1-99. Omit when using --clear.
+        percent: Option<u8>,
+        /// Remove the partial-completion marker.
+        #[arg(long, conflicts_with = "percent")]
+        clear: bool,
         #[arg(long)]
         note: Option<String>,
     },
@@ -506,9 +509,12 @@ fn run(cli: &Cli) -> Result<u8, Error> {
             clear,
             subtree,
         } => priority(cli, &path, id, *value, *clear, *subtree),
-        Command::Progress { id, percent, note } => {
-            progress(cli, &path, id, *percent, note.as_deref())
-        }
+        Command::Progress {
+            id,
+            percent,
+            clear,
+            note,
+        } => progress(cli, &path, id, *percent, *clear, note.as_deref()),
         Command::Fail { id, note } => fail(cli, &path, id, note.as_deref()),
         Command::Note { id, text, clear } => set_note(cli, &path, id, text.as_deref(), *clear),
         Command::Evidence { id, from, to } => evidence(cli, &path, id, from, to),
@@ -1527,27 +1533,48 @@ fn progress(
     cli: &Cli,
     path: &Path,
     id: &str,
-    percent: u8,
+    percent: Option<u8>,
+    clear: bool,
     note: Option<&str>,
 ) -> Result<u8, Error> {
-    if !(1..=99).contains(&percent) {
-        // Routing 0 and 100 to the commands that own those states keeps a single way
-        // to express "not started" and "done".
-        return Err(Error::InvalidTaskLine(format!(
-            "progress must be 1-99; got {percent}. Use `todo done` for complete, or leave progress unset for not started"
-        )));
+    if clear == percent.is_some() {
+        return Err(Error::InvalidTaskLine(
+            "provide a progress from 1 to 99, or --clear".into(),
+        ));
+    }
+    if let Some(percent) = percent {
+        if !(1..=99).contains(&percent) {
+            // 0 and 100 belong to the commands that own those states; clearing is a
+            // distinct intent so it gets an explicit flag rather than a fake percent.
+            return Err(Error::InvalidTaskLine(format!(
+                "progress must be 1-99; got {percent}. Use `todo done` for complete, or `--clear` to remove progress"
+            )));
+        }
     }
     let writer = LockedWriter::new(path, Duration::from_millis(cli.lock_timeout_ms));
     let id_owned = id.to_string();
     let note_owned = note.map(str::to_string);
     let result = writer.update_labeled("progress", |document| {
         let index = index_of(document, &id_owned)?;
-        require_note(document, CompletionOutcome::Partial, note_owned.as_deref())?;
-        let mut changes = vec![Change::SetMetadata {
-            task: index,
-            kind: TokenKind::Progress(percent),
-            raw: format!("◐{percent}"),
-        }];
+        let mut changes = Vec::new();
+        if clear {
+            for (token, _) in document.tasks[index]
+                .metadata
+                .iter()
+                .enumerate()
+                .filter(|(_, token)| matches!(token.kind, TokenKind::Progress(_)))
+            {
+                changes.push(Change::RemoveMetadata { task: index, token });
+            }
+        } else {
+            let percent = percent.expect("validated above");
+            require_note(document, CompletionOutcome::Partial, note_owned.as_deref())?;
+            changes.push(Change::SetMetadata {
+                task: index,
+                kind: TokenKind::Progress(percent),
+                raw: format!("◐{percent}"),
+            });
+        }
         if let Some(text) = &note_owned {
             changes.push(Change::SetNote {
                 task: index,

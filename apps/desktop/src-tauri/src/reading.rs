@@ -103,7 +103,10 @@ pub fn reading_set_read(
 
 #[tauri::command]
 pub fn reading_remove(state: State<'_, ReadingState>, id: String) -> Result<(), String> {
-    state.store()?.remove(&id).map_err(|error| error.to_string())
+    state
+        .store()?
+        .remove(&id)
+        .map_err(|error| error.to_string())
 }
 
 #[derive(Debug, Deserialize)]

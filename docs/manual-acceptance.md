@@ -85,7 +85,7 @@ git add -A && git commit -qm "seed"
 三条都通过后，用工具自身记录（保持任务状态与物证一致）：
 
 ```bash
-cd /Users/sumery/lens077/ToDo
+cd /path/to/ToDo
 todo done p7v2ld --note "原生选择器验收通过：可打开项目，无 TODO.md 时不静默创建"
 todo done h4m9zc --note "看板写回验收通过：新增/拖动/三结局均正确落盘，diff 最小"
 todo done w8s5rt --note "外部编辑刷新验收通过：自动同步，且陈旧 diff 被确认闸门拒绝"

@@ -188,6 +188,10 @@ strong { font-weight: 650; }
 .step h3 { margin-top: 14px; font-size: 1.08rem; line-height: 1.4; }
 .step p { margin-top: 8px; color: var(--ink-soft); font-size: 0.96rem; }
 
+.shot { margin-top: 40px; }
+.shot img { width: 100%; height: auto; border-radius: 18px; border: 1px solid var(--line); box-shadow: var(--shadow); background: var(--paper); }
+.shot figcaption { margin-top: 12px; text-align: center; font: 500 0.72rem/1.4 var(--mono); letter-spacing: 0.08em; color: var(--ink-soft); }
+
 .bounds { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 32px 48px; }
 .bounds li { padding-left: 18px; border-left: 3px solid var(--accent); }
 .bounds h3 { font-size: 1.06rem; line-height: 1.45; }
@@ -198,6 +202,27 @@ strong { font-weight: 650; }
 .catalog dt { font-weight: 650; font-size: 1.04rem; }
 .catalog dt::after { content: ""; display: block; width: 28px; height: 3px; margin-top: 8px; border-radius: 3px; background: var(--accent); }
 .catalog dd { margin-top: 10px; color: var(--ink-soft); font-size: 0.96rem; }
+
+/* ---------- Free & sponsorship ---------- */
+.free { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 0.85fr); gap: 48px; align-items: start; }
+.free-copy p { max-width: 40em; color: var(--ink-soft); }
+.free-copy strong { color: var(--ink); }
+.sponsor {
+  padding: 24px 24px 22px; border-radius: 18px;
+  background: var(--night); color: var(--cream);
+  box-shadow: var(--shadow);
+  font-size: 0.94rem;
+}
+.sponsor p { color: rgba(255, 251, 243, 0.72); }
+.tiers { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 18px; }
+.tiers li {
+  padding: 7px 13px; border-radius: 999px;
+  border: 1px solid rgba(255, 251, 243, 0.22);
+  font: 600 0.86rem/1 var(--mono);
+  color: var(--cream);
+}
+.tiers li:last-child { border-style: dashed; color: var(--hue-light); }
+.sponsor .channels { margin-top: 16px; font-size: 0.82rem; color: rgba(255, 251, 243, 0.55); }
 
 .get { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 0.8fr); gap: 48px; align-items: start; }
 .get-copy p { max-width: 38em; color: var(--ink-soft); }
@@ -230,7 +255,7 @@ strong { font-weight: 650; }
 /* ---------- Responsive ---------- */
 @media (max-width: 960px) {
   .hero { grid-template-columns: 1fr; gap: 44px; padding-top: 28px; }
-  .get { grid-template-columns: 1fr; gap: 32px; }
+  .free, .get { grid-template-columns: 1fr; gap: 32px; }
 }
 @media (max-width: 760px) {
   .nav { display: none; }

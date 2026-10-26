@@ -457,3 +457,67 @@ TODO next: [gl7ocv] a task     (exit 0)
 - 全量门禁曾再次发现旧的折叠待办栏拖放用例不稳定。临时事件探针复现 8 次中 1 次失败：动画未结束时落点为 y=579 且真实事件命中 Doing；正常落点为 y=676 命中折叠 Todo。测试改为等待实际 grid 动画结束，再拖动；不改变任务状态/排序断言，8 次复验均通过。探针已移除。
 - 最终验证：Chromium/移动端完整串行 132 项通过，16 项真实服务用例按设计在默认入口跳过；WebKit 配置/菜单 43 项通过；真实服务 15 项通过；ecommerce 真实副本拖放与取消/确认另行通过。构建/类型检查、Rust 全量测试、格式与严格 Clippy 通过。
 - 按用户要求，开发应用与 1420 热更新服务在测试期间关闭，最终门禁通过前不重新启动。
+
+## 2026-09-27 至 2026-09-30 功能交付补记
+
+本节由 2026-10-25 的任务对账补记：以下功能已进入代码与自动化测试，但此前未写入本日志。门禁在补记当天的修复后工作树上重新执行，数字是复验结果，不是原提交当天的记录。
+
+### 任务正文 Markdown 与原地编辑（d140ad9、aebcfee）
+
+- core 新增受控 `set_body` intent：只重写解析器识别的任务正文，保留稳定 ID、token、续行与文件其余字节；外部修改经锁与指纹拒绝。
+- 桌面端按 Markdown 渲染卡片正文，编辑在居中浮层内完成；取消、空正文与冲突路径都有交互回归。
+- `task-body-markdown.spec.ts` 与 Rust workspace 回归通过。
+
+### 本地阅读库（f8afcbc、fb7975a、2ef9e9c）
+
+- 阅读库归档到 `~/.todo/reading/`（SQLite + 图片），属于个人数据，不进入项目文件或 Git；ADR 见 `docs/adr/0003-reading-library.md`。
+- 抽取用 `readabilityrs`，抓取在 Rust 端完成以绕开跨域与 Referer 限制；微信懒加载图片就地补丁，正文经 `ammonia` 清洗后进入 webview。
+- 笔记使用 W3C 文本锚点（quote + 字符偏移），阅读位置同时存百分比与块序号；0 与 100 不存锚点。
+- 浏览器可导入当前页面；`todo serve` 的 HTTP 传输暂不开放阅读库，桌面端通过 Tauri asset 协议读取 `$HOME/.todo/reading/**`。
+- `reading.spec.ts` 与 reading 相关 Rust 回归通过（10 通过、1 忽略）。
+
+### AI 会话与 DSH 桥（3ab4f11、48ff807）
+
+- `todo ai` 的会话状态以 `(source, session_id)` 为主键，存于 `~/.todo/ai/sessions.json`，不进入 `TODO.md` 与 Git；状态机、排序与退出码见 `docs/ai-feed-spec.md`。
+- DSH 桥接按宿主生命周期发布 `running` / `waiting` / `unread` / `seen` / `failed` / `handled`，并监听 `session/created` 与 `session/disposed`，避免保留已释放会话。
+- `ai.spec.ts`、`crates/todo-cli/tests/ai.rs`、`serve_ai.rs` 通过；桥接目录自带独立依赖，本次未重新安装或重跑其测试。
+
+### 匿名使用统计（0ad565f）
+
+- 桌面端默认向自托管 Umami 发送视图名、动作名、版本、平台与屏幕尺寸；不发送任务内容、文件路径或项目名，不设 Cookie、不记录身份，可在设置关闭；CLI 不发送任何统计。
+- 实现审查通过；该功能没有新增自动化测试，属于本节的验证边界。
+
+### 双语官网与图标（ab7f200、f9e5f4b）
+
+- `web/` 生成 `/en/`、`/zh/` 两份完整静态页与根路径语言路由，构建时校验两种语言结构一致；`npm run build` 通过。
+- 图标改为图像优先的浅色/深色两版，favicon 跟随系统外观；`pnpm --filter @todo/desktop test:identity` 8 项通过。站点部署结果与图标视觉未在本轮浏览器中人工复核。
+
+### 2026-10-25 对账与修复
+
+- `todo evidence` 为 `n9f4pk`、`57wlfi`、`angi74` 补写了 Git 区间；`todo archive` 把 6 个已完成顶层任务移入 `TODO.archive.md`。本轮修复完成的 `krr4qq`、`z5t7gq`、`c2j6xb` 也随后归档（累计 9 项）。`todo lint` 无问题，`todo reconcile` 从 3 条 suspected 恢复为 0 finding（exit 0）。
+- `todo progress <id> --clear` 删除 `◐` token，不再用 `◐0` 表达清除；`--clear` 与百分比互斥，严格策略下清除不要求说明。新增 `progress_can_be_cleared_without_claiming_completion` 与 `progress_requires_a_percent_or_clear` 回归。
+- `hooks context` 的子进程在 Unix 放入独立进程组，超时用 `killpg` 终止整棵树；Windows 走 `taskkill /T /F`。新增 Unix 回归 `terminate_tree_reaches_descendants`，用 shell 派生的 `sleep` 验证后代确实被终止。Windows 分支未在 Windows 实机执行。
+- 移除 README、DSH 桥文档、规格与调研文档中的本机绝对路径；验收清单里的错误家目录改为 `/path/to/ToDo`。
+- 严格 Clippy 此前被 `crates/todo-core/src/reading.rs` 的 3 个既有 lint 阻塞：两处多余引用与一处相同分支。已修复，未改变行为。
+- 同一批阅读库提交也未通过 rustfmt；`cargo fmt --all` 一并格式化了 `crates/todo-core/src/reading.rs` 与 `apps/desktop/src-tauri/src/reading.rs`，均为行为中性改动。
+
+### 本轮门禁
+
+| 门禁 | 结果 |
+|---|---|
+| `cargo fmt --all -- --check` | ✅ clean |
+| `cargo test --workspace --locked` | ✅ 0 failed |
+| `cargo clippy --workspace --all-targets --locked -- -D warnings` | ✅ 0 error |
+| `pnpm typecheck` / `pnpm build` | ✅ pass |
+| `pnpm e2e` | ✅ 145 passed, 16 skipped（真实服务用例按设计跳过） |
+| `./scripts/e2e-web.sh` | ✅ 15 passed |
+| `pnpm --filter @todo/desktop test:identity` | ✅ 8 passed |
+| `web/npm run build` | ✅ pass |
+| `git diff --check` | ✅ clean |
+
+### 验证边界
+
+- 本轮没有可用的 Developer ID 证书与 Apple 公证凭据，未产出可分发桌面端 release。
+- 三条 `#manual` 验收（原生文件选择器、看板写回、外部编辑刷新）仍未由真人执行；WebKit 原生窗口与 macOS 菜单栏未在本次复核。
+- Windows 进程树终止只通过编译分支审查，未在 Windows 实机运行。
+- 阅读库的网页抓取依赖真实网络；自动化测试覆盖解析与交互层，不覆盖特定站点的反爬变化。

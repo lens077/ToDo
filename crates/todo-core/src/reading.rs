@@ -177,18 +177,24 @@ impl ReadingStore {
         if let Some(existing) = self.find_by_url(&url)? {
             return self.get(&existing);
         }
-        self.add_fetched(&url, FetchedPage { html: html.to_string(), final_url: url.clone() })
+        self.add_fetched(
+            &url,
+            FetchedPage {
+                html: html.to_string(),
+                final_url: url.clone(),
+            },
+        )
     }
 
     fn add_fetched(&self, url: &str, fetched: FetchedPage) -> Result<ReadingArticleDetail> {
         let extracted = extract(&fetched, url)?;
         let id = new_id();
         let image_dir = self.image_dir(&id);
-        let localized = localize_images(&extracted.content_html, &url, &image_dir);
+        let localized = localize_images(&extracted.content_html, url, &image_dir);
         let cover_file = extracted
             .cover_url
             .as_deref()
-            .and_then(|cover| localize_cover(cover, &url, &image_dir));
+            .and_then(|cover| localize_cover(cover, url, &image_dir));
         let now = now_ms();
         let connection = self.connect()?;
         connection.execute(
@@ -424,9 +430,11 @@ impl ReadingStore {
     fn find_by_url(&self, url: &str) -> Result<Option<String>> {
         let connection = self.connect()?;
         connection
-            .query_row("SELECT id FROM articles WHERE url = ?1", params![url], |row| {
-                row.get(0)
-            })
+            .query_row(
+                "SELECT id FROM articles WHERE url = ?1",
+                params![url],
+                |row| row.get(0),
+            )
             .optional()
             .map_err(Error::from)
     }
@@ -491,16 +499,25 @@ fn url_is_private(url: &reqwest::Url) -> bool {
         Some(host) => host.trim_matches(['[', ']']),
         None => return true,
     };
-    if host.eq_ignore_ascii_case("localhost") || host.ends_with(".localhost") || host.ends_with(".local") {
+    if host.eq_ignore_ascii_case("localhost")
+        || host.ends_with(".localhost")
+        || host.ends_with(".local")
+    {
         return true;
     }
     match host.parse::<std::net::IpAddr>() {
         Ok(std::net::IpAddr::V4(ip)) => {
-            ip.is_loopback() || ip.is_private() || ip.is_link_local() || ip.is_unspecified()
+            ip.is_loopback()
+                || ip.is_private()
+                || ip.is_link_local()
+                || ip.is_unspecified()
                 || ip.octets()[0] == 100 && (ip.octets()[1] & 0b1100_0000) == 0b0100_0000
         }
         Ok(std::net::IpAddr::V6(ip)) => {
-            ip.is_loopback() || ip.is_unspecified() || ip.is_unique_local() || ip.is_unicast_link_local()
+            ip.is_loopback()
+                || ip.is_unspecified()
+                || ip.is_unique_local()
+                || ip.is_unicast_link_local()
         }
         Err(_) => false,
     }
@@ -511,9 +528,7 @@ fn http_client() -> Result<reqwest::blocking::Client> {
         .user_agent(USER_AGENT)
         .timeout(Duration::from_secs(30))
         .redirect(reqwest::redirect::Policy::custom(|attempt| {
-            if attempt.previous().len() >= 5 {
-                attempt.stop()
-            } else if url_is_private(attempt.url()) {
+            if attempt.previous().len() >= 5 || url_is_private(attempt.url()) {
                 attempt.stop()
             } else {
                 attempt.follow()
@@ -533,7 +548,10 @@ fn fetch_page(url: &str) -> Result<FetchedPage> {
         .map_err(|error| Error::ReadingFetch(classify_fetch_error(error)))?;
     let status = response.status();
     if !status.is_success() {
-        return Err(Error::ReadingFetch(format!("网页返回 HTTP {}", status.as_u16())));
+        return Err(Error::ReadingFetch(format!(
+            "网页返回 HTTP {}",
+            status.as_u16()
+        )));
     }
     let final_url = response.url().to_string();
     let header_charset = response
@@ -616,7 +634,9 @@ fn extract(page: &FetchedPage, requested_url: &str) -> Result<Extracted> {
         .sanitize_content(true)
         .build();
     if is_wechat_error_shell(&html) {
-        return Err(Error::ReadingFetch("微信返回了参数错误页，请在微信或浏览器中打开后使用“保存到阅读”".into()));
+        return Err(Error::ReadingFetch(
+            "微信返回了参数错误页，请在微信或浏览器中打开后使用“保存到阅读”".into(),
+        ));
     }
     let article = readabilityrs::Readability::new(&html, Some(base_url), Some(options))
         .ok()
@@ -629,7 +649,8 @@ fn extract(page: &FetchedPage, requested_url: &str) -> Result<Extracted> {
         .or_else(|| fallback.clone())
         .ok_or_else(|| Error::ReadingExtract("没有找到可阅读的正文".into()))?;
     let title_from_article = article.as_ref().and_then(|item| item.title.clone());
-    let standardized = readabilityrs::elements::standardize_all(&raw_content, title_from_article.as_deref());
+    let standardized =
+        readabilityrs::elements::standardize_all(&raw_content, title_from_article.as_deref());
     let content_html = sanitize_html(&standardized);
     let text = article
         .as_ref()
@@ -695,7 +716,10 @@ fn is_wechat_error_shell(html: &str) -> bool {
 }
 
 fn wechat_content_fallback(html: &str) -> Option<String> {
-    if !html.contains("mp.weixin.qq.com") && !html.contains("id=\"js_content\"") && !html.contains("id='js_content'") {
+    if !html.contains("mp.weixin.qq.com")
+        && !html.contains("id=\"js_content\"")
+        && !html.contains("id='js_content'")
+    {
         return None;
     }
     let patterns = [
@@ -703,10 +727,13 @@ fn wechat_content_fallback(html: &str) -> Option<String> {
         r#"(?is)<div[^>]*class=["'][^"']*rich_media_content[^"']*["'][^>]*>(.*?)</div>"#,
     ];
     patterns.iter().find_map(|pattern| {
-        Regex::new(pattern).ok()?.captures(html).and_then(|captures| {
-            let body = captures.get(1)?.as_str().trim();
-            (html_to_text(body).chars().count() >= 20).then(|| body.to_string())
-        })
+        Regex::new(pattern)
+            .ok()?
+            .captures(html)
+            .and_then(|captures| {
+                let body = captures.get(1)?.as_str().trim();
+                (html_to_text(body).chars().count() >= 20).then(|| body.to_string())
+            })
     })
 }
 
@@ -748,7 +775,16 @@ fn prepare_html(html: &str) -> String {
 fn sanitize_html(html: &str) -> String {
     let mut builder = ammonia::Builder::default();
     builder
-        .add_tags(["figure", "figcaption", "section", "article", "mark", "video", "source", "audio"])
+        .add_tags([
+            "figure",
+            "figcaption",
+            "section",
+            "article",
+            "mark",
+            "video",
+            "source",
+            "audio",
+        ])
         .add_tag_attributes("img", ["width", "height", "loading"])
         .add_tag_attributes("video", ["src", "poster", "controls"])
         .add_tag_attributes("audio", ["src", "controls"])
@@ -872,7 +908,9 @@ fn localize_images(content_html: &str, page_url: &str, image_dir: &Path) -> Stri
             continue;
         };
         let index = downloads.len() + 1;
-        if let Some(file) = download_image(&client, &absolute, page_url, image_dir, &format!("{index}")) {
+        if let Some(file) =
+            download_image(&client, &absolute, page_url, image_dir, &format!("{index}"))
+        {
             downloads.push((source, format!("images/{file}")));
         }
     }
@@ -915,7 +953,10 @@ fn download_image(
     let response = client
         .get(url)
         .header("Referer", referer)
-        .header("Accept", "image/avif,image/webp,image/apng,image/*,*/*;q=0.8")
+        .header(
+            "Accept",
+            "image/avif,image/webp,image/apng,image/*,*/*;q=0.8",
+        )
         .send()
         .ok()?;
     if !response.status().is_success() {
@@ -925,7 +966,14 @@ fn download_image(
         .headers()
         .get(reqwest::header::CONTENT_TYPE)
         .and_then(|value| value.to_str().ok())
-        .map(|value| value.split(';').next().unwrap_or("").trim().to_ascii_lowercase())
+        .map(|value| {
+            value
+                .split(';')
+                .next()
+                .unwrap_or("")
+                .trim()
+                .to_ascii_lowercase()
+        })
         .unwrap_or_default();
     let bytes = response.bytes().ok()?;
     if bytes.is_empty() || bytes.len() > MAX_IMAGE_BYTES {
@@ -1036,7 +1084,10 @@ mod tests {
     #[test]
     fn wechat_fallback_preserves_article_link_lists() {
         let html = r#"<html><head><meta property="og:title" content="还没放假吗?"></head><body><div id="js_content"><p>各位彦祖亦菲们，祝大家国庆中秋双节快乐！</p><h2>AI技术</h2><p><a href="https://mp.weixin.qq.com/s/other">JEV：一个不会写代码的模型，为什么拿下4000万美元？</a></p></div></body></html>"#;
-        let page = FetchedPage { html: html.into(), final_url: "https://mp.weixin.qq.com/s/test".into() };
+        let page = FetchedPage {
+            html: html.into(),
+            final_url: "https://mp.weixin.qq.com/s/test".into(),
+        };
         let extracted = extract(&page, &page.final_url).unwrap();
         assert!(extracted.content_html.contains("JEV"));
         assert!(extracted.content_html.contains("mp.weixin.qq.com/s/other"));
@@ -1051,7 +1102,8 @@ mod tests {
 
     #[test]
     fn decode_html_honours_gbk_meta_charset() {
-        let (gbk, _, _) = encoding_rs::GBK.encode("<html><head><meta charset=\"gbk\"></head><body>中文</body></html>");
+        let (gbk, _, _) = encoding_rs::GBK
+            .encode("<html><head><meta charset=\"gbk\"></head><body>中文</body></html>");
         assert!(decode_html(&gbk, None).contains("中文"));
         assert!(decode_html("<p>直接</p>".as_bytes(), Some("utf-8")).contains("直接"));
     }
@@ -1159,8 +1211,14 @@ mod live_tests {
         let dir = tempfile::tempdir().unwrap();
         let store = ReadingStore::new(dir.path());
         let detail = store.add(url).expect("add");
-        let images = fs::read_dir(&detail.image_dir).map(|d| d.count()).unwrap_or(0);
-        println!("byline={:?}\nHTML>>>\n{}\n<<<", detail.article.byline, detail.content_html.chars().take(1200).collect::<String>());
+        let images = fs::read_dir(&detail.image_dir)
+            .map(|d| d.count())
+            .unwrap_or(0);
+        println!(
+            "byline={:?}\nHTML>>>\n{}\n<<<",
+            detail.article.byline,
+            detail.content_html.chars().take(1200).collect::<String>()
+        );
         println!(
             "title={:?}\nsite={:?} words={} minutes={} excerpt={:?}\ncover={:?}\nimages_on_disk={} html_len={} md_len={}",
             detail.article.title,
@@ -1179,6 +1237,9 @@ mod live_tests {
     #[test]
     #[ignore]
     fn live_wechat() {
-        probe(&std::env::var("READING_URL").unwrap_or_else(|_| "https://mp.weixin.qq.com/s/Vo0hZqbCzsKdH3RgLB4R1A".into()));
+        probe(
+            &std::env::var("READING_URL")
+                .unwrap_or_else(|_| "https://mp.weixin.qq.com/s/Vo0hZqbCzsKdH3RgLB4R1A".into()),
+        );
     }
 }

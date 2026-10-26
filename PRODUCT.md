@@ -56,7 +56,8 @@ web
 - CLI 对等：`todo priority <id> <1-4|--clear> [--subtree]` 与桌面端共用写入函数，agent 也能定级。
 - 本机偏好不进文件：完成确认开关、模型提供方配置、推进中展开数与收起状态存 localStorage（`todo.app-settings.v1`、`todo.provider-settings.v1`、`todo.goal-layout.v1`）。
 - 首版不做：多仓聚合、周/月回顾、泳道与依赖图、富文本随记与自动 AI 分拣、账号与云同步、团队空间、MCP、Tauri 移动端。
-- **未决（2026-09-06 确认全部仍未拍板，见 `DECISIONS.md` 决策看板）**：① 活跃任务上限承诺值（建议 200）与详情溢出语法；② 许可证与开源边界（当前「保留一切权利」占位，见 `NOTICE.md`）；③ 移动端形态（P0 推送 → P1 PWA/薄壳 → P2 spike）；④ 商业模型（买断 / Obsidian 式 / 组合，`docs/business-model-options.md`，`TODO.md` `aiw1hs`）；⑤ 首次运行 onboarding（不做向导、`todo scan` 作首次价值证明、对账延迟揭示，`docs/onboarding-spec.md`，`TODO.md` `jrnlos`）。拍板前，后续设计不得在界面或文案里虚构价格、许可、同步服务等承诺。
+- **未决（2026-09-06 确认仍未拍板，见 `DECISIONS.md` 决策看板）**：① 活跃任务上限承诺值（建议 200）与详情溢出语法；② 许可证与开源边界（当前「保留一切权利」占位，见 `NOTICE.md`）；③ 移动端形态（P0 推送 → P1 PWA/薄壳 → P2 spike）；⑤ 首次运行 onboarding（不做向导、`todo scan` 作首次价值证明、对账延迟揭示，`docs/onboarding-spec.md`，`TODO.md` `jrnlos`）。拍板前，后续设计不得在界面或文案里虚构价格、许可、同步服务等承诺。
+- **已定（2026-10-26）：商业模型＝「目前免费 + 赞助」。** 下载与使用免费、功能不阉割、不做授权校验与试用；赞助档位 ¥1 / ¥6 / ¥18 / ¥30 / ¥68 / ¥88 与自定义金额，国内走支付宝与爱发电，国际 Ko-fi / GitHub Sponsors 只入计划不实施，回报仅致谢与自愿名单。详见 `DECISIONS.md` 决策④；原买断方案（$19/¥88、12 个月窗口、续费半价、30 天试用、联网校验）**已作废**，论证保留在 `docs/business-model-options.md`。界面与文案可写「目前免费」，但必须同时写出「已免费获得的能力不收回」。
 
 ## Brand Commitments
 

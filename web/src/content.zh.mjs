@@ -31,6 +31,7 @@ export default {
     { href: "#how", label: "怎么用" },
     { href: "#bounds", label: "边界" },
     { href: "#views", label: "视图" },
+    { href: "#free", label: "免费与赞助" },
     { href: "#get", label: "上线通知" },
   ],
   hero: {
@@ -66,6 +67,13 @@ export default {
       },
     ],
     note: null,
+    shot: {
+      src: "/screens/goal.png",
+      width: 1440,
+      height: 900,
+      alt: "Virgo 目标视图：正在推进、待办与已完成，右侧是任务详情",
+      caption: "真实界面 · 演示数据",
+    },
   },
   bounds: {
     id: "bounds",
@@ -82,7 +90,7 @@ export default {
       },
       {
         title: "每次写入之前先建还原点。",
-        body: "<code>.todo/history/</code> 默认保留 200 个。整文件改写（扫描导入、版本恢复）必须先看左右 diff 再确认；预览期间文件被别人改了，写入会被拒绝，提示你重试。",
+        body: "<code>.todo/history/</code> 默认保留 200 个。整文件改写（扫描导入、版本恢复）必须先看左右 diff 再确认；预览期间文件被别人改了，写入会被拒绝，提示「文件已在外部更新，请重试」。",
       },
       {
         title: "不需要网络，不需要登录。",
@@ -90,7 +98,7 @@ export default {
       },
       {
         title: "匿名使用统计可以关。",
-        body: "桌面端默认发送打开了哪个视图、用了哪些功能，以及版本号和系统；不发送任务内容、文件路径或项目名。在「设置 → 使用统计」关闭。",
+        body: "桌面端默认发送打开了哪个视图、用了哪些功能，以及版本号、系统、语言和屏幕尺寸；不发送任务内容、文件路径或项目名。在「设置 → 使用统计」关闭。",
       },
       {
         title: "个人随记不进仓库。",
@@ -110,6 +118,24 @@ export default {
     ],
     after:
       "<code>- [ ] 任务 !2 ◐ ↳ 说明 🔗 a1b2c3..d4e5f6 &lt;!-- id --&gt;</code>——优先级、部分完成、说明、物证、稳定 ID 都是文件里的普通字符。CLI <code>todo</code> 和桌面端读写同一套。",
+    shot: {
+      src: "/screens/capture.png",
+      width: 1440,
+      height: 900,
+      alt: "Virgo 随记视图：个人收件箱与分拣",
+      caption: "真实界面 · 演示数据",
+    },
+  },
+  free: {
+    id: "free",
+    title: "目前免费。想赞助的话，可以请我喝杯咖啡。",
+    sub: null,
+    body: "现在下载和使用都不收费，功能也不打折：没有付费墙，没有试用期，不用注册，不用联网校验。「目前免费」只是现状，不是长期承诺。如果以后改收费，<strong>已经免费给你的能力不会收回</strong>，已发布的版本继续可用，任务数据始终是你仓库里的普通 Markdown。",
+    sponsor: {
+      body: "赞助不是购买，也不换任何功能。它只表示「这东西有用」。钱花在：Apple Developer 年费与公证、域名与对象存储、CI 时间。",
+      tiers: ["¥1", "¥6", "¥18", "¥30", "¥68", "¥88", "自定义金额"],
+      channels: "国内：支付宝、爱发电。国际渠道（Ko-fi、GitHub Sponsors）在计划中，尚未开通。",
+    },
   },
   get: {
     id: "get",

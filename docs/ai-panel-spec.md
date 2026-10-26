@@ -22,7 +22,7 @@ DSH 的汇总面板已经按会话汇总了「运行中 / 等你回复 / 完成�
   "ai-feed-spec": 1,
   "source": "dsh",
   "session_id": "s_8f2a…",           // 来源内的会话 ID
-  "workspace": "/Users/lens/lens077/ToDo",   // 会话工作目录，绝对路径；用于匹配当前项目
+  "workspace": "/path/to/ToDo",   // 会话工作目录，绝对路径；用于匹配当前项目
   "title": "为 CLI 增加 release 构建说明",   // 会话标题，可空
   "state": "unread",                  // running | waiting | unread | seen | failed | handled
   "outcome": "completed",             // completed | error | aborted | blocked | max-tokens | interrupted | null

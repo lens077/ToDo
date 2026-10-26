@@ -4726,6 +4726,7 @@ dependencies = [
  "chrono",
  "clap",
  "fs2",
+ "libc",
  "pulldown-cmark",
  "serde",
  "serde_json",

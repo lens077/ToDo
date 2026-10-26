@@ -113,7 +113,7 @@ printf '%s' '{
   "ai-feed-spec": 1,
   "source": "dsh",
   "session_id": "s_8f2a",
-  "workspace": "/Users/lens/lens077/ToDo",
+  "workspace": "/path/to/ToDo",
   "title": "为 CLI 增加 release 构建说明",
   "state": "unread",
   "outcome": "completed",

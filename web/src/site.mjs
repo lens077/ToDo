@@ -16,7 +16,7 @@ export const SITE = {
   themeColor: "#f7efe4",
   /** Kept identical in every language: legal names are not translated. */
   filing: {
-    owner: "Sumery · 防城港上思希曼科技工作室",
+    owner: "Sumery · 上思希曼科技工作室",
     icp: { text: "桂ICP备2022004535号-5", href: "https://beian.miit.gov.cn/" },
     police: {
       text: "桂公网安备45060002450628号",

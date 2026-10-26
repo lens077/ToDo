@@ -1,6 +1,6 @@
 // The page skeleton shared by both languages: the Sumery six-screen landing
 // layout (work/docs/brand/LANDING.md) — hero, how it works, boundaries, what it
-// covers, [price: omitted until a price is decided], get / notify, footer.
+// covers, free & sponsorship (decision ④), get / notify, footer.
 //
 // Content strings are trusted, hand-written HTML (they carry <code>, <kbd>,
 // <strong>); attribute values go through attr().
@@ -19,6 +19,12 @@ function action(a) {
   const external = /^mailto:|^https?:/.test(a.href);
   return `<a class="btn btn-${a.kind}" href="${attr(a.href)}"${external && !a.href.startsWith("mailto:") ? ' rel="noopener"' : ""}${umamiEvent(a.event)}>${a.label}${a.kind === "primary" ? arrow : ""}</a>`;
 }
+
+const shot = (s) => `
+      <figure class="shot">
+        <img src="${attr(s.src)}" alt="${attr(s.alt)}" width="${s.width}" height="${s.height}" loading="lazy" decoding="async">
+        <figcaption>${s.caption}</figcaption>
+      </figure>`;
 
 function section({ id, title, sub }, body, extraClass = "") {
   return `
@@ -71,7 +77,8 @@ export function renderPage(c, { lang, cssHref, content }) {
         </li>`,
       )
       .join("")}</ol>
-      ${c.how.note ? `<p class="band-note">${c.how.note}</p>` : ""}`,
+      ${c.how.note ? `<p class="band-note">${c.how.note}</p>` : ""}
+      ${c.how.shot ? shot(c.how.shot) : ""}`,
   );
 
   const bounds = section(
@@ -87,7 +94,21 @@ export function renderPage(c, { lang, cssHref, content }) {
     `<dl class="catalog">${c.catalog.items
       .map((it) => `<div class="catalog-item"><dt>${it.name}</dt><dd>${it.body}</dd></div>`)
       .join("")}</dl>
-      ${c.catalog.after ? `<p class="band-note">${c.catalog.after}</p>` : ""}`,
+      ${c.catalog.after ? `<p class="band-note">${c.catalog.after}</p>` : ""}
+      ${c.catalog.shot ? shot(c.catalog.shot) : ""}`,
+  );
+
+  const free = section(
+    c.free,
+    `<div class="free">
+        <div class="free-copy"><p>${c.free.body}</p></div>
+        <div class="sponsor">
+          <p>${c.free.sponsor.body}</p>
+          <ul class="tiers">${c.free.sponsor.tiers.map((t) => `<li>${t}</li>`).join("")}</ul>
+          <p class="channels">${c.free.sponsor.channels}</p>
+        </div>
+      </div>`,
+    "band-paper",
   );
 
   const get = section(
@@ -151,6 +172,7 @@ ${hero}
 ${how}
 ${bounds}
 ${catalog}
+${free}
 ${get}
 </main>
 <footer class="foot">

@@ -8,7 +8,7 @@
 
 ## 实战依据：ecommerce
 
-已检查 `/Users/lens/lens077/ecommerce/TODO.md`：
+已检查 `../ecommerce/TODO.md`（本机验证副本）：
 
 - 文件已声明 `todo-spec: 1`，但没有 `columns`。
 - 二级标题为「一、优先级」「二、领域状态表」「三、推进顺序」「四、分类明细」。这些是文档结构，不是待办/进行中/已完成状态。

@@ -1,6 +1,6 @@
 pub mod ops;
-mod reading;
 mod preferences;
+mod reading;
 mod watch;
 
 use serde::Serialize;

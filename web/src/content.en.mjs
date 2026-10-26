@@ -32,6 +32,7 @@ export default {
     { href: "#how", label: "How it works" },
     { href: "#bounds", label: "Boundaries" },
     { href: "#views", label: "Views" },
+    { href: "#free", label: "Free & sponsorship" },
     { href: "#get", label: "Launch notice" },
   ],
   hero: {
@@ -67,6 +68,13 @@ export default {
       },
     ],
     note: null,
+    shot: {
+      src: "/screens/goal.png",
+      width: 1440,
+      height: 900,
+      alt: "Virgo's Goal view (Chinese UI): in progress, queued and done, with task details on the right",
+      caption: "Real interface (Chinese UI) · demo data",
+    },
   },
   bounds: {
     id: "bounds",
@@ -83,7 +91,7 @@ export default {
       },
       {
         title: "A restore point before every write.",
-        body: "<code>.todo/history/</code> keeps 200 by default. Whole-file rewrites (scan imports, version restores) show a side-by-side diff before you confirm; if someone changes the file while you're previewing, the write is refused and you're asked to retry.",
+        body: "<code>.todo/history/</code> keeps 200 by default. Whole-file rewrites (scan imports, version restores) show a side-by-side diff before you confirm; if someone changes the file while you're previewing, the write is refused with “The file was updated outside Virgo. Please try again.”",
       },
       {
         title: "No network, no sign-in.",
@@ -91,7 +99,7 @@ export default {
       },
       {
         title: "Anonymous usage statistics, and a switch for them.",
-        body: "By default the desktop app reports which view you open and which features you use, plus the app version and OS. Never task text, file paths or project names. Turn it off in Settings → Usage statistics.",
+        body: "By default the desktop app reports which view you open and which features you use, plus the app version, OS, language and screen size. Never task text, file paths or project names. Turn it off in Settings → Usage statistics.",
       },
       {
         title: "Personal captures stay out of the repo.",
@@ -111,6 +119,24 @@ export default {
     ],
     after:
       "<code>- [ ] Task !2 ◐ ↳ note 🔗 a1b2c3..d4e5f6 &lt;!-- id --&gt;</code> — priority, partial completion, note, evidence and a stable ID are all plain characters in the file. The <code>todo</code> CLI and the desktop app read and write the same format.",
+    shot: {
+      src: "/screens/capture.png",
+      width: 1440,
+      height: 900,
+      alt: "Virgo's Capture view (Chinese UI): a personal inbox and triage",
+      caption: "Real interface (Chinese UI) · demo data",
+    },
+  },
+  free: {
+    id: "free",
+    title: "Free for now. If it's useful, you can buy me a coffee.",
+    sub: null,
+    body: "Downloads and use cost nothing today, and nothing is held back: no paywall, no trial period, no sign-up, no online check. “Free for now” describes today, not a long-term commitment. If we start charging later, <strong>the capabilities you already got for free will not be taken away</strong>; released versions stay usable, and your task data is always plain Markdown in your repository.",
+    sponsor: {
+      body: "Sponsoring is not a purchase and does not unlock anything. It only says “this is useful.” The money goes to: the Apple Developer annual fee and notarization, the domain and object storage, and CI time.",
+      tiers: ["¥1", "¥6", "¥18", "¥30", "¥68", "¥88", "Custom amount"],
+      channels: "In mainland China: Alipay and Afdian. International channels (Ko-fi, GitHub Sponsors) are planned, not open yet.",
+    },
   },
   get: {
     id: "get",

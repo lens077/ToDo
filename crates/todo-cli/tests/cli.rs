@@ -198,6 +198,43 @@ fn done_removes_stale_partial_note_but_preserves_evidence_and_dependencies() {
 }
 
 #[test]
+fn progress_can_be_cleared_without_claiming_completion() {
+    let dir = tempdir().unwrap();
+    let path = dir.path().join("TODO.md");
+    let original = "---\ntodo-spec: 1\ncompletion-policy: strict\ncolumns:\n  - {id: todo, name: Todo}\n---\n\n## Todo\n- [ ] ship <!--t:abc123--> ◐80\n      ↳ load test still failing <!--n:abc123-->\n";
+    fs::write(&path, original).unwrap();
+
+    let output = todo(dir.path(), &["progress", "abc123", "--clear"]);
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let updated = fs::read_to_string(path).unwrap();
+
+    assert!(!updated.contains("◐80"));
+    assert!(updated.contains("- [ ] ship <!--t:abc123-->"));
+    assert!(updated.contains("load test still failing"));
+}
+
+#[test]
+fn progress_requires_a_percent_or_clear() {
+    let dir = tempdir().unwrap();
+    let path = dir.path().join("TODO.md");
+    let original = "---\ntodo-spec: 1\ncolumns:\n  - {id: todo, name: Todo}\n---\n\n## Todo\n- [ ] ship <!--t:abc123-->\n";
+    fs::write(&path, original).unwrap();
+
+    for args in [
+        vec!["progress", "abc123"],
+        vec!["progress", "abc123", "80", "--clear"],
+    ] {
+        let output = todo(dir.path(), &args);
+        assert!(!output.status.success(), "{args:?} should be rejected");
+        assert_eq!(fs::read_to_string(&path).unwrap(), original);
+    }
+}
+
+#[test]
 fn archive_moves_completed_tasks_with_evidence_and_records_history() {
     let dir = tempdir().unwrap();
     let path = dir.path().join("TODO.md");
