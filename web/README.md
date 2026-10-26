@@ -11,6 +11,7 @@
 | `src/site.css` | 品牌「小桌面」样式。只有顶部 Product tokens 一段是 Virgo 专有的 |
 | `src/site.mjs` | 站点常量：Pages 项目、Umami 站点 ID、备案信息 |
 | `public/` | 原样拷进 `dist/`：品牌图标（`work/tools/brand-icon/out/virgo/`）、界面截图（`screens/`，桌面端 mock 数据；桌面端界面目前只有中文，英文页图注已注明）、`_headers` |
+| `deploy/k8s/` | `virgo.apikv.com` 的镜像与清单：nginx 静态站，经 `default/cilium-gateway` 的 https 监听 |
 
 文案出处是 `docs/site-copy.md`；英文版按 `CONTEXT.md` 的术语翻译，事实与中文逐条对应。
 
@@ -26,10 +27,20 @@
 cd web
 npm run build      # → dist/
 npm run preview    # 本机 http://localhost:5191
-npm run deploy     # 构建并发布到 Pages 项目 virgo-overseas（main 分支即生产）
 ```
 
-`deploy` 需要环境变量 `CLOUDFLARE_API_TOKEN`（Pages 编辑权限）与 `CLOUDFLARE_ACCOUNT_ID`，不要写进仓库。
+在仓库根目录用 Makefile 发三端（同一份 `dist/`）：
+
+```bash
+make site-deploy          # 三端一起发
+make pages-deploy         # Cloudflare Pages → virgo-overseas.pages.dev
+make pages-deploy-eo      # EdgeOne Pages → virgo-site（域名 virgo-pages.apikv.com）
+make k8s-deploy           # k1 集群 → virgo.apikv.com
+```
+
+`pages-deploy` 需要本机已登录 Wrangler；`pages-deploy-eo` 需要 EdgeOne CLI 已登录；
+`k8s-deploy` 会构建 amd64 镜像推到 TCR，再把清单应用到 `virgo` 命名空间。
+`virgo.apikv.com` 的 Pangolin 资源目标是 `10.10.31.240:443`（HTTPS，保留 Host）。
 
 ## 统计
 

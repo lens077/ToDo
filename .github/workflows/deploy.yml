@@ -1,0 +1,208 @@
+name: Deploy site
+
+# main 分支每次发布：构建静态站 → Cloudflare Pages + EdgeOne Pages →
+# 构建 amd64 镜像 → 回写 values-prod.yaml → ArgoCD 从 Git 同步到 k1 集群。
+#
+# 需要仓库 Secrets：
+#   CLOUDFLARE_API_TOKEN / CLOUDFLARE_ACCOUNT_ID  Cloudflare Pages 部署
+#   EDGEONE_TOKEN                                 EdgeOne Makers 部署
+#   TCR_USERNAME / TCR_PASSWORD                   腾讯云 TCR 推送
+# 缺任何一个时对应步骤会跳过并输出 warning，不会让整条流水线失败。
+#
+# Pangolin 资源没有 API 凭据，流水线把参数写进 Job Summary 和 artifact，
+# 由人一次性在面板里填写（virgo.apikv.com → k8s-cluster → 10.10.31.240:443）。
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: deploy-site-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  IMAGE: ccr.ccs.tencentyun.com/sumery/virgo-site
+  CF_PROJECT: virgo-overseas
+  EO_PROJECT: virgo-site
+  K8S_NAMESPACE: virgo
+  K8S_RELEASE: virgo
+  CHART_DIR: web/deploy/chart/virgo
+
+jobs:
+  site:
+    name: Cloudflare Pages and EdgeOne Pages
+    # 回写 values 的 bot 提交不再触发部署，避免自循环。
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      EDGEONE_TOKEN: ${{ secrets.EDGEONE_TOKEN }}
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Build the static site
+        working-directory: web
+        run: npm run build
+
+      - name: Deploy to Cloudflare Pages
+        if: env.CLOUDFLARE_API_TOKEN != ''
+        working-directory: web
+        run: npx --yes wrangler@4.131.1 pages deploy dist --project-name="${CF_PROJECT}" --branch=main
+
+      - name: Warn when Cloudflare secrets are missing
+        if: env.CLOUDFLARE_API_TOKEN == ''
+        run: echo "::warning::CLOUDFLARE_API_TOKEN / CLOUDFLARE_ACCOUNT_ID 未设置，跳过 Cloudflare Pages 部署"
+
+      - name: Deploy to EdgeOne Pages
+        if: env.EDGEONE_TOKEN != ''
+        run: |
+          npm install --global edgeone@latest
+          edgeone makers deploy web/dist -n "${EO_PROJECT}" -e production -t "${EDGEONE_TOKEN}"
+
+      - name: Warn when EdgeOne token is missing
+        if: env.EDGEONE_TOKEN == ''
+        run: echo "::warning::EDGEONE_TOKEN 未设置，跳过 EdgeOne Pages 部署"
+
+      - name: Write the Pangolin resource parameters
+        run: |
+          mkdir -p pangolin
+          cat > pangolin/virgo-resource.txt <<'EOF'
+          Pangolin 资源（面板手动创建一次）
+          域名:      virgo.apikv.com
+          站点:      k8s-cluster
+          Upstream:  10.10.31.240
+          端口:      443
+          协议:      HTTPS
+          Host:      保留原始 Host（不要覆盖）
+          Authentication: 公开，关闭 Platform SSO，不加 PIN/密码
+          EdgeOne 镜像域名: virgo-pages.apikv.com
+          EOF
+          {
+            echo "## Pangolin 资源参数（手动填写）"
+            echo '```'
+            cat pangolin/virgo-resource.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload the Pangolin parameters
+        uses: actions/upload-artifact@v4
+        with:
+          name: pangolin-resource
+          path: pangolin/virgo-resource.txt
+
+  image:
+    name: Build and push the site image
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    outputs:
+      tag: ${{ steps.meta.outputs.tag }}
+      digest: ${{ steps.meta.outputs.digest }}
+
+    env:
+      TCR_USERNAME: ${{ secrets.TCR_USERNAME }}
+      TCR_PASSWORD: ${{ secrets.TCR_PASSWORD }}
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Build the static site
+        working-directory: web
+        run: npm run build
+
+      - name: Log in to TCR
+        if: env.TCR_USERNAME != ''
+        uses: docker/login-action@v3
+        with:
+          registry: ccr.ccs.tencentyun.com
+          username: ${{ secrets.TCR_USERNAME }}
+          password: ${{ secrets.TCR_PASSWORD }}
+
+      - name: Warn when TCR credentials are missing
+        if: env.TCR_USERNAME == ''
+        run: echo "::warning::TCR_USERNAME / TCR_PASSWORD 未设置，跳过镜像构建与 GitOps 回写"
+
+      - name: Set up buildx
+        if: env.TCR_USERNAME != ''
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and push linux/amd64
+        if: env.TCR_USERNAME != ''
+        shell: bash
+        run: |
+          tag="${GITHUB_SHA}"
+          docker buildx build \
+            --platform linux/amd64 \
+            -f web/deploy/k8s/Dockerfile \
+            -t "${IMAGE}:${tag}" \
+            --push web
+          digest="$(docker buildx imagetools inspect "${IMAGE}:${tag}" --format '{{.Manifest.Digest}}')"
+          printf 'tag=%s\n' "$tag" >> "$GITHUB_OUTPUT"
+          printf 'digest=%s\n' "$digest" >> "$GITHUB_OUTPUT"
+        id: meta
+
+  gitops:
+    name: Write the image tag back to Git
+    needs: image
+    if: |
+      github.actor != 'github-actions[bot]' &&
+      needs.image.outputs.tag != '' &&
+      needs.image.outputs.digest != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Check out main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Update values-prod.yaml
+        env:
+          TAG: ${{ needs.image.outputs.tag }}
+          DIGEST: ${{ needs.image.outputs.digest }}
+        run: |
+          python3 - <<'PY'
+          import os, re
+          from pathlib import Path
+          p = Path("web/deploy/chart/virgo/values-prod.yaml")
+          s = p.read_text()
+          tag = f'{os.environ["TAG"]}@{os.environ["DIGEST"]}'
+          s2, n = re.subn(r'(?m)^    tag: ".*"$', f'    tag: "{tag}"', s, count=1)
+          if n != 1:
+              raise SystemExit("values-prod.yaml 里没有找到唯一的 image.tag 行")
+          p.write_text(s2)
+          PY
+
+      - name: Commit and push
+        run: |
+          if git diff --quiet; then
+            echo "镜像 tag 没有变化，跳过提交"
+            exit 0
+          fi
+          git config user.name Sumery
+          git config user.email xiconz@qq.com
+          git add web/deploy/chart/virgo/values-prod.yaml
+          git commit -m "chore(site): release ${GITHUB_SHA::7} [skip ci]"
+          git push origin main

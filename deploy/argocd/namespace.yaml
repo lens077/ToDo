@@ -1,0 +1,7 @@
+# 命名空间由平台侧预先创建：AppProject 不放行集群级资源，Application 也关掉 CreateNamespace。
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: virgo
+  labels:
+    app.kubernetes.io/part-of: virgo

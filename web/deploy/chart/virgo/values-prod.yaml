@@ -1,0 +1,19 @@
+# 生产环境（hosting 集群，namespace virgo）。ArgoCD Application virgo-prod
+# 叠加 values.yaml + 本文件渲染。
+#
+# image.tag 由 .github/workflows/deploy.yml 在每次 main 分支发布时改写为
+# "<git sha>@sha256:<digest>"。手工回滚：改回旧值提交即可，ArgoCD 自动同步。
+
+web:
+  image:
+    tag: "d6b75d6"
+  # 集群里已有从 scorpius 复制的 tcr-pull。OpenBao 的写入权限还没配：
+  # 配好 `k8s/hosting/virgo`（属性 tcr-dockerconfigjson）后，把下面两行删掉，
+  # imagePullSecret 改回 virgo-tcr，ExternalSecret 就会接管这个凭据。
+  imagePullSecret: tcr-pull
+  externalSecret:
+    enabled: false
+
+route:
+  hostnames:
+    - virgo.apikv.com

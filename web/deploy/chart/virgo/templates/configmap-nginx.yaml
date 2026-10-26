@@ -1,0 +1,10 @@
+{{- $name := include "virgo.fullname" . -}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ $name }}-nginx
+  labels:
+    {{- include "virgo.labels" . | nindent 4 }}
+data:
+  nginx.conf: |
+    {{- tpl (.Files.Get "files/nginx.conf") . | nindent 4 }}

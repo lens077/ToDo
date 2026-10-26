@@ -1,0 +1,24 @@
+{{- if and .Values.route.enabled .Values.route.tlsRoute.enabled -}}
+{{- $name := include "virgo.fullname" . -}}
+{{- $gw := .Values.route.gateway -}}
+# TLS passthrough 示例。默认不启用：cilium-gateway 的 https 监听器是 Terminate，
+# 由 HTTPRoute 提供；只有新增了 passthrough 监听器（route.tlsRoute.sectionName）
+# 并且确实需要在网关之外保留 TLS 时才打开。目标端口必须是 Pod 的明文端口。
+apiVersion: gateway.networking.k8s.io/v1alpha2
+kind: TLSRoute
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "virgo.labels" . | nindent 4 }}
+spec:
+  parentRefs:
+    - name: {{ $gw.name }}
+      namespace: {{ $gw.namespace }}
+      sectionName: {{ .Values.route.tlsRoute.sectionName }}
+  hostnames:
+    {{- toYaml .Values.route.hostnames | nindent 4 }}
+  rules:
+    - backendRefs:
+        - name: {{ $name }}
+          port: 80
+{{- end }}

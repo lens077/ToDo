@@ -1,0 +1,33 @@
+# ArgoCD AppProject：只允许从本仓库部署到 virgo 命名空间，且只放行 chart 用到的资源类型。
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: virgo
+  namespace: argocd
+  labels:
+    app.kubernetes.io/part-of: virgo
+    app.kubernetes.io/managed-by: git
+spec:
+  description: virgo.apikv.com Helm GitOps project
+  sourceRepos:
+    - git@github.com:lens077/ToDo.git
+  destinations:
+    - name: in-cluster
+      server: https://kubernetes.default.svc
+      namespace: virgo
+  clusterResourceWhitelist: []
+  namespaceResourceWhitelist:
+    - { group: "", kind: ConfigMap }
+    - { group: "", kind: Service }
+    - { group: apps, kind: Deployment }
+    - { group: policy, kind: PodDisruptionBudget }
+    - { group: external-secrets.io, kind: ExternalSecret }
+    - { group: gateway.networking.k8s.io, kind: HTTPRoute }
+    - { group: gateway.networking.k8s.io, kind: TLSRoute }
+    - { group: cilium.io, kind: CiliumNetworkPolicy }
+  roles:
+    - name: read-only
+      description: Read Virgo applications and project state
+      policies:
+        - p, proj:virgo:read-only, applications, get, virgo/*, allow
+        - p, proj:virgo:read-only, projects, get, virgo, allow

@@ -1,0 +1,48 @@
+# 通用默认值。生产差异（镜像 tag、域名）放 values-prod.yaml。
+
+web:
+  replicas: 2
+  image:
+    repository: ccr.ccs.tencentyun.com/sumery/virgo-site
+    # 形如 "<git sha>@sha256:<digest>"；由 CI 回写，空值会让渲染失败。
+    tag: ""
+    pullPolicy: IfNotPresent
+  resources:
+    requests: { cpu: 10m, memory: 16Mi }
+    limits: { cpu: 200m, memory: 64Mi }
+  # nginx-unprivileged 镜像里的 nginx 用户
+  runAsUser: 101
+  runAsGroup: 101
+  # 私钥与拉取凭据由 OpenBao 经 ESO 同步；关闭时需手工创建同名 Secret。
+  imagePullSecret: virgo-tcr
+  externalSecret:
+    enabled: true
+    storeName: openbao
+    storeKind: ClusterSecretStore
+    remoteKey: k8s/hosting/virgo
+    remoteProperty: tcr-dockerconfigjson
+    refreshInterval: 1h
+
+route:
+  enabled: true
+  gateway:
+    name: cilium-gateway
+    namespace: default
+    httpsSection: https
+    httpSection: http
+  hostnames:
+    - virgo.apikv.com
+  redirectHttp: true
+  # Cilium Gateway 默认在 https 监听器终结 TLS，用 HTTPRoute 即可。
+  # 只有改成 TLS passthrough 时才把 tlsRoute.enabled 打开，并给它一个
+  # 已存在的 TLS listener（默认没有，因此关闭）。
+  tlsRoute:
+    enabled: false
+    sectionName: tls-passthrough
+
+networkPolicy:
+  enabled: true
+
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 1

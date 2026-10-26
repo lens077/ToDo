@@ -1,0 +1,7 @@
+apiVersion: v2
+name: virgo
+description: virgo.apikv.com —— 双语静态官网（nginx-unprivileged）
+type: application
+# chart 结构变了才升 version；镜像版本在 values-prod.yaml，由 CI 回写。
+version: 0.1.0
+appVersion: "1"

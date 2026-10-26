@@ -1,0 +1,36 @@
+{{- if .Values.networkPolicy.enabled -}}
+{{- $name := include "virgo.fullname" . -}}
+# 只允许 Cilium Gateway 与 kubelet 探针进入 nginx；出站只放 DNS。
+# Cilium Gateway 的流量身份是 ingress（envoy 在 cilium-agent 内）；
+# host/remote-node 覆盖 kubelet 与节点侧探针。
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "virgo.labels" . | nindent 4 }}
+spec:
+  endpointSelector:
+    matchLabels:
+      {{- include "virgo.selector" . | nindent 6 }}
+  enableDefaultDeny:
+    ingress: true
+    egress: true
+  ingress:
+    - fromEntities:
+        - ingress
+        - host
+        - remote-node
+      toPorts:
+        - ports:
+            - { port: "8080", protocol: TCP }
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: kube-system
+            k8s-app: kube-dns
+      toPorts:
+        - ports:
+            - { port: "53", protocol: UDP }
+            - { port: "53", protocol: TCP }
+{{- end }}

@@ -39,3 +39,6 @@ apps/desktop/icon/out/
 **/.impeccable/review/
 **/.impeccable/decision/bars/
 **/.impeccable/build/
+
+# EdgeOne CLI local auth
+**/.edgeone/

@@ -1,0 +1,99 @@
+{{- $name := include "virgo.fullname" . -}}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "virgo.labels" . | nindent 4 }}
+spec:
+  selector:
+    {{- include "virgo.selector" . | nindent 4 }}
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "virgo.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.web.replicas }}
+  revisionHistoryLimit: 5
+  selector:
+    matchLabels:
+      {{- include "virgo.selector" . | nindent 6 }}
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  template:
+    metadata:
+      labels:
+        {{- include "virgo.labels" . | nindent 8 }}
+      annotations:
+        checksum/nginx: {{ tpl (.Files.Get "files/nginx.conf") . | sha256sum }}
+    spec:
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      terminationGracePeriodSeconds: 15
+      imagePullSecrets:
+        - name: {{ .Values.web.imagePullSecret }}
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: {{ .Values.web.runAsUser }}
+        runAsGroup: {{ .Values.web.runAsGroup }}
+        fsGroup: {{ .Values.web.runAsGroup }}
+        seccompProfile:
+          type: RuntimeDefault
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              {{- include "virgo.selector" . | nindent 14 }}
+      containers:
+        - name: nginx
+          image: {{ include "virgo.image" .Values.web.image }}
+          imagePullPolicy: {{ .Values.web.image.pullPolicy }}
+          ports:
+            - { name: http, containerPort: 8080 }
+          readinessProbe:
+            httpGet: { path: /healthz, port: http }
+            periodSeconds: 10
+            timeoutSeconds: 3
+          livenessProbe:
+            httpGet: { path: /healthz, port: http }
+            periodSeconds: 30
+            timeoutSeconds: 3
+            failureThreshold: 3
+          lifecycle:
+            preStop:
+              exec:
+                command: ["sleep", "5"]
+          resources:
+            {{- toYaml .Values.web.resources | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - { name: nginx-conf, mountPath: /etc/nginx/conf.d, readOnly: true }
+            - { name: cache, mountPath: /var/cache/nginx }
+            - { name: run, mountPath: /var/run }
+            - { name: tmp, mountPath: /tmp }
+      volumes:
+        - name: nginx-conf
+          configMap:
+            name: {{ $name }}-nginx
+        - name: cache
+          emptyDir: {}
+        - name: run
+          emptyDir: {}
+        - name: tmp
+          emptyDir: {}

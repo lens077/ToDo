@@ -1,0 +1,46 @@
+{{- if .Values.route.enabled -}}
+{{- $name := include "virgo.fullname" . -}}
+{{- $gw := .Values.route.gateway -}}
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "virgo.labels" . | nindent 4 }}
+spec:
+  parentRefs:
+    - name: {{ $gw.name }}
+      namespace: {{ $gw.namespace }}
+      sectionName: {{ $gw.httpsSection }}
+  hostnames:
+    {{- toYaml .Values.route.hostnames | nindent 4 }}
+  rules:
+    - matches:
+        - path: { type: PathPrefix, value: / }
+      backendRefs:
+        - name: {{ $name }}
+          port: 80
+{{- if .Values.route.redirectHttp }}
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: {{ $name }}-redirect
+  labels:
+    {{- include "virgo.labels" . | nindent 4 }}
+spec:
+  parentRefs:
+    - name: {{ $gw.name }}
+      namespace: {{ $gw.namespace }}
+      sectionName: {{ $gw.httpSection }}
+  hostnames:
+    {{- toYaml .Values.route.hostnames | nindent 4 }}
+  rules:
+    - filters:
+        - type: RequestRedirect
+          requestRedirect:
+            scheme: https
+            port: 443
+            statusCode: 301
+{{- end }}
+{{- end }}
