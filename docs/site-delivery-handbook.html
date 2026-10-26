@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Virgo 官网三端交付手册 · 给执行型 AI 的作业单</title>
+<title>静态站三端交付手册 · 通用模板</title>
 <style>
   :root{
     --paper:#f7efe4; --card:#fffdf9; --ink:#2a2740; --soft:#6b6677;
@@ -12,14 +12,14 @@
   }
   *{box-sizing:border-box}
   body{margin:0;background:var(--paper);color:var(--ink);font:16px/1.72 -apple-system,BlinkMacSystemFont,"PingFang SC","Segoe UI",sans-serif}
-  main{max-width:980px;margin:0 auto;padding:56px 28px 96px}
+  main{max-width:1000px;margin:0 auto;padding:56px 28px 96px}
   header{border-bottom:1px solid var(--line);padding-bottom:28px;margin-bottom:36px}
   .kicker{font:700 12px/1 var(--mono);letter-spacing:.14em;color:var(--accent);text-transform:uppercase}
   h1{font-size:clamp(28px,4vw,42px);line-height:1.2;margin:14px 0 12px;letter-spacing:-.02em}
-  .lede{color:var(--soft);max-width:62ch;margin:0}
+  .lede{color:var(--soft);max-width:66ch;margin:0}
   h2{font-size:24px;margin:52px 0 14px;letter-spacing:-.01em}
   h3{font-size:18px;margin:28px 0 10px}
-  p{max-width:70ch;color:var(--soft)}
+  p{max-width:72ch;color:var(--soft)}
   strong{color:var(--ink)}
   code{font:600 .86em/1.5 var(--mono);background:#efe5d6;border-radius:5px;padding:2px 6px;color:#4a3f2c}
   pre{background:var(--night);color:var(--cream);padding:18px 20px;border-radius:14px;overflow:auto;font:500 13px/1.65 var(--mono)}
@@ -38,8 +38,6 @@
   .warn{border-left:4px solid var(--accent);background:#fdf6ea;padding:14px 18px;border-radius:0 10px 10px 0;margin:18px 0;color:var(--soft)}
   ol,ul{padding-left:22px;color:var(--soft)}
   li{margin:6px 0}
-  .done{color:#18794e;font-weight:700}
-  .todo{color:#b45309;font-weight:700}
   footer{margin-top:64px;padding-top:22px;border-top:1px solid var(--line);color:var(--soft);font-size:13px}
   @media(max-width:760px){.grid{grid-template-columns:1fr}main{padding:36px 18px 72px}}
 </style>
@@ -47,129 +45,148 @@
 <body>
 <main>
 <header>
-  <div class="kicker">Virgo · delivery runbook</div>
-  <h1>官网三端交付手册</h1>
-  <p class="lede">给执行型 AI 的作业单：把同一份静态站发到 Cloudflare Pages、EdgeOne Pages 和 k1 集群的 <code>virgo.apikv.com</code>。按顺序执行，每一步都有验收命令；不能自动的部分会明确标出。</p>
+  <div class="kicker">STATIC SITE · DELIVERY RUNBOOK</div>
+  <h1>静态站三端交付手册</h1>
+  <p class="lede">通用模板：把同一份静态站发到 Cloudflare Pages、EdgeOne Pages，以及一个 Kubernetes 集群里的自有域名。按顺序执行；所有项目名、域名、仓库、集群地址都用占位符表示，由使用者提供。不能自动的部分会明确标出。</p>
 </header>
 
-<h2>0 · 先看结论</h2>
+<h2>0 · 前置准备（先做这一节）</h2>
+<p>不要急着复制后面的命令。先确认这台机器与账号能完成下面这些动作；缺少任何一项，先安装或配置，再继续。带 <strong>ASK USER</strong> 的项无法从代码推断，必须向使用者提问。</p>
+
 <table>
-  <tr><th>端</th><th>地址</th><th>发布方式</th><th>当前状态</th></tr>
-  <tr><td>海外</td><td><code>virgo-overseas.pages.dev</code></td><td>CI：Wrangler</td><td class="todo">缺 CLOUDFLARE_API_TOKEN</td></tr>
-  <tr><td>大陆镜像</td><td><code>virgo-pages.apikv.com</code></td><td>CI：EdgeOne CLI</td><td class="done">已部署；证书已签发</td></tr>
-  <tr><td>国内主站</td><td><code>virgo.apikv.com</code></td><td>ArgoCD + Helm</td><td class="done">集群内 200；缺 Pangolin 资源</td></tr>
+  <tr><th>依赖</th><th>检查命令</th><th>缺失时怎么办</th></tr>
+  <tr><td>Git</td><td><code>git --version</code></td><td>macOS <code>brew install git</code>；Debian/Ubuntu <code>sudo apt install git</code></td></tr>
+  <tr><td>GitHub CLI</td><td><code>gh auth status</code></td><td><code>brew install gh</code> 或官方安装包；然后 <code>gh auth login</code></td></tr>
+  <tr><td>Node.js ≥ 18</td><td><code>node -v && npm -v</code></td><td><code>brew install node</code>；或 <code>nvm install 22</code></td></tr>
+  <tr><td>Docker + buildx</td><td><code>docker version && docker buildx version</code></td><td>安装 Docker Desktop / OrbStack / colima；<code>docker login &lt;registry&gt;</code></td></tr>
+  <tr><td>kubectl</td><td><code>kubectl config current-context</code></td><td><code>brew install kubectl</code>；然后把 kubeconfig 放到 <code>~/.kube/config</code></td></tr>
+  <tr><td>Helm ≥ 3</td><td><code>helm version --short</code></td><td><code>brew install helm</code>；或官方 install 脚本</td></tr>
+  <tr><td>Wrangler（Cloudflare）</td><td><code>npx --yes wrangler@4 whoami</code></td><td><code>npx wrangler@4 login</code>；CI 见 §3 的 API Token</td></tr>
+  <tr><td>EdgeOne CLI</td><td><code>edgeone whoami</code></td><td><code>npm i -g --prefix ~/.local edgeone@latest</code>；<code>edgeone login --site china</code></td></tr>
+  <tr><td>GitLab CLI（可选）</td><td><code>glab auth status</code></td><td><code>brew install glab</code>；<code>glab auth login</code>。不用 GitLab 可跳过</td></tr>
+  <tr><td>jq</td><td><code>jq --version</code></td><td><code>brew install jq</code> / <code>sudo apt install jq</code></td></tr>
+  <tr><td>curl、openssl</td><td><code>curl --version && openssl version</code></td><td>系统包管理器安装</td></tr>
+  <tr><td>集群出入口</td><td><code>kubectl get gateway -A</code></td><td><strong>ASK USER：</strong>网关名称/命名空间、对外 VIP、TLS 监听器名、证书 Secret 名</td></tr>
+  <tr><td>镜像仓库</td><td><code>docker login &lt;registry&gt;</code></td><td><strong>ASK USER：</strong>registry 地址、命名空间、推送凭据的存放方式</td></tr>
+  <tr><td>三个域名</td><td>DNS 是否已指向目标</td><td><strong>ASK USER：</strong>国内主域、EdgeOne 镜像域、Cloudflare 默认域/自定义域</td></tr>
 </table>
 
 <div class="warn">
-  <strong>不要从 GitHub 直接让 ArgoCD 拉仓库。</strong>集群里的 <code>argocd-repo-server</code> clone GitHub 会卡在 <code>git fetch</code>。唯一源是 GitLab 镜像 <code>https://gitlab.com/sumery/virgo.git</code>，GitHub 仍是开发主仓。
+  <strong>执行 AI 的规则：</strong>上表里凡是无法从本机命令直接判断、又没有在仓库里找到的值，必须向使用者提问，不要猜测域名、VIP、registry 或网关名。把答案记到 §1 的变量表，再开始改文件。
 </div>
 
-<h2>1 · 文件地图</h2>
+<h3>一键预检脚本</h3>
+<pre><code>#!/usr/bin/env bash
+set -u
+need=(git gh node npm docker kubectl helm jq curl openssl)
+for c in "${need[@]}"; do
+  if command -v "$c" &gt;/dev/null 2&gt;&amp;1; then
+    printf 'OK   %-8s %s\n' "$c" "$("$c" --version 2&gt;&amp;1 | head -1)"
+  else
+    printf 'MISS %-8s 请先安装\n' "$c"
+  fi
+done
+command -v edgeone &gt;/dev/null &amp;&amp; edgeone whoami || echo 'MISS edgeone：npm i -g --prefix ~/.local edgeone@latest'
+command -v glab &gt;/dev/null &amp;&amp; glab auth status || echo 'MISS glab（可选）'
+docker buildx version || echo 'MISS docker buildx'
+kubectl config current-context || echo 'MISS kubectl context'
+</code></pre>
+
+<h2>1 · 使用者需要提供的变量</h2>
+<p>把下面这张表填好再动手。示例值只用于说明格式，不要直接使用。</p>
 <table>
-  <tr><th>路径</th><th>作用</th></tr>
-  <tr><td><code>web/src/</code>、<code>web/build.mjs</code></td><td>中英文静态页生成，输出 <code>web/dist/</code></td></tr>
-  <tr><td><code>web/deploy/k8s/Dockerfile</code></td><td>nginx-unprivileged 镜像，非 root、监听 8080</td></tr>
-  <tr><td><code>web/deploy/chart/virgo/</code></td><td>Helm chart：ConfigMap、Deployment、Service、HTTPRoute、TLSRoute、CNP、PDB、ExternalSecret</td></tr>
-  <tr><td><code>deploy/argocd/</code></td><td>Namespace、AppProject、Application、仓库凭据模板</td></tr>
-  <tr><td><code>.github/workflows/deploy.yml</code></td><td>main 发布：Pages + 镜像 + 回写 tag + GitLab 镜像 + Pangolin 参数</td></tr>
-  <tr><td><code>Makefile</code></td><td>一键与分步部署入口</td></tr>
+  <tr><th>变量</th><th>示例</th><th>说明</th></tr>
+  <tr><td><code>&lt;APP&gt;</code></td><td><code>example-site</code></td><td>Helm release、Deployment、命名空间前缀</td></tr>
+  <tr><td><code>&lt;NAMESPACE&gt;</code></td><td><code>example</code></td><td>Kubernetes 命名空间</td></tr>
+  <tr><td><code>&lt;REPO&gt;</code></td><td><code>&lt;org&gt;/&lt;repo&gt;</code></td><td>GitHub 开发主仓</td></tr>
+  <tr><td><code>&lt;MIRROR&gt;</code></td><td><code>&lt;gitlab-org&gt;/&lt;repo&gt;</code></td><td>ArgoCD 读取的 GitLab 镜像仓（可选，但集群拉 GitHub 不稳定时必需）</td></tr>
+  <tr><td><code>&lt;REGISTRY&gt;</code></td><td><code>registry.example.com</code></td><td>镜像仓库</td></tr>
+  <tr><td><code>&lt;IMAGE&gt;</code></td><td><code>&lt;REGISTRY&gt;/&lt;ns&gt;/&lt;app&gt;</code></td><td>站点镜像名</td></tr>
+  <tr><td><code>&lt;MAIN_DOMAIN&gt;</code></td><td><code>site.example.com</code></td><td>Kubernetes 主入口</td></tr>
+  <tr><td><code>&lt;PAGES_DOMAIN&gt;</code></td><td><code>pages.example.com</code></td><td>EdgeOne 镜像域</td></tr>
+  <tr><td><code>&lt;CF_PROJECT&gt;</code></td><td><code>&lt;cf-pages-project&gt;</code></td><td>Cloudflare Pages 项目名</td></tr>
+  <tr><td><code>&lt;EO_PROJECT&gt;</code></td><td><code>&lt;edgeone-project&gt;</code></td><td>EdgeOne Makers 项目名</td></tr>
+  <tr><td><code>&lt;GATEWAY&gt;</code></td><td><code>default/&lt;gateway-name&gt;</code></td><td>Cilium Gateway 名称与命名空间</td></tr>
+  <tr><td><code>&lt;GATEWAY_VIP&gt;</code></td><td><code>10.0.0.10</code></td><td>Pangolin 回源地址</td></tr>
+  <tr><td><code>&lt;TLS_SECRET&gt;</code></td><td><code>&lt;wildcard-tls&gt;</code></td><td>网关泛域名证书 Secret</td></tr>
 </table>
 
-<h2>2 · 一次性基础设施</h2>
-<p>下面这些只需要做一次，做完就不再随发布变化。</p>
-
-<div class="grid">
-  <div class="card">
-    <span class="tag">01 · TCR</span>
-    <h3>镜像仓库</h3>
-    <p><code>ccr.ccs.tencentyun.com/sumery/virgo-site</code>。首次 <code>docker push</code> 会自动建仓库；本机已 <code>docker login</code>。</p>
-  </div>
-  <div class="card">
-    <span class="tag">02 · GitLab</span>
-    <h3>ArgoCD 只读源</h3>
-    <p>项目 <code>sumery/virgo</code>；Project Access Token 只勾 <code>read_repository</code>，存进 ArgoCD Secret，不进 Git。</p>
-  </div>
-  <div class="card">
-    <span class="tag">03 · Namespace</span>
-    <h3>virgo</h3>
-    <p>由 <code>deploy/argocd/namespace.yaml</code> 创建。AppProject 不放行集群级资源，Application 关闭 <code>CreateNamespace</code>。</p>
-  </div>
-  <div class="card">
-    <span class="tag">04 · EdgeOne</span>
-    <h3>镜像域名</h3>
-    <p>项目 <code>virgo-site</code>，绑定 <code>virgo-pages.apikv.com</code>；DNS 需要站点 CNAME 与 <code>_dnsauth</code> 校验 CNAME。</p>
-  </div>
-  <div class="card">
-    <span class="tag">05 · Pangolin</span>
-    <h3>主域资源</h3>
-    <p><code>virgo.apikv.com</code> → 站点 <code>k8s-cluster</code> → <code>10.10.31.240:443</code> HTTPS，保留 Host，关闭 SSO。</p>
-  </div>
-  <div class="card">
-    <span class="tag">06 · OpenBao</span>
-    <h3>TCR 拉取凭据</h3>
-    <p>路径 <code>k8s/hosting/virgo</code>，属性 <code>tcr-dockerconfigjson</code>。写入权限配好前，chart 用 <code>tcr-pull</code> 兜底。</p>
-  </div>
+<h2>2 · 目标拓扑</h2>
+<div class="card dark">
+  <p><strong>发布源：</strong>GitHub 主仓 → GitHub Actions（构建静态站 + amd64 镜像）。</p>
+  <p><strong>两条静态托管：</strong>Cloudflare Pages（海外）、EdgeOne Pages（大陆镜像）。</p>
+  <p><strong>自有域名：</strong>Pangolin → <code>&lt;GATEWAY_VIP&gt;:443</code> → Cilium Gateway → HTTPRoute → Deployment（nginx-unprivileged:8080）。</p>
+  <p><strong>GitOps：</strong>CI 回写 values 的镜像 tag → GitLab 镜像 → ArgoCD → 集群。</p>
 </div>
+<p>三个端跑同一份 <code>dist/</code>；静态托管只做副本，不接管主域。</p>
 
-<h3>ArgoCD 仓库凭据（模板在 <code>deploy/argocd/repository.example.yaml</code>）</h3>
-<pre><code># GitLab 项目 sumery/virgo → Project Access Token，scope=read_repository
-kubectl -n argocd create secret generic repo-gitlab-virgo \
-  --from-literal=type=git \
-  --from-literal=url=https://gitlab.com/sumery/virgo.git \
-  --from-literal=username=oauth2 \
-  --from-literal=password=&lt;token&gt; \
-  --from-literal=name=gitlab-virgo \
-  --from-literal=project=virgo
-kubectl -n argocd label secret repo-gitlab-virgo \
-  argocd.argoproj.io/secret-type=repository</code></pre>
+<h2>3 · Cloudflare API Token：最小权限</h2>
+<p>CI 需要的是一个 <strong>Account API Token</strong>，不是本机 <code>wrangler login</code> 的 OAuth token（它通常一小时就过期）。</p>
 
-<h3>Pangolin 资源参数</h3>
-<pre><code>域名:      virgo.apikv.com
-站点:      k8s-cluster
-Upstream:  10.10.31.240
-端口:      443
-协议:      HTTPS
-Host:      保留原始 Host（不要覆盖）
-认证:      公开；关闭 Platform SSO；不加 PIN/密码
-EdgeOne 镜像域名: virgo-pages.apikv.com</code></pre>
-
-<h2>3 · GitHub Secrets</h2>
-<table>
-  <tr><th>名字</th><th>用途</th><th>状态</th></tr>
-  <tr><td><code>TCR_USERNAME</code> / <code>TCR_PASSWORD</code></td><td>推送 amd64 镜像</td><td class="done">已配置</td></tr>
-  <tr><td><code>GITLAB_TOKEN</code></td><td>CI 把 main 镜像到 GitLab（<code>write_repository</code>）</td><td class="done">已配置</td></tr>
-  <tr><td><code>EDGEONE_TOKEN</code></td><td>EdgeOne Makers 非交互部署</td><td class="done">已配置</td></tr>
-  <tr><td><code>CLOUDFLARE_ACCOUNT_ID</code></td><td>Pages 账户</td><td class="done">已配置</td></tr>
-  <tr><td><code>CLOUDFLARE_API_TOKEN</code></td><td>Pages 编辑权限</td><td class="todo">缺；工作流会 warning + skip</td></tr>
-</table>
-<div class="warn">
-  不要把本机 <code>wrangler login</code> 的 OAuth token 当作 CI token：它的 <code>expiration_time</code> 只有一小时。到 Cloudflare 控制台创建 Pages 编辑权限的 API Token，再 <code>gh secret set CLOUDFLARE_API_TOKEN</code>。
-</div>
-
-<h2>4 · 发布流水线怎么走</h2>
+<h3>申请步骤</h3>
 <ol>
-  <li><strong>触发：</strong><code>main</code> push 或手动 <code>workflow_dispatch</code>。bot 回写 commit 由 <code>github.actor != 'github-actions[bot]'</code> 挡住。</li>
-  <li><strong>site job：</strong>构建 <code>web/dist</code>，发 Cloudflare（有 token 时）与 EdgeOne；把 Pangolin 参数写进 Job Summary 和 artifact <code>pangolin-resource</code>。</li>
-  <li><strong>image job：</strong>buildx 构建 <code>linux/amd64</code>，推到 <code>virgo-site:&lt;sha&gt;</code>，读回 digest。</li>
-  <li><strong>gitops job：</strong>把 <code>&lt;sha&gt;@sha256:&lt;digest&gt;</code> 写回 <code>values-prod.yaml</code>，提交 <code>[skip ci]</code>，推 GitHub 与 GitLab。</li>
-  <li><strong>ArgoCD：</strong>轮询 GitLab（默认 3 分钟）或刷新后同步到 <code>virgo</code> 命名空间。</li>
+  <li>登录 Cloudflare Dashboard → 右上角头像 → <strong>API Tokens</strong>（或 Manage Account → API Tokens）。</li>
+  <li><strong>Create Token</strong> → 最底部 <strong>Create Custom Token</strong>。</li>
+  <li>Token name：<code>ci-pages-deploy-&lt;app&gt;</code>。</li>
+  <li>Permissions 只加一条：<strong>Account → Cloudflare Pages → Edit</strong>。不要加 Zone、DNS、Workers、R2 权限。</li>
+  <li>Account Resources：<strong>Include → 指定这一个账号</strong>，不要选 All accounts。</li>
+  <li>TTL：按团队轮换周期设置（例如 90 天或 1 年），到期前轮换。</li>
+  <li>Client IP Address Filtering：如果 GitHub Actions 出口 IP 不固定，留空；能固定出口时再收紧。</li>
+  <li>Create → 复制 token（只显示一次）。</li>
 </ol>
+
+<div class="warn">
+  <strong>为什么只给 Pages: Edit：</strong><code>wrangler pages deploy</code> 需要创建 deployment 与上传文件；它不需要读账号设置、也不需要改 DNS。账号 ID 通过 <code>CLOUDFLARE_ACCOUNT_ID</code> 显式传入，因此不必额外给 Account Settings: Read。如果你们的自动化还要列项目或管理自定义域名，再分别补 <em>Pages: Read</em> 或 <em>Zone: DNS: Edit</em>，不要一开始就全给。
+</div>
+
+<h3>验证与写入 Secrets</h3>
+<pre><code># 1. token 本身是否有效
+curl -s -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+  https://api.cloudflare.com/client/v4/user/tokens/verify | jq .success
+
+# 2. 用最小权限实际列一次项目（Edit 包含读）
+CLOUDFLARE_ACCOUNT_ID=&lt;account-id&gt; \
+  npx --yes wrangler@4 pages project list
+
+# 3. 写进 GitHub Actions Secrets
+gh secret set CLOUDFLARE_API_TOKEN
+gh secret set CLOUDFLARE_ACCOUNT_ID --body "&lt;account-id&gt;"</code></pre>
+<p>轮换时只替换 Secret，不需要改工作流。若 <code>wrangler</code> 报 403，先检查 token 是否绑定了正确账号、是否漏了 Pages: Edit。</p>
+
+<h2>4 · GitHub Actions 发布流水线</h2>
+<ol>
+  <li><strong>触发：</strong><code>main</code> push 或手动 <code>workflow_dispatch</code>；bot 回写提交由 actor 判断挡住。</li>
+  <li><strong>site job：</strong>构建 <code>dist/</code>，发 Cloudflare（有 token 时）与 EdgeOne；把 Pangolin 参数写进 Job Summary 与 artifact。</li>
+  <li><strong>image job：</strong>buildx 构建 <code>linux/amd64</code> 镜像并推送，读回 digest。</li>
+  <li><strong>gitops job：</strong>把 <code>&lt;sha&gt;@sha256:&lt;digest&gt;</code> 写回 <code>values-prod.yaml</code>，提交 <code>[skip ci]</code>，推 GitHub 与 GitLab。</li>
+  <li><strong>ArgoCD：</strong>轮询 GitLab（默认 3 分钟）或手动刷新后同步。</li>
+</ol>
+
+<h3>需要的 Secrets</h3>
+<table>
+  <tr><th>名字</th><th>用途</th><th>最小权限</th></tr>
+  <tr><td><code>CLOUDFLARE_API_TOKEN</code></td><td>Pages 部署</td><td>Account → Cloudflare Pages → Edit</td></tr>
+  <tr><td><code>CLOUDFLARE_ACCOUNT_ID</code></td><td>指定账号</td><td>非密钥，可放 Variables</td></tr>
+  <tr><td><code>EDGEONE_TOKEN</code></td><td>EdgeOne Makers 非交互部署</td><td>项目级部署 token</td></tr>
+  <tr><td><code>TCR_USERNAME</code> / <code>TCR_PASSWORD</code></td><td>镜像推送</td><td>仓库级 push</td></tr>
+  <tr><td><code>GITLAB_TOKEN</code></td><td>main 镜像到 GitLab</td><td><code>write_repository</code></td></tr>
+</table>
 
 <h2>5 · Helm chart 的边界</h2>
 <table>
-  <tr><th>对象</th><th>说明</th></tr>
-  <tr><td>ConfigMap</td><td>非密钥 nginx 配置；监听 8080；<code>/healthz</code>；<code>/screens/</code> 缓存 7 天</td></tr>
-  <tr><td>ExternalSecret</td><td>从 <code>openbao</code> ClusterSecretStore 生成 <code>virgo-tcr</code>（dockerconfigjson）</td></tr>
-  <tr><td>HTTPRoute</td><td>挂 <code>default/cilium-gateway</code> 的 <code>https</code> 监听；另有一条 http → https 301</td></tr>
-  <tr><td>TLSRoute</td><td>默认 <code>enabled: false</code>。网关已 Terminate TLS；只有新增 passthrough listener 时才开</td></tr>
-  <tr><td>CiliumNetworkPolicy</td><td>ingress 只允许 <code>ingress / host / remote-node</code> 到 8080；egress 只允许 DNS</td></tr>
+  <tr><th>对象</th><th>作用</th></tr>
+  <tr><td>ConfigMap</td><td>非密钥 nginx 配置：监听 8080、<code>/healthz</code>、静态资源缓存</td></tr>
+  <tr><td>ExternalSecret</td><td>从 OpenBao 生成镜像拉取凭据；权限没配好时用普通 Secret 兜底并显式标注</td></tr>
+  <tr><td>HTTPRoute</td><td>挂网关 <code>https</code> 监听；另做 http → https 301</td></tr>
+  <tr><td>TLSRoute</td><td>默认关闭。网关已 Terminate TLS 时不要和 HTTPRoute 同时抢同一 hostname</td></tr>
+  <tr><td>CiliumNetworkPolicy</td><td>ingress 只放行网关与探针；egress 只放 DNS</td></tr>
   <tr><td>PDB</td><td><code>minAvailable: 1</code></td></tr>
 </table>
 
-<h2>6 · Makefile 命令</h2>
+<h2>6 · Makefile 入口</h2>
 <table>
   <tr><th>命令</th><th>做什么</th></tr>
-  <tr><td><code>make site-deploy</code></td><td>CF + EdgeOne + k8s 三端全发</td></tr>
+  <tr><td><code>make site-deploy</code></td><td>三端全发</td></tr>
   <tr><td><code>make pages-deploy</code></td><td>只发 Cloudflare Pages</td></tr>
   <tr><td><code>make pages-deploy-eo</code></td><td>只发 EdgeOne Pages</td></tr>
   <tr><td><code>make k8s-deploy</code></td><td>构建镜像 + 立即 <code>helm upgrade</code>（bootstrap / 回滚）</td></tr>
@@ -177,49 +194,45 @@ EdgeOne 镜像域名: virgo-pages.apikv.com</code></pre>
 </table>
 
 <h2>7 · 验收</h2>
-<pre><code># ArgoCD：应为 Synced / Healthy
-kubectl -n argocd get app virgo-prod -o wide
+<pre><code>kubectl -n &lt;NAMESPACE&gt; get deploy &lt;APP&gt; -o wide
+kubectl -n argocd get app &lt;APP&gt;-prod -o wide          # Synced / Healthy
 
-# 镜像应为 CI 回写的 digest
-kubectl -n virgo get deploy virgo \
-  -o jsonpath='{.spec.template.spec.containers[0].image}'
+# 从网关进（不要只测 Service：网络策略可能只放行网关）
+kubectl -n &lt;NAMESPACE&gt; run t --rm -i --image=curlimages/curl:8.10.1 --restart=Never -- \
+  curl -s -k -H 'Host: &lt;MAIN_DOMAIN&gt;' -o /dev/null -w '%{http_code}\n' https://&lt;GATEWAY_VIP&gt;/
 
-# 从网关进（不要直连 Service：CNP 会拦）
-kubectl -n virgo run g --image=curlimages/curl:8.10.1 --restart=Never --command -- \
-  curl -s -k -H 'Host: virgo.apikv.com' -o /dev/null -w '%{http_code}\n' https://10.10.31.240/zh/
+curl -s -o /dev/null -w '%{http_code}\n' https://&lt;CF_PROJECT&gt;.pages.dev/
+curl -s -o /dev/null -w '%{http_code}\n' https://&lt;PAGES_DOMAIN&gt;/
+curl -s -o /dev/null -w '%{http_code}\n' https://&lt;MAIN_DOMAIN&gt;/</code></pre>
 
-# 两个 Pages 端
-curl -s -o /dev/null -w '%{http_code}\n' https://virgo-overseas.pages.dev/zh/
-curl -s -o /dev/null -w '%{http_code}\n' https://virgo-pages.apikv.com/zh/
-
-# Pangolin 资源建好后
-curl -s -o /dev/null -w '%{http_code}\n' https://virgo.apikv.com/zh/</code></pre>
-
-<h2>8 · 排障表</h2>
+<h2>8 · 常见故障</h2>
 <table>
   <tr><th>现象</th><th>原因</th><th>处理</th></tr>
-  <tr><td>ArgoCD revision 为空，repo-server 卡在 <code>git fetch</code></td><td>集群到 GitHub 不稳定</td><td>改用 GitLab 镜像，检查 <code>repo-gitlab-virgo</code> Secret</td></tr>
-  <tr><td>EdgeOne 自定义域 HTTPS 报证书不匹配</td><td><code>_dnsauth</code> 校验 CNAME 缺失或刚加</td><td>加 <code>_dnsauth.virgo-pages</code> CNAME，等待签发</td></tr>
-  <tr><td>Pod 里 curl Service 超时</td><td>CNP 只放行网关身份</td><td>从 VIP/网关验收，或按需加 fromEndpoints（不要放开全部）</td></tr>
-  <tr><td>ImagePullBackOff</td><td>TCR 凭据缺失或 ImagePullSecret 名字不对</td><td>检查 <code>tcr-pull</code> / <code>virgo-tcr</code></td></tr>
-  <tr><td>ArgoCD 把手工 helm 改动拉回</td><td><code>selfHeal</code> 以 Git 为准</td><td>改 values 提交，不要直接 kubectl edit</td></tr>
+  <tr><td>ArgoCD revision 为空，repo-server 卡在 <code>git fetch</code></td><td>集群到 GitHub 不稳定</td><td>改用 GitLab 镜像，检查仓库 Secret</td></tr>
+  <tr><td>EdgeOne 自定义域 HTTPS 证书不匹配</td><td>缺少 <code>_dnsauth</code> 校验 CNAME</td><td>按控制台提示补记录，等签发</td></tr>
+  <tr><td>集群内 curl Service 超时</td><td>CNP 只放行网关身份</td><td>从网关验收；确需直连再精确放行</td></tr>
+  <tr><td>ImagePullBackOff</td><td>拉取凭据缺失或名字不一致</td><td>检查 imagePullSecret 与 registry 登录</td></tr>
+  <tr><td>ArgoCD 把手工改动拉回</td><td><code>selfHeal</code> 以 Git 为准</td><td>改 values 提交，不要直接 kubectl edit</td></tr>
   <tr><td>EdgeOne 默认域名 401</td><td><code>eo_token</code> 只用于预览</td><td>绑定自定义域名</td></tr>
+  <tr><td>CI 的 Cloudflare 步骤 403</td><td>Token 权限不足或账号不匹配</td><td>只补 Pages: Edit，绑定正确账号</td></tr>
 </table>
 
-<h2>9 · 给 AI 的执行顺序</h2>
+<h2>9 · 给执行型 AI 的顺序</h2>
 <ol>
-  <li>确认 <code>kubectl config current-context</code> 是 <code>kubernetes-admin@kubernetes</code>，且能读到 <code>default/cilium-gateway</code>。</li>
-  <li><code>make site-build</code>，确认 <code>web/dist/zh/index.html</code> 含 <code>id="free"</code>。</li>
-  <li><code>make k8s-deploy</code>，等 <code>rollout status</code> 成功；网关 curl 必须 200。</li>
-  <li>创建 GitLab 只读 token 与 <code>repo-gitlab-virgo</code> Secret；<code>make argo-apply</code>；<code>kubectl -n argocd get app virgo-prod</code> 必须 Synced/Healthy。</li>
-  <li>配置 GitHub Secrets（见 §3）；<code>gh workflow run deploy.yml --ref main</code>；确认三个 job 通过。</li>
-  <li>确认 CI 回写 commit 已到 GitHub 与 GitLab，ArgoCD revision 更新为新的 <code>&lt;sha&gt;</code>。</li>
-  <li>在 Pangolin 面板按 §2 参数建资源；用 <code>curl https://virgo.apikv.com/zh/</code> 验收 200。</li>
-  <li>EdgeOne：确认 <code>virgo-pages.apikv.com</code> 证书签发完成后再写进文档，不要拿共享证书截图当成功。</li>
+  <li><strong>先做 §0 预检</strong>，把缺失工具列出来；能装就装，不能判断的值向使用者提问。</li>
+  <li>把 §1 变量表填满；任何一项为空都停下。</li>
+  <li>确认集群网关、证书 Secret、命名空间与 registry 可访问。</li>
+  <li><code>make site-build</code>，确认产物里有目标页面与静态资源。</li>
+  <li><code>make k8s-deploy</code>，等 rollout 成功；网关 Host 测试必须 200。</li>
+  <li>创建 GitLab 只读 token 与 ArgoCD 仓库 Secret；<code>make argo-apply</code>；Application 必须 Synced/Healthy。</li>
+  <li>配置 §4 的 Secrets；手动触发一次工作流，确认三个 job 成功、values 已回写、GitLab 已更新。</li>
+  <li>按 §3 的权限说明创建 Cloudflare Token，不要复用本机 OAuth token。</li>
+  <li>在 Pangolin 面板按生成参数创建资源；<code>curl https://&lt;MAIN_DOMAIN&gt;/</code> 验收 200。</li>
+  <li>等 EdgeOne 证书签发后再截图或写文档，不要拿共享证书当成功。</li>
 </ol>
 
 <footer>
-  Virgo 官网交付手册 · 2026-10-26 · 与 <code>web/deploy/chart/virgo</code>、<code>.github/workflows/deploy.yml</code> 同步维护。
+  静态站三端交付手册 · 通用模板 · 与 <code>deploy/argocd</code>、<code>deploy/chart/&lt;APP&gt;</code>、<code>.github/workflows/deploy.yml</code> 同步维护。
 </footer>
 </main>
 </body>

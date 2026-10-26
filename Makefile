@@ -77,16 +77,15 @@ package-macos-signed: ## Build Developer ID signed and notarized release archive
 # Landing site ---------------------------------------------------------------
 
 site-build:
-	cd web && npm run build
+	cd web && pnpm run build
 
-# 海外站。需要本机已登录 Wrangler（`npx wrangler login`）。
+# 海外站。需要本机已登录 Wrangler（`pnpm dlx wrangler@4.152.0 login`）。
 pages-deploy: site-build ## Publish the landing site to Cloudflare Pages
-	cd web && npx --yes wrangler@4.131.1 pages deploy dist --project-name=$(CF_PROJECT) --branch=main
+	cd web && pnpm dlx wrangler@4.152.0 pages deploy dist --project-name=$(CF_PROJECT) --branch=main
 
 # 大陆镜像。需要本机已登录 EdgeOne CLI（`edgeone login --site china`）。
 pages-deploy-eo: site-build ## Publish the landing site to EdgeOne Pages
-	@command -v edgeone >/dev/null || { echo '未安装 EdgeOne CLI：npm i -g --prefix ~/.local edgeone@latest && edgeone login --site china'; exit 1; }
-	cd web && edgeone makers deploy dist -n $(EO_PROJECT) -e production
+	cd web && pnpm dlx edgeone@1.6.46 makers deploy dist -n $(EO_PROJECT) -e production
 
 # virgo.apikv.com：把静态站打进镜像，部署到 k1 集群，经 default/cilium-gateway
 # 的 https 监听提供；Pangolin 资源把该域名转到 10.10.31.240:443（保留 Host）。

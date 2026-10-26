@@ -1,6 +1,6 @@
 # Virgo 官网（海外站，Cloudflare Pages）
 
-`https://virgo-overseas.pages.dev`。纯静态、零依赖，只需要 Node 18+。
+`https://virgo-overseas.pages.dev`。纯静态、零依赖，Node 26（CI 固定 26.12.1）与 pnpm 12。
 
 | 路径 | 作用 |
 | --- | --- |
@@ -25,8 +25,8 @@
 
 ```bash
 cd web
-npm run build      # → dist/
-npm run preview    # 本机 http://localhost:5191
+pnpm run build      # → dist/
+pnpm run preview    # 本机 http://localhost:5191
 ```
 
 在仓库根目录用 Makefile 发三端（同一份 `dist/`）：
