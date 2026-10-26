@@ -109,7 +109,11 @@ test.describe('AI view', () => {
     const popup = context.waitForEvent('page');
     await card.getByRole('button', { name: '打开会话' }).click();
     const opened = await popup;
-    expect(opened.url()).toBe('http://127.0.0.1:3080/?session=s_wait1');
+    // 不依赖目标 URL 真的能加载：无服务时 Chromium 会把地址改成
+    // chrome-error://chromewebdata/。这里验收应用交给窗口的 URL。
+    await expect
+      .poll(() => page.evaluate(() => window.__todoMockOpenSessions ?? []))
+      .toEqual([{ url: 'http://127.0.0.1:3080/?session=s_wait1', mode: 'reuse' }]);
     await opened.close();
     await expect(page.getByTestId('ai-card').filter({ hasText: '把 1,000 项 Snapshot' }).getByRole('button', { name: '打开会话' })).toBeDisabled();
   });
