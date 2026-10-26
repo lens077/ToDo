@@ -6,7 +6,7 @@
 
 web:
   image:
-    tag: "15e9b7de5ee4bad88e10374e901fa79151f73c61@sha256:17499fb0b995c798fe76c6f3762a9e2bbe5f193908266c4d852ca3cae0337a96"
+    tag: "4e8b59132ce1a6d226974100cf88f454dac8fffd@sha256:3e4be7aa40ebf2a268833f69b02daac3c0d61e15b07651f838656c77f781fc3f"
   # 集群里已有从 scorpius 复制的 tcr-pull。OpenBao 的写入权限还没配：
   # 配好 `k8s/hosting/virgo`（属性 tcr-dockerconfigjson）后，把下面两行删掉，
   # imagePullSecret 改回 virgo-tcr，ExternalSecret 就会接管这个凭据。
