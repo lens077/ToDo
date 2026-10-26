@@ -1,0 +1,226 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Virgo 官网三端交付手册 · 给执行型 AI 的作业单</title>
+<style>
+  :root{
+    --paper:#f7efe4; --card:#fffdf9; --ink:#2a2740; --soft:#6b6677;
+    --line:#ded5c8; --accent:#d97706; --night:#0a0c1a; --cream:#fffbf3;
+    --mono:ui-monospace,SFMono-Regular,Menlo,monospace;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--paper);color:var(--ink);font:16px/1.72 -apple-system,BlinkMacSystemFont,"PingFang SC","Segoe UI",sans-serif}
+  main{max-width:980px;margin:0 auto;padding:56px 28px 96px}
+  header{border-bottom:1px solid var(--line);padding-bottom:28px;margin-bottom:36px}
+  .kicker{font:700 12px/1 var(--mono);letter-spacing:.14em;color:var(--accent);text-transform:uppercase}
+  h1{font-size:clamp(28px,4vw,42px);line-height:1.2;margin:14px 0 12px;letter-spacing:-.02em}
+  .lede{color:var(--soft);max-width:62ch;margin:0}
+  h2{font-size:24px;margin:52px 0 14px;letter-spacing:-.01em}
+  h3{font-size:18px;margin:28px 0 10px}
+  p{max-width:70ch;color:var(--soft)}
+  strong{color:var(--ink)}
+  code{font:600 .86em/1.5 var(--mono);background:#efe5d6;border-radius:5px;padding:2px 6px;color:#4a3f2c}
+  pre{background:var(--night);color:var(--cream);padding:18px 20px;border-radius:14px;overflow:auto;font:500 13px/1.65 var(--mono)}
+  pre code{background:none;padding:0;color:inherit;font-weight:500}
+  table{width:100%;border-collapse:collapse;margin:18px 0;font-size:14px;background:var(--card);border:1px solid var(--line);border-radius:12px;overflow:hidden}
+  th,td{text-align:left;padding:11px 14px;border-bottom:1px solid var(--line);vertical-align:top}
+  th{background:#f1e6d6;font-weight:700;white-space:nowrap}
+  tr:last-child td{border-bottom:0}
+  td code{white-space:nowrap}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:22px 24px;margin:18px 0}
+  .card.dark{background:var(--night);color:var(--cream);border-color:var(--night)}
+  .card.dark p,.card.dark li{color:rgba(255,251,243,.72)}
+  .card.dark code{background:rgba(255,251,243,.12);color:var(--cream)}
+  .grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}
+  .tag{display:inline-block;font:700 11px/1 var(--mono);letter-spacing:.08em;background:#f4e3c8;color:#92510a;border-radius:6px;padding:5px 8px;margin-bottom:8px}
+  .warn{border-left:4px solid var(--accent);background:#fdf6ea;padding:14px 18px;border-radius:0 10px 10px 0;margin:18px 0;color:var(--soft)}
+  ol,ul{padding-left:22px;color:var(--soft)}
+  li{margin:6px 0}
+  .done{color:#18794e;font-weight:700}
+  .todo{color:#b45309;font-weight:700}
+  footer{margin-top:64px;padding-top:22px;border-top:1px solid var(--line);color:var(--soft);font-size:13px}
+  @media(max-width:760px){.grid{grid-template-columns:1fr}main{padding:36px 18px 72px}}
+</style>
+</head>
+<body>
+<main>
+<header>
+  <div class="kicker">Virgo · delivery runbook</div>
+  <h1>官网三端交付手册</h1>
+  <p class="lede">给执行型 AI 的作业单：把同一份静态站发到 Cloudflare Pages、EdgeOne Pages 和 k1 集群的 <code>virgo.apikv.com</code>。按顺序执行，每一步都有验收命令；不能自动的部分会明确标出。</p>
+</header>
+
+<h2>0 · 先看结论</h2>
+<table>
+  <tr><th>端</th><th>地址</th><th>发布方式</th><th>当前状态</th></tr>
+  <tr><td>海外</td><td><code>virgo-overseas.pages.dev</code></td><td>CI：Wrangler</td><td class="todo">缺 CLOUDFLARE_API_TOKEN</td></tr>
+  <tr><td>大陆镜像</td><td><code>virgo-pages.apikv.com</code></td><td>CI：EdgeOne CLI</td><td class="done">已部署；证书待签发</td></tr>
+  <tr><td>国内主站</td><td><code>virgo.apikv.com</code></td><td>ArgoCD + Helm</td><td class="done">集群内 200；缺 Pangolin 资源</td></tr>
+</table>
+
+<div class="warn">
+  <strong>不要从 GitHub 直接让 ArgoCD 拉仓库。</strong>集群里的 <code>argocd-repo-server</code> clone GitHub 会卡在 <code>git fetch</code>。唯一源是 GitLab 镜像 <code>https://gitlab.com/sumery/virgo.git</code>，GitHub 仍是开发主仓。
+</div>
+
+<h2>1 · 文件地图</h2>
+<table>
+  <tr><th>路径</th><th>作用</th></tr>
+  <tr><td><code>web/src/</code>、<code>web/build.mjs</code></td><td>中英文静态页生成，输出 <code>web/dist/</code></td></tr>
+  <tr><td><code>web/deploy/k8s/Dockerfile</code></td><td>nginx-unprivileged 镜像，非 root、监听 8080</td></tr>
+  <tr><td><code>web/deploy/chart/virgo/</code></td><td>Helm chart：ConfigMap、Deployment、Service、HTTPRoute、TLSRoute、CNP、PDB、ExternalSecret</td></tr>
+  <tr><td><code>deploy/argocd/</code></td><td>Namespace、AppProject、Application、仓库凭据模板</td></tr>
+  <tr><td><code>.github/workflows/deploy.yml</code></td><td>main 发布：Pages + 镜像 + 回写 tag + GitLab 镜像 + Pangolin 参数</td></tr>
+  <tr><td><code>Makefile</code></td><td>一键与分步部署入口</td></tr>
+</table>
+
+<h2>2 · 一次性基础设施</h2>
+<p>下面这些只需要做一次，做完就不再随发布变化。</p>
+
+<div class="grid">
+  <div class="card">
+    <span class="tag">01 · TCR</span>
+    <h3>镜像仓库</h3>
+    <p><code>ccr.ccs.tencentyun.com/sumery/virgo-site</code>。首次 <code>docker push</code> 会自动建仓库；本机已 <code>docker login</code>。</p>
+  </div>
+  <div class="card">
+    <span class="tag">02 · GitLab</span>
+    <h3>ArgoCD 只读源</h3>
+    <p>项目 <code>sumery/virgo</code>；Project Access Token 只勾 <code>read_repository</code>，存进 ArgoCD Secret，不进 Git。</p>
+  </div>
+  <div class="card">
+    <span class="tag">03 · Namespace</span>
+    <h3>virgo</h3>
+    <p>由 <code>deploy/argocd/namespace.yaml</code> 创建。AppProject 不放行集群级资源，Application 关闭 <code>CreateNamespace</code>。</p>
+  </div>
+  <div class="card">
+    <span class="tag">04 · EdgeOne</span>
+    <h3>镜像域名</h3>
+    <p>项目 <code>virgo-site</code>，绑定 <code>virgo-pages.apikv.com</code>；DNS 需要站点 CNAME 与 <code>_dnsauth</code> 校验 CNAME。</p>
+  </div>
+  <div class="card">
+    <span class="tag">05 · Pangolin</span>
+    <h3>主域资源</h3>
+    <p><code>virgo.apikv.com</code> → 站点 <code>k8s-cluster</code> → <code>10.10.31.240:443</code> HTTPS，保留 Host，关闭 SSO。</p>
+  </div>
+  <div class="card">
+    <span class="tag">06 · OpenBao</span>
+    <h3>TCR 拉取凭据</h3>
+    <p>路径 <code>k8s/hosting/virgo</code>，属性 <code>tcr-dockerconfigjson</code>。写入权限配好前，chart 用 <code>tcr-pull</code> 兜底。</p>
+  </div>
+</div>
+
+<h3>ArgoCD 仓库凭据（模板在 <code>deploy/argocd/repository.example.yaml</code>）</h3>
+<pre><code># GitLab 项目 sumery/virgo → Project Access Token，scope=read_repository
+kubectl -n argocd create secret generic repo-gitlab-virgo \
+  --from-literal=type=git \
+  --from-literal=url=https://gitlab.com/sumery/virgo.git \
+  --from-literal=username=oauth2 \
+  --from-literal=password=&lt;token&gt; \
+  --from-literal=name=gitlab-virgo \
+  --from-literal=project=virgo
+kubectl -n argocd label secret repo-gitlab-virgo \
+  argocd.argoproj.io/secret-type=repository</code></pre>
+
+<h3>Pangolin 资源参数</h3>
+<pre><code>域名:      virgo.apikv.com
+站点:      k8s-cluster
+Upstream:  10.10.31.240
+端口:      443
+协议:      HTTPS
+Host:      保留原始 Host（不要覆盖）
+认证:      公开；关闭 Platform SSO；不加 PIN/密码
+EdgeOne 镜像域名: virgo-pages.apikv.com</code></pre>
+
+<h2>3 · GitHub Secrets</h2>
+<table>
+  <tr><th>名字</th><th>用途</th><th>状态</th></tr>
+  <tr><td><code>TCR_USERNAME</code> / <code>TCR_PASSWORD</code></td><td>推送 amd64 镜像</td><td class="done">已配置</td></tr>
+  <tr><td><code>GITLAB_TOKEN</code></td><td>CI 把 main 镜像到 GitLab（<code>write_repository</code>）</td><td class="done">已配置</td></tr>
+  <tr><td><code>EDGEONE_TOKEN</code></td><td>EdgeOne Makers 非交互部署</td><td class="done">已配置</td></tr>
+  <tr><td><code>CLOUDFLARE_ACCOUNT_ID</code></td><td>Pages 账户</td><td class="done">已配置</td></tr>
+  <tr><td><code>CLOUDFLARE_API_TOKEN</code></td><td>Pages 编辑权限</td><td class="todo">缺；工作流会 warning + skip</td></tr>
+</table>
+<div class="warn">
+  不要把本机 <code>wrangler login</code> 的 OAuth token 当作 CI token：它的 <code>expiration_time</code> 只有一小时。到 Cloudflare 控制台创建 Pages 编辑权限的 API Token，再 <code>gh secret set CLOUDFLARE_API_TOKEN</code>。
+</div>
+
+<h2>4 · 发布流水线怎么走</h2>
+<ol>
+  <li><strong>触发：</strong><code>main</code> push 或手动 <code>workflow_dispatch</code>。bot 回写 commit 由 <code>github.actor != 'github-actions[bot]'</code> 挡住。</li>
+  <li><strong>site job：</strong>构建 <code>web/dist</code>，发 Cloudflare（有 token 时）与 EdgeOne；把 Pangolin 参数写进 Job Summary 和 artifact <code>pangolin-resource</code>。</li>
+  <li><strong>image job：</strong>buildx 构建 <code>linux/amd64</code>，推到 <code>virgo-site:&lt;sha&gt;</code>，读回 digest。</li>
+  <li><strong>gitops job：</strong>把 <code>&lt;sha&gt;@sha256:&lt;digest&gt;</code> 写回 <code>values-prod.yaml</code>，提交 <code>[skip ci]</code>，推 GitHub 与 GitLab。</li>
+  <li><strong>ArgoCD：</strong>轮询 GitLab（默认 3 分钟）或刷新后同步到 <code>virgo</code> 命名空间。</li>
+</ol>
+
+<h2>5 · Helm chart 的边界</h2>
+<table>
+  <tr><th>对象</th><th>说明</th></tr>
+  <tr><td>ConfigMap</td><td>非密钥 nginx 配置；监听 8080；<code>/healthz</code>；<code>/screens/</code> 缓存 7 天</td></tr>
+  <tr><td>ExternalSecret</td><td>从 <code>openbao</code> ClusterSecretStore 生成 <code>virgo-tcr</code>（dockerconfigjson）</td></tr>
+  <tr><td>HTTPRoute</td><td>挂 <code>default/cilium-gateway</code> 的 <code>https</code> 监听；另有一条 http → https 301</td></tr>
+  <tr><td>TLSRoute</td><td>默认 <code>enabled: false</code>。网关已 Terminate TLS；只有新增 passthrough listener 时才开</td></tr>
+  <tr><td>CiliumNetworkPolicy</td><td>ingress 只允许 <code>ingress / host / remote-node</code> 到 8080；egress 只允许 DNS</td></tr>
+  <tr><td>PDB</td><td><code>minAvailable: 1</code></td></tr>
+</table>
+
+<h2>6 · Makefile 命令</h2>
+<table>
+  <tr><th>命令</th><th>做什么</th></tr>
+  <tr><td><code>make site-deploy</code></td><td>CF + EdgeOne + k8s 三端全发</td></tr>
+  <tr><td><code>make pages-deploy</code></td><td>只发 Cloudflare Pages</td></tr>
+  <tr><td><code>make pages-deploy-eo</code></td><td>只发 EdgeOne Pages</td></tr>
+  <tr><td><code>make k8s-deploy</code></td><td>构建镜像 + 立即 <code>helm upgrade</code>（bootstrap / 回滚）</td></tr>
+  <tr><td><code>make argo-apply</code></td><td>注册 AppProject / Application；日常发布走 CI + ArgoCD</td></tr>
+</table>
+
+<h2>7 · 验收</h2>
+<pre><code># ArgoCD：应为 Synced / Healthy
+kubectl -n argocd get app virgo-prod -o wide
+
+# 镜像应为 CI 回写的 digest
+kubectl -n virgo get deploy virgo \
+  -o jsonpath='{.spec.template.spec.containers[0].image}'
+
+# 从网关进（不要直连 Service：CNP 会拦）
+kubectl -n virgo run g --image=curlimages/curl:8.10.1 --restart=Never --command -- \
+  curl -s -k -H 'Host: virgo.apikv.com' -o /dev/null -w '%{http_code}\n' https://10.10.31.240/zh/
+
+# 两个 Pages 端
+curl -s -o /dev/null -w '%{http_code}\n' https://virgo-overseas.pages.dev/zh/
+curl -s -o /dev/null -w '%{http_code}\n' https://virgo-pages.apikv.com/zh/
+
+# Pangolin 资源建好后
+curl -s -o /dev/null -w '%{http_code}\n' https://virgo.apikv.com/zh/</code></pre>
+
+<h2>8 · 排障表</h2>
+<table>
+  <tr><th>现象</th><th>原因</th><th>处理</th></tr>
+  <tr><td>ArgoCD revision 为空，repo-server 卡在 <code>git fetch</code></td><td>集群到 GitHub 不稳定</td><td>改用 GitLab 镜像，检查 <code>repo-gitlab-virgo</code> Secret</td></tr>
+  <tr><td>EdgeOne 自定义域 HTTPS 报证书不匹配</td><td><code>_dnsauth</code> 校验 CNAME 缺失或刚加</td><td>加 <code>_dnsauth.virgo-pages</code> CNAME，等待签发</td></tr>
+  <tr><td>Pod 里 curl Service 超时</td><td>CNP 只放行网关身份</td><td>从 VIP/网关验收，或按需加 fromEndpoints（不要放开全部）</td></tr>
+  <tr><td>ImagePullBackOff</td><td>TCR 凭据缺失或 ImagePullSecret 名字不对</td><td>检查 <code>tcr-pull</code> / <code>virgo-tcr</code></td></tr>
+  <tr><td>ArgoCD 把手工 helm 改动拉回</td><td><code>selfHeal</code> 以 Git 为准</td><td>改 values 提交，不要直接 kubectl edit</td></tr>
+  <tr><td>EdgeOne 默认域名 401</td><td><code>eo_token</code> 只用于预览</td><td>绑定自定义域名</td></tr>
+</table>
+
+<h2>9 · 给 AI 的执行顺序</h2>
+<ol>
+  <li>确认 <code>kubectl config current-context</code> 是 <code>kubernetes-admin@kubernetes</code>，且能读到 <code>default/cilium-gateway</code>。</li>
+  <li><code>make site-build</code>，确认 <code>web/dist/zh/index.html</code> 含 <code>id="free"</code>。</li>
+  <li><code>make k8s-deploy</code>，等 <code>rollout status</code> 成功；网关 curl 必须 200。</li>
+  <li>创建 GitLab 只读 token 与 <code>repo-gitlab-virgo</code> Secret；<code>make argo-apply</code>；<code>kubectl -n argocd get app virgo-prod</code> 必须 Synced/Healthy。</li>
+  <li>配置 GitHub Secrets（见 §3）；<code>gh workflow run deploy.yml --ref main</code>；确认三个 job 通过。</li>
+  <li>确认 CI 回写 commit 已到 GitHub 与 GitLab，ArgoCD revision 更新为新的 <code>&lt;sha&gt;</code>。</li>
+  <li>在 Pangolin 面板按 §2 参数建资源；用 <code>curl https://virgo.apikv.com/zh/</code> 验收 200。</li>
+  <li>EdgeOne：确认 <code>virgo-pages.apikv.com</code> 证书签发完成后再写进文档，不要拿共享证书截图当成功。</li>
+</ol>
+
+<footer>
+  Virgo 官网交付手册 · 2026-10-26 · 与 <code>web/deploy/chart/virgo</code>、<code>.github/workflows/deploy.yml</code> 同步维护。
+</footer>
+</main>
+</body>
+</html>

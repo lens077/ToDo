@@ -39,8 +39,16 @@ make k8s-deploy           # k1 集群 → virgo.apikv.com
 ```
 
 `pages-deploy` 需要本机已登录 Wrangler；`pages-deploy-eo` 需要 EdgeOne CLI 已登录；
-`k8s-deploy` 会构建 amd64 镜像推到 TCR，再把清单应用到 `virgo` 命名空间。
-`virgo.apikv.com` 的 Pangolin 资源目标是 `10.10.31.240:443`（HTTPS，保留 Host）。
+`k8s-deploy` 会构建 amd64 镜像推到 TCR，再 `helm upgrade` 到 `virgo` 命名空间。
+日常 k8s 发布走 CI + ArgoCD，`make argo-apply` 只负责注册 Application。
+
+集群连 GitHub 不稳定，ArgoCD 的源是 GitLab 镜像 `sumery/virgo`；CI 每次会回写
+`values-prod.yaml` 的镜像 tag 并把 main 推到 GitLab。`virgo.apikv.com` 的 Pangolin
+资源目标是 `10.10.31.240:443`（HTTPS，保留 Host）。
+
+GitHub Actions 的 Secrets：`TCR_USERNAME`、`TCR_PASSWORD`、`GITLAB_TOKEN`、
+`EDGEONE_TOKEN`、`CLOUDFLARE_ACCOUNT_ID`、`CLOUDFLARE_API_TOKEN`。缺 Cloudflare
+token 时该步骤只 warning 并跳过。
 
 ## 统计
 
