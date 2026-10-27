@@ -87,6 +87,15 @@ make build
 make dev
 ```
 
+第一次 clone 后执行 `make hooks`；`pnpm install` 的 `prepare` 也会自动设置
+`core.hooksPath=.githooks`。之后每次 `git push` 前会自动跑：
+
+```bash
+make check-quick   # Rust fmt/clippy/test + 桌面端/静态站构建，热缓存约 58 秒
+```
+
+完整门禁仍可手动 `make check`（含 Playwright 与真实服务 E2E），不再占用 GitHub Actions。
+
 `make help` 列出完整命令。`make bundle-macos` 只生成 `Todo.app`；`make package-macos` 生成本地验收用的 CLI、应用压缩包和 `SHA256SUMS`。本地验收包未经 Developer ID 签名和 Apple 公证，不得分发。
 
 已有普通 GFM 清单时，用 `todo init --adopt` 接管现有文件并补齐稳定 ID。不带 `--adopt` 时遇到已存在的文件会拒绝写入。
