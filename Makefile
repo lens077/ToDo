@@ -13,7 +13,7 @@ K8S_IMAGE ?= ccr.ccs.tencentyun.com/sumery/virgo-site
 K8S_TAG ?= $(shell git rev-parse --short HEAD)
 CHART_DIR ?= web/deploy/chart/virgo
 
-.PHONY: help install dev icon check build bundle-macos package-macos package-macos-signed \
+.PHONY: help install dev icon check check-quick hooks build bundle-macos package-macos package-macos-signed \
         site-build pages-deploy pages-deploy-eo site-image k8s-deploy argo-apply site-deploy
 
 help: ## List available build and packaging targets
@@ -21,7 +21,9 @@ help: ## List available build and packaging targets
 	  'make install               Install locked frontend dependencies' \
 	  'make dev                   Start the Tauri desktop app' \
 	  'make icon                  Regenerate desktop and PWA icons' \
-	  'make check                 Run the complete repository verification gate' \
+	  'make check                 Run the complete repository verification gate (manual, slow)' \
+	  'make check-quick           Run the pre-push gate (target < 2 min)' \
+	  'make hooks                 Install the tracked pre-push hook' \
 	  'make build                 Build release CLI and production web assets' \
 	  'make bundle-macos          Build Todo.app without creating archives' \
 	  'make package-macos         Build local unsigned archives and checksums' \
@@ -48,8 +50,15 @@ dev: ## Start Vite and the native Tauri shell
 icon: ## Regenerate all native and PWA icon sizes
 	$(PNPM) --filter @todo/desktop icon
 
-check: ## Run format, tests, clippy, builds, e2e, and diff checks
+check: ## Run format, tests, clippy, builds, e2e, and diff checks (manual, slow)
 	./scripts/verify.sh
+
+check-quick: ## Run the pre-push gate (Rust + web, target under 2 minutes)
+	./scripts/verify-quick.sh
+
+hooks: ## Install the tracked pre-push hook
+	git config core.hooksPath .githooks
+	@echo 'pre-push hook installed: .githooks/pre-push'
 
 # Build and package ----------------------------------------------------------
 

@@ -1,0 +1,67 @@
+#!/usr/bin/env bash
+# 推送前门禁：把最便宜的验证放在 git push 之前，失败就拒绝推送。
+#
+# 只跑四类：Rust fmt/clippy/test、桌面端构建、静态站构建、空白错误。
+# 不跑 MSRV、Playwright、Live E2E——那些留给手动 `make check` 或发布前检查。
+# 按改动路径裁剪：只改文档时只做空白检查，通常几秒结束。
+#
+# 绕过：SKIP_VERIFY=1 git push（请在提交信息里说明原因）。
+set -u
+
+root=$(git rev-parse --show-toplevel) || exit 2
+cd "$root" || exit 2
+zero=0000000000000000000000000000000000000000
+needs_check=0
+
+while read -r local_ref local_sha _remote_ref _remote_sha; do
+  [ -z "$local_ref" ] && continue
+  [ "$local_sha" = "$zero" ] && continue
+  case "$local_ref" in refs/tags/*) continue ;; esac
+  needs_check=1
+done
+
+[ "$needs_check" = 1 ] || exit 0
+
+if [ "${SKIP_VERIFY-}" = "1" ]; then
+  echo "pre-push: SKIP_VERIFY=1，跳过本地门禁（请在提交信息里说明原因）" >&2
+  exit 0
+fi
+
+base=$(git merge-base HEAD origin/main 2>/dev/null || true)
+if [ -n "$base" ]; then
+  changed=$(git diff --name-only "$base" HEAD)
+else
+  changed=$(git show --pretty='' --name-only HEAD 2>/dev/null || true)
+fi
+
+run_rust=0
+run_web=0
+while IFS= read -r f; do
+  [ -z "$f" ] && continue
+  case "$f" in
+    Cargo.toml|Cargo.lock|rust-toolchain.toml|crates/*|apps/desktop/src-tauri/*) run_rust=1 ;;
+  esac
+  case "$f" in
+    package.json|pnpm-lock.yaml|pnpm-workspace.yaml|\
+    apps/desktop/src/*|apps/desktop/e2e/*|apps/desktop/*.ts|apps/desktop/*.json|\
+    web/*|scripts/*) run_web=1 ;;
+  esac
+done <<< "$changed"
+
+# 无法判断改动范围时保守地全跑。
+if [ -z "$base" ]; then
+  run_rust=1
+  run_web=1
+fi
+
+if [ "$run_rust" = 0 ] && [ "$run_web" = 0 ]; then
+  echo "pre-push: 只改文档/配置，执行空白检查"
+  if [ -n "$base" ]; then git diff --check "$base" HEAD || exit 1; else git diff --check || exit 1; fi
+  exit 0
+fi
+
+echo "pre-push: 本地门禁（Rust=${run_rust} Web=${run_web}）；SKIP_VERIFY=1 可绕过"
+RUN_RUST="$run_rust" RUN_WEB="$run_web" "$root/scripts/verify-quick.sh" || {
+  echo "pre-push: 门禁红，推送被拒。修绿后再推，或 SKIP_VERIFY=1 git push 并说明。" >&2
+  exit 1
+}
