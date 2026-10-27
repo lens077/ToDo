@@ -25,6 +25,7 @@ columns:
       ↳ 2026-10-26 已定：下载与使用免费、功能不阉割、不做授权校验与试用；赞助 ¥1/¥6/¥18/¥30/¥68/¥88 + 自定义，国内支付宝与爱发电，国际 Ko-fi/GitHub Sponsors 只入计划不实施；回报仅致谢与自愿名单。原买断方案（$19/¥88、半价续费、12 个月窗口、30 天试用、联网校验、停服保障）全部作废，代码里从未实现，无需回退。待办：赞助屏文案（见 docs/site-copy.md 第 5 屏）、爱发电与支付宝入口、致谢区、隐私政策（只覆盖 Umami 统计） <!--n:aiw1hs-->
 - [ ] 拍板首次运行 onboarding 方案（见 docs/onboarding-spec.md） <!--t:jrnlos--> #product #onboarding !2
       ↳ 待定（4）：不做向导方向、todo scan 作为首次价值证明、对账揭示时机、agent 接入提示阈值 <!--n:jrnlos-->
+- [ ] 接入爱发电赞助入口（支付宝完成后再做） <!--t:7gi5ls--> #product #site !2
 
 ## Doing
 - [ ] 人工验收看板任务写回 TODO.md <!--t:h4m9zc--> #desktop #manual !1 ^3000

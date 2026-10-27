@@ -4,6 +4,8 @@ SHELL := /bin/bash
 PNPM ?= pnpm
 CARGO ?= cargo
 OUTPUT_DIR ?= target/release-local
+VERSION ?= $(shell node -p "require('./apps/desktop/src-tauri/tauri.conf.json').version")
+BUILD_TARGET ?= ./scripts/build-target.sh
 
 # 官网三端：Cloudflare Pages（海外）、EdgeOne Pages（大陆镜像）、
 # virgo.apikv.com（k1 集群，经 Pangolin 转 10.10.31.240:443）。
@@ -14,6 +16,7 @@ K8S_TAG ?= $(shell git rev-parse --short HEAD)
 CHART_DIR ?= web/deploy/chart/virgo
 
 .PHONY: help install dev icon check check-quick hooks build bundle-macos package-macos package-macos-signed \
+        comm-build other-build build-mac-arm64 build-mac-x64 build-win-x64 build-win-arm64 build-linux-x64 \
         site-build pages-deploy pages-deploy-eo site-image k8s-deploy argo-apply site-deploy
 
 help: ## List available build and packaging targets
@@ -28,6 +31,8 @@ help: ## List available build and packaging targets
 	  'make bundle-macos          Build Todo.app without creating archives' \
 	  'make package-macos         Build local unsigned archives and checksums' \
 	  'make package-macos-signed  Sign, notarize, and package release artifacts' \
+	  'make comm-build            常用集合（按宿主：mac arm64 / win x64）' \
+	  'make other-build           其余集合（按宿主：linux x64 / mac intel / win arm64）' \
 	  '' \
 	  '官网（三端）：' \
 	  'make site-deploy          构建并发布到全部三端' \
@@ -82,6 +87,35 @@ package-macos: ## Build ad-hoc signed local archives; do not distribute them
 
 package-macos-signed: ## Build Developer ID signed and notarized release archives
 	OUTPUT_DIR="$(abspath $(OUTPUT_DIR))" SIGN_AND_NOTARIZE=1 ./scripts/package-macos.sh
+
+# 桌面端多平台构建。Tauri 安装包只能在对应宿主上生成：
+# mac-* 在 macOS，win-* 在 Windows，linux-* 在 Linux。
+# 在错误宿主上会明确报错，不假装成功。
+# comm-build / other-build 按宿主选目标：一条命令在当前机器上永远可执行，
+# 对应集合里的另一个平台请在它的宿主或发布 runner 上跑。
+comm-build: ## 常用集合（按宿主：mac arm64 / win x64）
+	@case "$$(uname -s)" in \
+	  Darwin) $(MAKE) --no-print-directory build-mac-arm64 ;; \
+	  MINGW*|MSYS*|CYGWIN*|Windows_NT) $(MAKE) --no-print-directory build-win-x64 ;; \
+	  *) echo "comm-build: 请在 macOS 或 Windows 上运行" >&2; exit 1 ;; \
+	esac
+other-build: ## 其余集合（按宿主：linux x64 / mac intel / win arm64）
+	@case "$$(uname -s)" in \
+	  Darwin) $(MAKE) --no-print-directory build-mac-x64 ;; \
+	  Linux) $(MAKE) --no-print-directory build-linux-x64 ;; \
+	  MINGW*|MSYS*|CYGWIN*|Windows_NT) $(MAKE) --no-print-directory build-win-arm64 ;; \
+	  *) echo "other-build: 无法识别宿主" >&2; exit 1 ;; \
+	esac
+build-mac-arm64: ## macOS Apple Silicon
+	$(BUILD_TARGET) mac-arm64
+build-mac-x64: ## macOS Intel
+	$(BUILD_TARGET) mac-x64
+build-win-x64: ## Windows x64
+	$(BUILD_TARGET) win-x64
+build-win-arm64: ## Windows ARM64
+	$(BUILD_TARGET) win-arm64
+build-linux-x64: ## Linux x64
+	$(BUILD_TARGET) linux-x64
 
 # Landing site ---------------------------------------------------------------
 

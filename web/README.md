@@ -1,6 +1,7 @@
 # Virgo 官网（海外站，Cloudflare Pages）
 
-`https://virgo-overseas.pages.dev`。纯静态、零依赖，Node 26（CI 固定 26.12.1）与 pnpm 12。
+主域 `https://virgo.apikv.com`；镜像 `virgo-pages.apikv.com` 与 `virgo-overseas.pages.dev`。
+纯静态、零依赖，Node 26（CI 固定 26.12.1）与 pnpm 12。
 
 | 路径 | 作用 |
 | --- | --- |
@@ -52,4 +53,7 @@ token 时该步骤只 warning 并跳过。
 
 ## 统计
 
-页面加载自托管 Umami（站点「Virgo 海外官网」），只统计 `virgo-overseas.pages.dev`，不带查询串。按钮事件用 `data-umami-event`：`notify`（`from` = status / hero / get）、`lang_switch`（`to`）。页脚写明了这一点。
+页面加载自托管 Umami（站点「Virgo 官网」），统计三个生产域名：
+`virgo.apikv.com`、`virgo-pages.apikv.com`、`virgo-overseas.pages.dev`，不带查询串。
+canonical、sitemap 与 `hreflang` 统一指向主域 `virgo.apikv.com`。按钮事件用
+`data-umami-event`：`notify`（`from` = status / hero / get）、`lang_switch`（`to`）。

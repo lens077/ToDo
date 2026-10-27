@@ -4,12 +4,12 @@
 export const SITE = {
   /** Cloudflare Pages project (web/wrangler.toml) and its production origin. */
   project: "virgo-overseas",
-  origin: "https://virgo-overseas.pages.dev",
-  /** Umami website 「Virgo 海外官网」. Counts only the production host. */
+  origin: "https://virgo.apikv.com",
+  /** Umami website 「Virgo 官网」. Counts all three production hosts. */
   umami: {
     src: "https://umami.apikv.com/s.js",
     websiteId: "f9c9b17e-5777-435d-bfd1-f5e199b70c6d",
-    domains: "virgo-overseas.pages.dev",
+    domains: "virgo.apikv.com,virgo-pages.apikv.com,virgo-overseas.pages.dev",
   },
   /** `light` = the Sumery desk (tools); `night` = the dark scene (games). */
   scene: "light",
