@@ -17,7 +17,7 @@ jobs:
   rust:
     name: Rust gates
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
 
     steps:
       - name: Check out repository
@@ -68,7 +68,9 @@ jobs:
   msrv:
     name: Rust MSRV
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # apt-get 安装 Tauri 系统依赖偶尔会占用 20+ 分钟（2026-10-26 一次 28 分钟），
+    # 不是编译慢；给足余量，避免被 30 分钟上限误杀。
+    timeout-minutes: 60
 
     steps:
       - name: Check out repository
