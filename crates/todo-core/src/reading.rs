@@ -20,6 +20,7 @@ use std::{
 use regex::Regex;
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 
 use crate::{Error, Result};
 
@@ -601,23 +602,32 @@ fn x_status_id(url: &str) -> Option<String> {
     }
 }
 
-/// Fetches a tweet through the public syndication API and wraps it in a small
-/// self-describing HTML document that `x_tweet_extract` parses back. Returns
-/// `None` so the caller falls through to the ordinary page fetch.
+/// Fetches a tweet as structured JSON and wraps it in a small self-describing
+/// HTML document that `x_tweet_extract` parses back. FxTwitter goes first (it
+/// also carries X Articles and quoted tweets); the syndication API is the
+/// fallback. Returns `None` so the caller falls through to the ordinary page
+/// fetch.
 fn fetch_x_tweet(tweet_id: &str, page_url: &str) -> Option<FetchedPage> {
     let client = http_client().ok()?;
-    let api =
-        format!("https://cdn.syndication.twimg.com/tweet-result?id={tweet_id}&token=x&lang=zh");
-    let response = client
-        .get(&api)
-        .header("Accept", "application/json")
-        .send()
-        .ok()?;
-    if !response.status().is_success() {
-        return None;
-    }
-    let value: serde_json::Value = response.json().ok()?;
-    let html = x_tweet_html(&value)?;
+    let fetch_json = |url: &str| -> Option<serde_json::Value> {
+        let response = client
+            .get(url)
+            .header("Accept", "application/json")
+            .send()
+            .ok()?;
+        if !response.status().is_success() {
+            return None;
+        }
+        response.json().ok()
+    };
+    let html = fetch_json(&format!("https://api.fxtwitter.com/i/status/{tweet_id}"))
+        .and_then(|value| fx_tweet_html(&value))
+        .or_else(|| {
+            let value = fetch_json(&format!(
+                "https://cdn.syndication.twimg.com/tweet-result?id={tweet_id}&token=x&lang=zh"
+            ))?;
+            x_tweet_html(&value)
+        })?;
     Some(FetchedPage {
         html,
         final_url: page_url.to_string(),
@@ -653,19 +663,155 @@ fn x_tweet_html(value: &serde_json::Value) -> Option<String> {
                 .collect()
         })
         .unwrap_or_default();
-    let escaped_author = escape_html_attr(author);
-    let paragraphs: String = text
+    let mut body = text
         .split('\n')
         .map(str::trim)
         .filter(|line| !line.is_empty())
         .map(|line| format!("<p>{}</p>", escape_html(line)))
-        .collect();
-    let images: String = photos
-        .iter()
+        .collect::<String>();
+    body.push_str(&figures_html(&photos));
+    let title = first_line(&text);
+    Some(x_tweet_document(
+        author,
+        handle,
+        &title,
+        &body,
+        photos.first().map(String::as_str),
+    ))
+}
+
+/// Builds the synthetic document from the FxTwitter JSON, ported from the
+/// x-downloader script: plain tweets render text plus photos, X Articles
+/// render their Draft.js blocks, quoted tweets become a blockquote.
+fn fx_tweet_html(value: &serde_json::Value) -> Option<String> {
+    if value.get("code").and_then(serde_json::Value::as_i64) != Some(200) {
+        return None;
+    }
+    let tweet = value.get("tweet")?;
+    let author = tweet.pointer("/author/name").and_then(Value::as_str)?;
+    let handle = tweet
+        .pointer("/author/screen_name")
+        .and_then(Value::as_str)?;
+    if author.trim().is_empty() || handle.trim().is_empty() {
+        return None;
+    }
+    let text = tweet.get("text").and_then(Value::as_str).unwrap_or("");
+    let source_url = tweet
+        .get("url")
+        .and_then(Value::as_str)
+        .filter(|url| url.starts_with("http"));
+    let mut body = String::new();
+    let mut cover: Option<String> = None;
+    let mut title = first_line(text);
+
+    let article = tweet.get("article").filter(|article| {
+        article
+            .pointer("/content/blocks")
+            .and_then(Value::as_array)
+            .is_some_and(|blocks| !blocks.is_empty())
+    });
+    if let Some(article) = article {
+        title = article
+            .get("title")
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_string)
+            .unwrap_or_else(|| first_line(text));
+        cover = article
+            .pointer("/cover_media/media_info/original_img_url")
+            .and_then(Value::as_str)
+            .map(str::to_string);
+        body.push_str(&fx_article_html(article));
+    } else {
+        let photos = fx_photos(tweet);
+        body.push_str(
+            &text
+                .split('\n')
+                .map(str::trim)
+                .filter(|line| !line.is_empty())
+                .map(|line| format!("<p>{}</p>", escape_html(line)))
+                .collect::<String>(),
+        );
+        body.push_str(&figures_html(&photos));
+        if cover.is_none() {
+            cover = photos.first().cloned();
+        }
+        if fx_has_video(tweet) {
+            body.push_str("<p>（该推文包含视频，请访问原文查看）</p>");
+        }
+    }
+
+    if let Some(quote) = tweet.get("quote").filter(|q| q.is_object()) {
+        let quote_handle = quote
+            .pointer("/author/screen_name")
+            .and_then(Value::as_str)
+            .unwrap_or("unknown");
+        let quote_text = quote.get("text").and_then(Value::as_str).unwrap_or("");
+        if !quote_text.trim().is_empty() {
+            body.push_str(&format!(
+                "<blockquote><p><a href=\"https://x.com/{quote_handle}\">@{quote_handle}</a>: {}</p></blockquote>",
+                escape_html(quote_text)
+            ));
+        }
+    }
+    if let Some(url) = source_url {
+        body.push_str(&format!(
+            "<p><a href=\"{}\">查看原推</a></p>",
+            escape_html(url)
+        ));
+    }
+    Some(x_tweet_document(
+        author,
+        handle,
+        &title,
+        &body,
+        cover.as_deref(),
+    ))
+}
+
+fn fx_photos(tweet: &serde_json::Value) -> Vec<String> {
+    tweet
+        .pointer("/media/all")
+        .and_then(Value::as_array)
+        .map(|items| {
+            items
+                .iter()
+                .filter(|item| item.get("type").and_then(Value::as_str) == Some("photo"))
+                .filter_map(|item| item.get("url").and_then(Value::as_str))
+                .map(str::to_string)
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn fx_has_video(tweet: &serde_json::Value) -> bool {
+    tweet
+        .pointer("/media/all")
+        .and_then(Value::as_array)
+        .is_some_and(|items| {
+            items
+                .iter()
+                .any(|item| item.get("type").and_then(Value::as_str) == Some("video"))
+        })
+}
+
+fn figures_html(urls: &[String]) -> String {
+    urls.iter()
         .map(|url| format!("<figure><img src=\"{}\"></figure>", escape_html(url)))
-        .collect();
-    let cover = photos
-        .first()
+        .collect()
+}
+
+/// Wraps a parsed tweet in the synthetic page: `<article id="x-tweet">` with
+/// data attributes, plus `og:image` for the cover the reader can localize.
+fn x_tweet_document(
+    author: &str,
+    handle: &str,
+    title: &str,
+    body: &str,
+    cover: Option<&str>,
+) -> String {
+    let cover = cover
         .map(|url| {
             format!(
                 "<meta property=\"og:image\" content=\"{}\">",
@@ -673,58 +819,305 @@ fn x_tweet_html(value: &serde_json::Value) -> Option<String> {
             )
         })
         .unwrap_or_default();
-    let title = first_line(&text);
-    Some(format!(
+    format!(
         "<html><head><title>{} (@{handle}) on X</title>{cover}</head>\
-         <body><article id=\"x-tweet\" data-author=\"{escaped_author}\" data-handle=\"{handle}\">\
-         {paragraphs}{images}</article></body></html>",
-        escape_html(&title),
-    ))
+         <body><article id=\"x-tweet\" data-author=\"{}\" data-handle=\"{handle}\" data-title=\"{}\">\
+         {body}</article></body></html>",
+        escape_html(title),
+        escape_html_attr(author),
+        escape_html_attr(title),
+    )
+}
+
+/// Converts an X Article's Draft.js blocks to HTML (the x-downloader
+/// translation, targeting HTML instead of Markdown). Offsets are applied on
+/// `char`s, so astral-plane characters (rare emoji) may shift styling by one.
+fn fx_article_html(article: &serde_json::Value) -> String {
+    let mut entities = std::collections::HashMap::new();
+    if let Some(list) = article
+        .pointer("/content/entityMap")
+        .and_then(Value::as_array)
+    {
+        for item in list {
+            let key = match item.get("key") {
+                Some(serde_json::Value::String(key)) => key.clone(),
+                Some(other) => other.to_string(),
+                None => continue,
+            };
+            if let Some(entity) = item.get("value") {
+                entities.insert(key, entity.clone());
+            }
+        }
+    }
+    // media_id -> image URL, used by MEDIA entities inside articles.
+    let mut media_urls = std::collections::HashMap::new();
+    if let Some(list) = article.get("media_entities").and_then(Value::as_array) {
+        for item in list {
+            if let (Some(id), Some(url)) = (
+                item.get("media_id").map(json_key),
+                item.pointer("/media_info/original_img_url")
+                    .and_then(Value::as_str),
+            ) {
+                media_urls.insert(id, url.to_string());
+            }
+        }
+    }
+    let mut out = String::new();
+    let mut list_tag: Option<&str> = None;
+    let blocks = article
+        .pointer("/content/blocks")
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default();
+    for block in &blocks {
+        let block_type = block
+            .get("type")
+            .and_then(Value::as_str)
+            .unwrap_or("unstyled");
+        let text = block.get("text").and_then(Value::as_str).unwrap_or("");
+        let styled = styled_block_html(
+            text,
+            block.get("entityRanges").and_then(Value::as_array),
+            block.get("inlineStyleRanges").and_then(Value::as_array),
+            &entities,
+        );
+        let is_list = matches!(block_type, "ordered-list-item" | "unordered-list-item");
+        if !is_list {
+            if let Some(tag) = list_tag.take() {
+                out.push_str(&format!("</{tag}>"));
+            }
+        }
+        match block_type {
+            "header-one" => out.push_str(&format!("<h1>{styled}</h1>")),
+            "header-two" => out.push_str(&format!("<h2>{styled}</h2>")),
+            "header-three" => out.push_str(&format!("<h3>{styled}</h3>")),
+            "ordered-list-item" => {
+                if list_tag != Some("ol") {
+                    if let Some(tag) = list_tag.take() {
+                        out.push_str(&format!("</{tag}>"));
+                    }
+                    out.push_str("<ol>");
+                    list_tag = Some("ol");
+                }
+                out.push_str(&format!("<li>{styled}</li>"));
+            }
+            "unordered-list-item" => {
+                if list_tag != Some("ul") {
+                    if let Some(tag) = list_tag.take() {
+                        out.push_str(&format!("</{tag}>"));
+                    }
+                    out.push_str("<ul>");
+                    list_tag = Some("ul");
+                }
+                out.push_str(&format!("<li>{styled}</li>"));
+            }
+            "blockquote" => out.push_str(&format!("<blockquote><p>{styled}</p></blockquote>")),
+            "atomic" => {
+                if let Some(fragment) = fx_atomic_html(block, &entities, &media_urls) {
+                    out.push_str(&fragment);
+                }
+            }
+            _ => {
+                if !styled.trim().is_empty() {
+                    out.push_str(&format!("<p>{styled}</p>"));
+                }
+            }
+        }
+    }
+    if let Some(tag) = list_tag.take() {
+        out.push_str(&format!("</{tag}>"));
+    }
+    out
+}
+
+/// Renders one atomic block: MARKDOWN entities become code blocks, IMAGE and
+/// MEDIA entities become figures pointing at the image URL (localization
+/// happens later in the shared image pipeline).
+fn fx_atomic_html(
+    block: &serde_json::Value,
+    entities: &std::collections::HashMap<String, serde_json::Value>,
+    media_urls: &std::collections::HashMap<String, String>,
+) -> Option<String> {
+    let key = block.pointer("/entityRanges/0/key").map(json_key)?;
+    let entity = entities.get(&key)?;
+    let entity_type = entity.get("type").and_then(Value::as_str)?;
+    let data = entity.get("data")?;
+    match entity_type {
+        "MARKDOWN" => {
+            let markdown = data.get("markdown").and_then(Value::as_str)?;
+            Some(format!(
+                "<pre><code>{}</code></pre>",
+                escape_html(markdown.trim())
+            ))
+        }
+        "IMAGE" => {
+            let url = data
+                .get("src")
+                .or_else(|| data.get("url"))
+                .and_then(Value::as_str)?;
+            Some(format!(
+                "<figure><img src=\"{}\"></figure>",
+                escape_html(url)
+            ))
+        }
+        "MEDIA" => {
+            let url = data
+                .pointer("/mediaItems/0/mediaId")
+                .and_then(Value::as_str)
+                .and_then(|id| media_urls.get(id))
+                .map(String::as_str)
+                .or_else(|| {
+                    data.pointer("/media_info/original_img_url")
+                        .and_then(Value::as_str)
+                })?;
+            Some(format!(
+                "<figure><img src=\"{}\"></figure>",
+                escape_html(url)
+            ))
+        }
+        _ => None,
+    }
+}
+
+/// Applies Draft.js LINK entities and Bold/Italic inline styles to a block.
+/// Ranges may overlap (bold inside a link); they nest by position, so the
+/// walk opens at each index before emitting the escaped character.
+fn styled_block_html(
+    text: &str,
+    entity_ranges: Option<&Vec<serde_json::Value>>,
+    inline_styles: Option<&Vec<serde_json::Value>>,
+    entities: &std::collections::HashMap<String, serde_json::Value>,
+) -> String {
+    enum Span {
+        Bold,
+        Italic,
+        Link(String),
+    }
+    let chars: Vec<char> = text.chars().collect();
+    let mut spans: Vec<(usize, usize, Span)> = Vec::new();
+    for range in entity_ranges.into_iter().flatten() {
+        let (offset, length) = span_bounds(range, chars.len());
+        if length == 0 {
+            continue;
+        }
+        let url = range
+            .get("key")
+            .map(json_key)
+            .and_then(|key| entities.get(&key))
+            .and_then(|entity| entity.get("data"))
+            .and_then(|data| data.get("url"))
+            .and_then(Value::as_str)
+            .unwrap_or("");
+        if url.is_empty() {
+            continue;
+        }
+        spans.push((offset, offset + length, Span::Link(url.to_string())));
+    }
+    for style in inline_styles.into_iter().flatten() {
+        let (offset, length) = span_bounds(style, chars.len());
+        if length == 0 {
+            continue;
+        }
+        match style.get("style").and_then(Value::as_str) {
+            Some("Bold") => spans.push((offset, offset + length, Span::Bold)),
+            Some("Italic") => spans.push((offset, offset + length, Span::Italic)),
+            _ => {}
+        }
+    }
+    spans.sort_by(|a, b| a.0.cmp(&b.0).then(b.1.cmp(&a.1)));
+    let mut open: Vec<(usize, &Span)> = Vec::new();
+    let mut out = String::new();
+    let mut next_span = 0;
+    for index in 0..=chars.len() {
+        while let Some((end, _)) = open.last() {
+            if *end == index {
+                let (_, span) = open.pop().unwrap();
+                out.push_str(match span {
+                    Span::Bold => "</strong>",
+                    Span::Italic => "</em>",
+                    Span::Link(_) => "</a>",
+                });
+            } else {
+                break;
+            }
+        }
+        while next_span < spans.len() && spans[next_span].0 == index {
+            let (_, end, span) = &spans[next_span];
+            let open_tag = match span {
+                Span::Bold => "<strong>".to_string(),
+                Span::Italic => "<em>".to_string(),
+                Span::Link(url) => format!("<a href=\"{}\">", escape_html_attr(url)),
+            };
+            out.push_str(&open_tag);
+            open.push((*end, span));
+            next_span += 1;
+        }
+        if index < chars.len() {
+            out.push_str(&escape_char(chars[index]));
+        }
+    }
+    out
+}
+
+fn span_bounds(value: &serde_json::Value, max: usize) -> (usize, usize) {
+    let offset = value.get("offset").and_then(Value::as_u64).unwrap_or(0) as usize;
+    let length = value.get("length").and_then(Value::as_u64).unwrap_or(0) as usize;
+    let length = length.min(max.saturating_sub(offset));
+    (offset, length)
+}
+
+fn escape_char(ch: char) -> String {
+    match ch {
+        '&' => "&amp;".into(),
+        '<' => "&lt;".into(),
+        '>' => "&gt;".into(),
+        other => other.to_string(),
+    }
+}
+
+/// Draft.js entity keys appear both as JSON strings and numbers; this maps
+/// either shape to the same string (`Value::to_string` would quote strings).
+fn json_key(value: &serde_json::Value) -> String {
+    match value {
+        serde_json::Value::String(key) => key.clone(),
+        other => other.to_string(),
+    }
 }
 
 /// Parses the synthetic tweet document back into an `Extracted`, bypassing
-/// readability (which has nothing to score in it).
+/// readability (which has nothing to score in it). The body is generic HTML
+/// (paragraphs, headings, lists, blockquotes, code blocks, figures) emitted by
+/// either tweet builder, so it only needs sanitizing.
 fn x_tweet_extract(html: &str) -> Option<Extracted> {
-    let marker = Regex::new(
-        r#"(?is)<article\s+id="x-tweet"\s+data-author="([^"]*)"\s+data-handle="([^"]*)"[^>]*>(.*?)</article>"#,
-    )
-    .ok()?;
+    let marker = Regex::new(r#"(?is)<article\s+id="x-tweet"\s+([^>]*?)>(.*?)</article>"#).ok()?;
     let captures = marker.captures(html)?;
-    let author = decode_entities(&captures[1]);
-    let handle = decode_entities(&captures[2]);
-    let body = &captures[3];
-    let paragraphs: Vec<String> = Regex::new(r"(?is)<p>(.*?)</p>")
-        .ok()?
-        .captures_iter(body)
-        .map(|c| decode_entities(&c[1]))
-        .collect();
-    if paragraphs.is_empty() {
+    let attributes = &captures[1];
+    let body = &captures[2];
+    let attribute = |name: &str| -> Option<String> {
+        Regex::new(&format!(r#"{name}="([^"]*)""#))
+            .ok()?
+            .captures(attributes)
+            .map(|found| decode_entities(&found[1]))
+    };
+    let author = attribute("data-author").unwrap_or_default();
+    let handle = attribute("data-handle").unwrap_or_default();
+    if body.trim().is_empty() {
         return None;
     }
-    let photos: Vec<String> = Regex::new(r#"(?is)<img\s+src="([^"]+)""#)
-        .ok()?
-        .captures_iter(body)
-        .map(|c| decode_entities(&c[1]))
-        .collect();
-    let content_html = {
-        let text_part: String = paragraphs.iter().map(|p| format!("<p>{p}</p>")).collect();
-        let image_part: String = photos
-            .iter()
-            .map(|url| format!("<figure><img src=\"{url}\"></figure>"))
-            .collect();
-        sanitize_html(&format!("{text_part}{image_part}"))
-    };
-    let full_text = paragraphs.join(" ");
-    let text = collapse_whitespace(&full_text);
+    let content_html = sanitize_html(body);
+    let text = collapse_whitespace(&html_to_text(body));
     let (word_count, reading_minutes) = reading_stats(&text);
-    let title = truncate_chars(&paragraphs[0], 60);
+    let title = attribute("data-title")
+        .filter(|title| !title.trim().is_empty())
+        .or_else(|| Some(first_line(&text)))
+        .unwrap_or_else(|| format!("@{handle}"));
     Some(Extracted {
-        title,
+        title: truncate_chars(&title, 60),
         // Like WeChat, the reader recognises the author, not the platform.
         site_name: author,
         excerpt: truncate_chars(&text, 160),
         byline: Some(format!("@{handle}")),
-        cover_url: photos.first().cloned(),
+        cover_url: og_image(html),
         content_html,
         markdown: None,
         word_count,
@@ -1242,6 +1635,113 @@ mod tests {
         assert!(prepared.contains(r#"src="https://mmbiz.qpic.cn/a.jpg""#));
         assert!(!prepared.contains("visibility"));
         assert!(!prepared.contains("data:image/gif"));
+    }
+
+    #[test]
+    fn fx_tweet_renders_plain_text_photos_quote_and_source() {
+        let value = serde_json::json!({
+            "code": 200,
+            "tweet": {
+                "text": "第一行\n\n第二行",
+                "url": "https://x.com/a/status/1",
+                "author": {"name": "作者", "screen_name": "author"},
+                "media": {"all": [
+                    {"type": "photo", "url": "https://pbs.twimg.com/media/1.jpg"},
+                    {"type": "video", "url": "https://video.twimg.com/x.mp4"}
+                ]},
+                "quote": {
+                    "text": "被引用的话",
+                    "author": {"screen_name": "quoted"}
+                }
+            }
+        });
+        let html = fx_tweet_html(&value).unwrap();
+        let extracted = x_tweet_extract(&html).unwrap();
+        assert_eq!(extracted.title, "第一行");
+        assert_eq!(extracted.site_name, "作者");
+        assert_eq!(extracted.byline.as_deref(), Some("@author"));
+        assert!(extracted.content_html.contains("<p>第二行</p>"));
+        assert!(extracted
+            .content_html
+            .contains(r#"<img src="https://pbs.twimg.com/media/1.jpg">"#));
+        assert!(!extracted.content_html.contains("video.twimg.com"));
+        assert!(extracted.content_html.contains("该推文包含视频"));
+        assert!(extracted.content_html.contains("@quoted</a>: 被引用的话"));
+        assert!(extracted
+            .content_html
+            .contains(r#"href="https://x.com/a/status/1""#));
+        assert_eq!(
+            extracted.cover_url.as_deref(),
+            Some("https://pbs.twimg.com/media/1.jpg")
+        );
+    }
+
+    #[test]
+    fn fx_article_renders_draftjs_blocks_with_links_and_code() {
+        let value = serde_json::json!({
+            "code": 200,
+            "tweet": {
+                "text": "长文预告 https://t.co/xyz",
+                "url": "https://x.com/a/status/2",
+                "author": {"name": "作者", "screen_name": "author"},
+                "article": {
+                    "title": "教程文章",
+                    "cover_media": {"media_info": {"original_img_url": "https://pbs.twimg.com/media/cover.jpg"}},
+                    "media_entities": [
+                        {"media_id": "m1", "media_info": {"original_img_url": "https://pbs.twimg.com/media/inline.jpg"}}
+                    ],
+                    "content": {
+                        "entityMap": [
+                            {"key": 0, "value": {"type": "LINK", "data": {"url": "https://example.com/x?a=1&b=2"}}},
+                            {"key": 1, "value": {"type": "MARKDOWN", "data": {"markdown": "cargo build --release"}}},
+                            {"key": 2, "value": {"type": "MEDIA", "data": {"mediaItems": [{"mediaId": "m1"}]}}}
+                        ],
+                        "blocks": [
+                            {"type": "header-two", "text": "标题二"},
+                            {"type": "unstyled", "text": "带链接和加粗的一段",
+                             "entityRanges": [{"offset": 3, "length": 2, "key": 0}],
+                             "inlineStyleRanges": [{"offset": 0, "length": 3, "style": "Bold"}]},
+                            {"type": "ordered-list-item", "text": "第一步"},
+                            {"type": "ordered-list-item", "text": "第二步"},
+                            {"type": "unordered-list-item", "text": "要点"},
+                            {"type": "blockquote", "text": "引用一句"},
+                            {"type": "atomic", "text": " ", "entityRanges": [{"offset": 0, "length": 1, "key": 1}]},
+                            {"type": "atomic", "text": " ", "entityRanges": [{"offset": 0, "length": 1, "key": 2}]},
+                            {"type": "unstyled", "text": "<script>alert(1)</script>"}
+                        ]
+                    }
+                }
+            }
+        });
+        let html = fx_tweet_html(&value).unwrap();
+        let extracted = x_tweet_extract(&html).unwrap();
+        assert_eq!(extracted.title, "教程文章");
+        assert_eq!(
+            extracted.cover_url.as_deref(),
+            Some("https://pbs.twimg.com/media/cover.jpg")
+        );
+        let content = &extracted.content_html;
+        assert!(content.contains("<h2>标题二</h2>"));
+        assert!(content.contains(r#"<a href="https://example.com/x?a=1&amp;b=2""#));
+        assert!(content.contains("<strong>带链接</strong>"));
+        assert!(content.contains(">和加</a>粗的一段"));
+        assert!(content.contains("<ol><li>第一步</li><li>第二步</li></ol>"));
+        assert!(content.contains("<ul><li>要点</li></ul>"));
+        assert!(content.contains("<blockquote><p>引用一句</p></blockquote>"));
+        assert!(content.contains("<pre><code>cargo build --release</code></pre>"));
+        assert!(content.contains(r#"<img src="https://pbs.twimg.com/media/inline.jpg">"#));
+        assert!(!content.contains("<script>"));
+        // URL 里的 & 与实体分开转义，没有双重转义。
+        assert!(!content.contains("&amp;amp;"));
+    }
+
+    #[test]
+    fn fx_rejects_error_payloads_and_empty_authors() {
+        assert!(fx_tweet_html(&serde_json::json!({"code": 404, "tweet": {}})).is_none());
+        assert!(fx_tweet_html(
+            &serde_json::json!({"code": 200, "tweet": {"author": {"name": "", "screen_name": ""}}})
+        )
+        .is_none());
     }
 
     #[test]
