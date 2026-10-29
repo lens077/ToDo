@@ -1,0 +1,33 @@
+schema_version: 1
+
+project:
+  id: "sumery-virgo-todo"
+  name: "Sumery Virgo (ToDo)"
+  description: "给 AI 协作开发者的本地任务对账器；Markdown 是唯一事实源"
+  status: active
+
+sources:
+  - id: "main"
+    path: "."
+    role: code
+
+documents:
+  tasks:
+    path: "TODO.md"
+  progress:
+    path: "CONTEXT.md"
+  architecture:
+    path: "docs/desktop-mvp-spec.md"
+  decisions:
+    path: "DECISIONS.md"
+  runbook:
+    path: "README.md"
+  agent_instructions:
+    path: "AGENTS.md"
+
+policy:
+  agent_instructions: "AGENTS.md"
+  skill: ".agents/skills/virgo-project-memory/SKILL.md"
+  enforcement: guided
+  checks:
+    require_task_reference_for_completion: true

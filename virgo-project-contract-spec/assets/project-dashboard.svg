@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="720" viewBox="0 0 1200 720">
+<defs><style>.t{font:700 22px Inter,Arial,sans-serif;fill:#172033}.h{font:700 17px Inter,Arial,sans-serif;fill:#172033}.s{font:14px Inter,Arial,sans-serif;fill:#64748b}.body{font:15px Inter,Arial,sans-serif;fill:#334155}.panel{fill:#fff;stroke:#e2e8f0;stroke-width:1.5}.tag{fill:#eef5ff;stroke:#c6dcff}.green{fill:#effaf4;stroke:#b9e6c8}.amber{fill:#fff7e8;stroke:#f2d49a}</style></defs>
+<rect width="1200" height="720" rx="20" fill="#f7f8fb"/>
+<rect x="0" y="0" width="235" height="720" rx="20" fill="#f0f1f7"/>
+<text x="28" y="42" class="t">Sumery Virgo</text>
+<text x="28" y="94" class="s">工作空间</text>
+<rect x="20" y="112" width="195" height="46" rx="10" fill="#fff" stroke="#e2e8f0"/><text x="36" y="141" class="body">个人开发</text>
+<text x="28" y="202" class="s">工作视图</text>
+<text x="35" y="246" class="body">总览</text><rect x="15" y="265" width="205" height="43" rx="9" fill="#fff0dc"/><text x="35" y="292" class="h">项目</text>
+<text x="35" y="341" class="body">全局任务</text><text x="35" y="389" class="body">知识与决策</text><text x="35" y="437" class="body">开发时间线</text><text x="35" y="485" class="body">规范检查</text>
+<text x="275" y="48" class="s">项目 / 电商平台</text><text x="275" y="91" class="t" font-size="30">电商平台</text>
+<text x="275" y="120" class="s">关联 4 个来源 · 最近扫描 2026-10-30 04:20</text>
+<rect x="275" y="145" width="875" height="125" rx="15" class="panel"/>
+<text x="300" y="180" class="h">项目概览</text><text x="300" y="211" class="body">目标：维护业务服务、部署配置与端到端验证。</text>
+<rect x="300" y="230" width="66" height="25" rx="7" class="tag"/><text x="333" y="247" text-anchor="middle" class="s">Go</text>
+<rect x="376" y="230" width="78" height="25" rx="7" class="tag"/><text x="415" y="247" text-anchor="middle" class="s">React</text>
+<rect x="464" y="230" width="125" height="25" rx="7" class="tag"/><text x="526" y="247" text-anchor="middle" class="s">Kubernetes</text>
+<rect x="599" y="230" width="85" height="25" rx="7" class="tag"/><text x="641" y="247" text-anchor="middle" class="s">ArgoCD</text>
+<rect x="275" y="292" width="420" height="130" rx="15" class="panel"/>
+<text x="300" y="327" class="h">当前进度</text><text x="300" y="359" class="body">里程碑：订单链路验证</text><text x="300" y="388" class="s">下一步：补齐支付失败场景的 E2E 测试</text>
+<rect x="715" y="292" width="435" height="130" rx="15" class="panel"/>
+<text x="740" y="327" class="h">项目规范</text><rect x="740" y="345" width="112" height="28" rx="8" class="green"/><text x="796" y="364" text-anchor="middle" class="s">Contract 通过</text><rect x="862" y="345" width="128" height="28" rx="8" class="amber"/><text x="926" y="364" text-anchor="middle" class="s">运行手册待查</text><text x="740" y="400" class="s">3 项检查通过 · 1 项警告 · 0 项阻断</text>
+<rect x="275" y="444" width="420" height="235" rx="15" class="panel"/>
+<text x="300" y="480" class="h">映射的文档</text><text x="300" y="520" class="body">TODO.md</text><text x="500" y="520" class="s">任务</text><text x="300" y="558" class="body">CONTEXT.md</text><text x="500" y="558" class="s">进度 / 上下文</text><text x="300" y="596" class="body">docs/architecture.md</text><text x="500" y="596" class="s">架构</text><text x="300" y="634" class="body">docs/runbook.md</text><text x="500" y="634" class="s">运行手册</text>
+<rect x="715" y="444" width="435" height="235" rx="15" class="panel"/>
+<text x="740" y="480" class="h">最近活动</text><circle cx="748" cy="516" r="5" fill="#5b8def"/><text x="765" y="521" class="body">测试报告更新</text><text x="765" y="542" class="s">有可追溯的执行结果</text><circle cx="748" cy="578" r="5" fill="#d99a31"/><text x="765" y="583" class="body">运行手册引用失效路径</text><text x="765" y="604" class="s">需要用户或 Agent 确认</text><circle cx="748" cy="640" r="5" fill="#5b8def"/><text x="765" y="645" class="body">项目规范版本：v1</text>
+</svg>

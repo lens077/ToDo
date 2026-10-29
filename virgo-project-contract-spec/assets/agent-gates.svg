@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="470" viewBox="0 0 1200 470">
+<defs><style>.t{font:700 22px Inter,Arial,sans-serif;fill:#172033}.s{font:15px Inter,Arial,sans-serif;fill:#536176}.b{fill:#fff;stroke:#d9e0ea;stroke-width:2}.blue{fill:#eef5ff;stroke:#8bb7ff}.green{fill:#effaf4;stroke:#91d7ad}.a{stroke:#8b98aa;stroke-width:3;fill:none;stroke-linecap:round;stroke-linejoin:round}</style></defs>
+<rect width="1200" height="470" rx="22" fill="#f7f9fc"/>
+<text x="600" y="48" text-anchor="middle" class="t" font-size="29">四层执行机制</text>
+<rect x="60" y="100" width="245" height="130" rx="16" class="b"/><text x="182" y="139" text-anchor="middle" class="t">Skill</text><text x="182" y="172" text-anchor="middle" class="s">指导操作步骤</text><text x="182" y="197" text-anchor="middle" class="s">读档 / 更新 / 交接</text>
+<path d="M305 165 H345" class="a"/><path d="M337 157 L345 165 L337 173" class="a"/>
+<rect x="350" y="100" width="245" height="130" rx="16" class="b"/><text x="472" y="139" text-anchor="middle" class="t">Agent Instructions</text><text x="472" y="172" text-anchor="middle" class="s">AGENTS.md 等</text><text x="472" y="197" text-anchor="middle" class="s">项目规则与入口</text>
+<path d="M595 165 H635" class="a"/><path d="M627 157 L635 165 L627 173" class="a"/>
+<rect x="640" y="100" width="245" height="130" rx="16" class="blue"/><text x="762" y="139" text-anchor="middle" class="t">CLI + Git Hooks</text><text x="762" y="172" text-anchor="middle" class="s">本地确定性校验</text><text x="762" y="197" text-anchor="middle" class="s">快速反馈</text>
+<path d="M885 165 H925" class="a"/><path d="M917 157 L925 165 L917 173" class="a"/>
+<rect x="930" y="100" width="210" height="130" rx="16" class="green"/><text x="1035" y="139" text-anchor="middle" class="t">CI + Branch Rules</text><text x="1035" y="172" text-anchor="middle" class="s">远程再次检查</text><text x="1035" y="197" text-anchor="middle" class="s">合并门禁</text>
+<rect x="130" y="285" width="940" height="100" rx="16" class="b"/>
+<text x="600" y="325" text-anchor="middle" class="t">责任边界</text><text x="600" y="356" text-anchor="middle" class="s">Skill 教 Agent 怎么做 · CLI 判断规则是否满足 · CI 检查远程变更</text>
+<text x="600" y="425" text-anchor="middle" class="s">Hook 可以被跳过。受保护分支与 CI 提供远程防线。</text>
+</svg>

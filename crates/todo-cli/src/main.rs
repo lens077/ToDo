@@ -44,6 +44,16 @@ struct Cli {
 }
 
 #[derive(Subcommand)]
+enum ContractCommand {
+    /// Validate `.virgo/project.yaml` against the project root (offline, deterministic).
+    Check {
+        /// Project root to check. Defaults to the current directory.
+        #[arg(long)]
+        root: Option<PathBuf>,
+    },
+}
+
+#[derive(Subcommand)]
 enum Command {
     Init {
         #[arg(long)]
@@ -189,6 +199,11 @@ enum Command {
         /// Pass a file path, or `-` to read stdin.
         #[arg(long)]
         review: Option<String>,
+    },
+    /// Project Contract operations (`.virgo/project.yaml`).
+    Contract {
+        #[command(subcommand)]
+        command: ContractCommand,
     },
     /// Serve the HTTP API, and optionally the Web UI, for this project.
     Serve {
@@ -548,6 +563,9 @@ fn run(cli: &Cli) -> Result<u8, Error> {
             *yes,
         ),
         Command::Align { review } => align(cli, &path, review.as_deref()),
+        Command::Contract { command } => match command {
+            ContractCommand::Check { root } => contract_check(cli, root.as_deref()),
+        },
         Command::Serve {
             port,
             host,
@@ -2001,6 +2019,125 @@ fn push_archive_block(output: &mut String, raw: &str, newline: &str) {
     if !output.ends_with('\n') {
         output.push_str(newline);
     }
+}
+
+/// `todo contract check`: runs the deterministic Project Contract validator and
+/// reuses the house gate semantics — blocking findings exit 6, like lint.
+fn contract_check(cli: &Cli, root: Option<&Path>) -> Result<u8, Error> {
+    let root = root.unwrap_or_else(|| Path::new("."));
+    let loaded = match todo_core::load_contract(root) {
+        Ok(loaded) => loaded,
+        // A present-but-broken contract is still reportable evidence, not a crash.
+        Err(error) => {
+            emit(
+                cli,
+                "todo.contract.v1",
+                ContractCliData {
+                    contract_path: error_path(&error).unwrap_or_default(),
+                    enforcement: "guided".into(),
+                    findings: vec![ContractFindingData {
+                        rule: "VPC001".into(),
+                        severity: "error".into(),
+                        message: error.to_string(),
+                        path: error_path(&error),
+                    }],
+                },
+                |_| format!("error: {error}"),
+            );
+            return Ok(6);
+        }
+    };
+    let report = todo_core::check_contract(
+        loaded.as_ref().map(|(path, _)| path.as_path()),
+        loaded.as_ref().map(|(_, contract)| contract),
+        root,
+    );
+    let code = if report.blocking() { 6 } else { 0 };
+    emit(
+        cli,
+        "todo.contract.v1",
+        ContractCliData {
+            contract_path: report
+                .contract_path
+                .clone()
+                .unwrap_or_else(|| ".virgo/project.yaml".into()),
+            enforcement: serde_variant(&report.enforcement),
+            findings: report
+                .findings
+                .iter()
+                .map(|finding| ContractFindingData {
+                    rule: finding.rule.into(),
+                    severity: serde_variant(&finding.severity),
+                    message: finding.message.clone(),
+                    path: finding.path.clone(),
+                })
+                .collect(),
+        },
+        |data| {
+            if data.findings.is_empty() {
+                format!(
+                    "contract ok: {} ({})",
+                    data.contract_path,
+                    if data.enforcement == "enforced" {
+                        "enforced"
+                    } else if data.enforcement == "observe" {
+                        "observe"
+                    } else {
+                        "guided"
+                    }
+                )
+            } else {
+                data.findings
+                    .iter()
+                    .map(|finding| {
+                        let location = finding
+                            .path
+                            .as_deref()
+                            .map(|path| format!(" ({path})"))
+                            .unwrap_or_default();
+                        format!(
+                            "{} [{}]: {}{}",
+                            finding.rule, finding.severity, finding.message, location
+                        )
+                    })
+                    .collect::<Vec<_>>()
+                    .join("\n")
+            }
+        },
+    );
+    Ok(code)
+}
+
+fn serde_variant(value: &impl serde::Serialize) -> String {
+    // Serialize a unit enum variant to its serde string form.
+    serde_json::to_value(value)
+        .ok()
+        .and_then(|value| value.as_str().map(str::to_owned))
+        .unwrap_or_default()
+}
+
+fn error_path(error: &Error) -> Option<String> {
+    match error {
+        Error::InvalidConfiguration { path, .. } | Error::Io { path, .. } => {
+            Some(path.display().to_string())
+        }
+        _ => None,
+    }
+}
+
+#[derive(Serialize)]
+struct ContractCliData {
+    contract_path: String,
+    enforcement: String,
+    findings: Vec<ContractFindingData>,
+}
+
+#[derive(Serialize)]
+struct ContractFindingData {
+    rule: String,
+    severity: String,
+    message: String,
+    path: Option<String>,
 }
 
 fn lint(cli: &Cli, path: &Path) -> Result<u8, Error> {

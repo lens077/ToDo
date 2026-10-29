@@ -753,3 +753,91 @@ fn history_records_the_operation_behind_each_restore_point() {
     assert!(ops.contains(&"progress"), "got {ops:?}");
     assert!(ops.contains(&"add"), "got {ops:?}");
 }
+
+#[test]
+fn contract_check_reports_missing_contract_as_vpc001_with_exit_six() {
+    let dir = tempdir().unwrap();
+    let output = todo(dir.path(), &["contract", "check", "--json"]);
+    assert_eq!(output.status.code(), Some(6));
+    let json: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(json["schema"], "todo.contract.v1");
+    assert_eq!(json["data"]["findings"][0]["rule"], "VPC001");
+}
+
+#[test]
+fn contract_check_passes_a_minimal_contract_and_exit_zero() {
+    let dir = tempdir().unwrap();
+    fs::create_dir_all(dir.path().join(".virgo")).unwrap();
+    fs::write(
+        dir.path().join(".virgo/project.yaml"),
+        "schema_version: 1\nproject:\n  id: test-project\n  name: Test\n",
+    )
+    .unwrap();
+    let output = todo(dir.path(), &["contract", "check", "--json"]);
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let json: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(json["data"]["findings"].as_array().unwrap().len(), 0);
+    assert_eq!(json["data"]["enforcement"], "guided");
+}
+
+#[test]
+fn contract_check_reports_missing_mapped_document_as_vpc002() {
+    let dir = tempdir().unwrap();
+    fs::create_dir_all(dir.path().join(".virgo")).unwrap();
+    fs::write(
+        dir.path().join(".virgo/project.yaml"),
+        "schema_version: 1\nproject:\n  id: p\n  name: P\ndocuments:\n  tasks:\n    path: TODO.md\n",
+    )
+    .unwrap();
+    let output = todo(dir.path(), &["contract", "check"]);
+    assert_eq!(output.status.code(), Some(6));
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(!stderr.contains("panic"), "unexpected panic: {stderr}");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("VPC002"), "stdout: {stdout}");
+}
+
+#[test]
+fn contract_check_rejects_unknown_schema_version_with_locatable_error() {
+    let dir = tempdir().unwrap();
+    fs::create_dir_all(dir.path().join(".virgo")).unwrap();
+    fs::write(
+        dir.path().join(".virgo/project.yaml"),
+        "schema_version: 9\nproject:\n  id: p\n  name: P\n",
+    )
+    .unwrap();
+    let output = todo(dir.path(), &["contract", "check", "--json"]);
+    assert_eq!(output.status.code(), Some(6));
+    let json: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(json["data"]["findings"][0]["rule"], "VPC001");
+    assert!(json["data"]["findings"][0]["message"]
+        .as_str()
+        .unwrap()
+        .contains("schema_version 9"));
+}
+
+#[test]
+fn contract_check_supports_explicit_root_outside_cwd() {
+    let dir = tempdir().unwrap();
+    fs::create_dir_all(dir.path().join(".virgo")).unwrap();
+    fs::write(
+        dir.path().join(".virgo/project.yaml"),
+        "schema_version: 1\nproject:\n  id: p\n  name: P\n",
+    )
+    .unwrap();
+    let cwd = tempdir().unwrap();
+    let output = Command::new(env!("CARGO_BIN_EXE_todo"))
+        .current_dir(cwd.path())
+        .args(["contract", "check", "--root", dir.path().to_str().unwrap()])
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}

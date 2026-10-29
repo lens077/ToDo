@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="360" viewBox="0 0 1200 360">
+<defs><style>.t{font:700 20px Inter,Arial,sans-serif;fill:#172033}.s{font:15px Inter,Arial,sans-serif;fill:#536176}.b{fill:#fff;stroke:#d9e0ea;stroke-width:2}.n{fill:#eef5ff;stroke:#8bb7ff;stroke-width:2}.a{stroke:#8b98aa;stroke-width:3;fill:none;stroke-linecap:round;stroke-linejoin:round}</style></defs>
+<rect width="1200" height="360" rx="20" fill="#f7f9fc"/>
+<g>
+<rect x="25" y="80" width="180" height="135" rx="15" class="b"/><text x="115" y="119" text-anchor="middle" class="t">1. 扫描</text><text x="115" y="151" text-anchor="middle" class="s">文档 / Git / Hooks</text><text x="115" y="176" text-anchor="middle" class="s">Agent 指令</text>
+<path d="M205 148 H235" class="a"/><path d="M227 140 L235 148 L227 156" class="a"/>
+<rect x="240" y="80" width="180" height="135" rx="15" class="b"/><text x="330" y="119" text-anchor="middle" class="t">2. 映射</text><text x="330" y="151" text-anchor="middle" class="s">文档角色</text><text x="330" y="176" text-anchor="middle" class="s">路径与权威来源</text>
+<path d="M420 148 H450" class="a"/><path d="M442 140 L450 148 L442 156" class="a"/>
+<rect x="455" y="80" width="180" height="135" rx="15" class="b"/><text x="545" y="119" text-anchor="middle" class="t">3. 诊断</text><text x="545" y="151" text-anchor="middle" class="s">缺失 / 冲突</text><text x="545" y="176" text-anchor="middle" class="s">权限 / 失效路径</text>
+<path d="M635 148 H665" class="a"/><path d="M657 140 L665 148 L657 156" class="a"/>
+<rect x="670" y="80" width="180" height="135" rx="15" class="n"/><text x="760" y="119" text-anchor="middle" class="t">4. 预览</text><text x="760" y="151" text-anchor="middle" class="s">新增与修改 Diff</text><text x="760" y="176" text-anchor="middle" class="s">备份与风险提示</text>
+<path d="M850 148 H880" class="a"/><path d="M872 140 L880 148 L872 156" class="a"/>
+<rect x="885" y="80" width="180" height="135" rx="15" class="b"/><text x="975" y="119" text-anchor="middle" class="t">5. 确认</text><text x="975" y="151" text-anchor="middle" class="s">用户授权写入</text><text x="975" y="176" text-anchor="middle" class="s">保留原有内容</text>
+<path d="M1065 148 H1090" class="a"/><path d="M1082 140 L1090 148 L1082 156" class="a"/>
+<rect x="1095" y="80" width="90" height="135" rx="15" class="n"/><text x="1140" y="119" text-anchor="middle" class="t">6</text><text x="1140" y="151" text-anchor="middle" class="s">验证</text><text x="1140" y="176" text-anchor="middle" class="s">报告</text>
+</g>
+<text x="600" y="275" text-anchor="middle" class="t">写入流程：扫描 → 映射 → 诊断 → 预览 → 确认 → 验证</text>
+<text x="600" y="307" text-anchor="middle" class="s">每一步都有结果。写入前检查文件变化。失败时只恢复 Virgo 本次写入。</text>
+</svg>

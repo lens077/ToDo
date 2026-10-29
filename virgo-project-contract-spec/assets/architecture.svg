@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="650" viewBox="0 0 1200 650">
+<defs><style>
+.t{font:700 23px Inter,Arial,sans-serif;fill:#172033}.s{font:16px Inter,Arial,sans-serif;fill:#536176}
+.box{fill:#fff;stroke:#d9e0ea;stroke-width:2}.blue{fill:#eef5ff;stroke:#8bb7ff}.green{fill:#effaf4;stroke:#91d7ad}.amber{fill:#fff7e8;stroke:#efc26d}
+.arrow{stroke:#8b98aa;stroke-width:3;fill:none;stroke-linecap:round;stroke-linejoin:round}
+</style></defs>
+<rect width="1200" height="650" rx="24" fill="#f7f9fc"/>
+<text x="600" y="48" text-anchor="middle" class="t" font-size="29">Virgo Project Contract：系统边界</text>
+<rect x="300" y="80" width="600" height="95" rx="18" class="box blue"/>
+<text x="600" y="117" text-anchor="middle" class="t">Workspace / Project Registry</text>
+<text x="600" y="146" text-anchor="middle" class="s">虚拟工作空间 · 多项目 · 多真实目录</text>
+<path d="M600 175 V215 M600 215 H300 V245 M600 215 V245 M600 215 H900 V245" class="arrow"/>
+<rect x="90" y="245" width="420" height="120" rx="16" class="box"/>
+<text x="300" y="283" text-anchor="middle" class="t">现有项目文档</text>
+<text x="300" y="314" text-anchor="middle" class="s">TODO · DESIGN · RUNBOOK · MEMORY</text>
+<text x="300" y="340" text-anchor="middle" class="s">原路径 · 原格式 · 原 Git 历史</text>
+<rect x="530" y="245" width="340" height="120" rx="16" class="box green"/>
+<text x="700" y="283" text-anchor="middle" class="t">Project Contract</text>
+<text x="700" y="314" text-anchor="middle" class="s">角色映射 · 策略 · Schema 版本</text>
+<text x="700" y="340" text-anchor="middle" class="s">机器可解析的项目约定</text>
+<rect x="890" y="245" width="220" height="120" rx="16" class="box amber"/>
+<text x="1000" y="283" text-anchor="middle" class="t">Agent Skill</text>
+<text x="1000" y="314" text-anchor="middle" class="s">工作步骤</text>
+<text x="1000" y="340" text-anchor="middle" class="s">宿主适配</text>
+<path d="M300 365 V410 H600 M700 365 V410 M1000 365 V410 H600 V440" class="arrow"/>
+<rect x="260" y="440" width="680" height="100" rx="18" class="box blue"/>
+<text x="600" y="479" text-anchor="middle" class="t">Deterministic Gates</text>
+<text x="600" y="510" text-anchor="middle" class="s">CLI 校验 · Git Hooks · CI · 审计与恢复</text>
+<text x="600" y="595" text-anchor="middle" class="s">核心规则不依赖应用内的大模型</text>
+</svg>

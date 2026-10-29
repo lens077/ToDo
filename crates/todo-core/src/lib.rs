@@ -3,6 +3,7 @@
 
 mod ai;
 mod column_setup;
+mod contract;
 mod desktop;
 mod error;
 mod heading_priority;
@@ -24,6 +25,10 @@ pub use ai::*;
 pub use column_setup::{
     ColumnHeadingOption, ColumnHeadingSelection, ColumnSetupOptions, ColumnSetupPreview,
     ColumnSetupSelection, PlannedColumn,
+};
+pub use contract::{
+    check_contract, load_contract, ContractCheckReport, ContractFinding, DocumentRef, DocumentRole,
+    Enforcement, Policy, ProjectContract, CONTRACT_SCHEMA_VERSION,
 };
 pub use desktop::*;
 pub use error::{Error, Result};
