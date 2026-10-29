@@ -159,6 +159,7 @@ pub fn router_with_ai_store(
         .route("/tasks/{id}/priority", post(set_priority))
         .route("/tasks/{id}/move", post(move_task))
         .route("/scan", get(run_scan))
+        .route("/contract-check", get(contract_check))
         .route("/scan/import", post(import_scan))
         .route("/history", get(history))
         .route("/history/{version}/diff", get(history_diff))
@@ -540,6 +541,18 @@ struct ScanQuery {
 }
 fn yes() -> bool {
     true
+}
+/// Read-only Project Contract validation for the open project root.
+async fn contract_check(
+    State(state): State<Arc<ServeState>>,
+) -> ApiResult<todo_core::ContractCheckReport> {
+    let root = state.path.clone();
+    let loaded = todo_core::load_contract(&root)?;
+    let report = match loaded {
+        Some((path, contract)) => todo_core::check_contract(Some(&path), Some(&contract), &root),
+        None => todo_core::check_contract(None, None, &root),
+    };
+    Ok(Json(report))
 }
 async fn run_scan(
     State(state): State<Arc<ServeState>>,

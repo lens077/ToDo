@@ -120,6 +120,19 @@ export interface ScanPreview {
   rewrite: ProposedRewrite | null;
 }
 
+export interface ContractFinding {
+  rule: string;
+  severity: 'error' | 'warning' | 'info';
+  message: string;
+  path: string | null;
+}
+
+export interface ContractCheckReport {
+  contract_path: string | null;
+  enforcement: 'observe' | 'guided' | 'enforced';
+  findings: ContractFinding[];
+}
+
 export interface HistoryEntry {
   version: number;
   at: string;
@@ -1012,6 +1025,28 @@ export const desktop = {
       importInto,
       sourcePath,
     });
+  },
+
+  /** Validates `.virgo/project.yaml` for the open project (offline, deterministic). */
+  async contractCheck(): Promise<ContractCheckReport> {
+    if (useHttp()) {
+      return api<ContractCheckReport>('/contract-check');
+    }
+    if (!isTauriRuntime()) {
+      return {
+        contract_path: null,
+        enforcement: 'guided',
+        findings: [
+          {
+            rule: 'VPC001',
+            severity: 'error',
+            message: 'no project contract found; expected .virgo/project.yaml under the project root',
+            path: '.virgo/project.yaml',
+          },
+        ],
+      };
+    }
+    return await call<ContractCheckReport>('contract_check', {});
   },
 
   /** Writes a rewrite the user has confirmed. Refused if the file moved on. */

@@ -369,3 +369,35 @@ fn snapshot_before_opening_a_project_fails_cleanly() {
         "snapshot without an open project must error, not panic or return empty data"
     );
 }
+
+#[test]
+fn contract_check_wire_shape_matches_the_typescript_decoder() {
+    let fx = fixture();
+    fx.ops.open_project(fx.project.to_str().unwrap()).unwrap();
+
+    // No contract yet: the report is the VPC001 finding, not an error, so the
+    // view can render evidence instead of a blank screen.
+    let missing = wire(&fx.ops.contract_check().unwrap());
+    assert_eq!(missing["contract_path"], serde_json::Value::Null);
+    assert_eq!(missing["findings"][0]["rule"], "VPC001");
+    assert_eq!(missing["findings"][0]["severity"], "error");
+    assert!(missing["findings"][0]["message"].is_string());
+
+    // Adopt the project (writes .virgo/project.yaml + integrations), then the
+    // report must be clean and carry the contract path for the UI header.
+    let dir = fx.project.parent().unwrap().to_path_buf();
+    let plan = todo_core::plan_adoption(&dir, "fixture").unwrap();
+    std::fs::create_dir_all(dir.join(".virgo")).unwrap();
+    std::fs::write(dir.join(".virgo/project.yaml"), plan.proposed_contract).unwrap();
+    std::fs::write(dir.join("AGENTS.md"), "# rules\n").unwrap();
+    let adopted = wire(&fx.ops.contract_check().unwrap());
+    assert!(
+        adopted["contract_path"].is_string(),
+        "contract_path must be a string for the adopted case"
+    );
+    assert_eq!(
+        adopted["findings"].as_array().unwrap().len(),
+        0,
+        "adopted fixture should have no findings: {adopted}"
+    );
+}

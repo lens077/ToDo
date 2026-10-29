@@ -118,6 +118,11 @@ fn snapshot(state: State<'_, AppState>) -> Result<ProjectSnapshot, String> {
 }
 
 #[tauri::command]
+fn contract_check(state: State<'_, AppState>) -> Result<todo_core::ContractCheckReport, String> {
+    state.ops.contract_check()
+}
+
+#[tauri::command]
 fn mutate(state: State<'_, AppState>, intent: DesktopIntent) -> Result<ProjectSnapshot, String> {
     state.ops.mutate(intent)
 }
@@ -649,6 +654,7 @@ pub fn run() {
             capture_delete,
             capture_triage,
             scan_repository,
+            contract_check,
             apply_rewrite,
             history_list,
             history_preview,

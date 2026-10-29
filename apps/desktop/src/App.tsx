@@ -1,5 +1,6 @@
 import * as React from 'react';
 import { AiView } from './components/AiView';
+import { ContractView } from './components/ContractView';
 import { CaptureView } from './components/CaptureView';
 import { CommandBar } from './components/CommandBar';
 import { ColumnSetupDialog } from './components/ColumnSetupDialog';
@@ -333,6 +334,8 @@ export function App() {
           ) : activeView === 'review' ? (
             sourceBoundUnavailable ? <p className="source-unavailable">扫描、历史与对齐提示词依赖单个来源。请先在「任务来源」选择已管理文件。</p> :
             <ReviewView snapshot={snapshot} readOnly={readOnly || Boolean(selected && !selected.writable)} onApplied={model.applySnapshot} />
+          ) : activeView === 'contract' ? (
+            <ContractView readOnly={readOnly} />
           ) : selected && selected.status !== 'managed' ? (
             <SourcePreview key={`${sourceContextKey}:${selected.revision}:${selected.loose ? 'loose' : ''}`} source={selected} readOnly={serverReadOnly || model.sourceBusy} onAdopt={model.adoptSource} onSetLoose={setLoose} />
           ) : activeView === 'quadrant' && snapshot ? (

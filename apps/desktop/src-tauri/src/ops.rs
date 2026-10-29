@@ -293,6 +293,23 @@ impl DesktopOps {
         let document = todo_core::parse_file(&path).map_err(stringify)?;
         Ok((path, document))
     }
+    /// Validates `.virgo/project.yaml` for the open project. Read-only and
+    /// offline; the report carries the stable VPC rule IDs the UI shows.
+    pub fn contract_check(&self) -> Result<todo_core::ContractCheckReport, String> {
+        let root = self
+            .backend()?
+            .project_path()
+            .map(ToOwned::to_owned)
+            .ok_or("no project is open")?;
+        match todo_core::load_contract(&root).map_err(stringify)? {
+            Some((path, contract)) => Ok(todo_core::check_contract(
+                Some(&path),
+                Some(&contract),
+                &root,
+            )),
+            None => Ok(todo_core::check_contract(None, None, &root)),
+        }
+    }
     pub fn scan_repository(
         &self,
         markdown: bool,

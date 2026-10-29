@@ -1976,3 +1976,60 @@
   .app-shell[data-density='efficient'] .source-preview { gap: 12px; padding: 14px; }
   .app-shell[data-density='efficient'] .source-unavailable { margin: 14px; }
 }
+
+/* Project Contract 规范视图 */
+.contract-status {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  margin: 12px 0;
+}
+.contract-status__pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+}
+.contract-status__pill--ok {
+  background: var(--ok-bg, #e6f6ee);
+  color: var(--ok, #16794b);
+}
+.contract-status__pill--error {
+  background: var(--danger-bg, #fdeaea);
+  color: var(--danger, #a12a2a);
+}
+.contract-status__pill--muted {
+  background: var(--muted-bg, #eef1f6);
+  color: var(--muted, #596579);
+}
+.contract-status__path {
+  margin-left: auto;
+  font-size: 12px;
+  color: var(--muted, #596579);
+  overflow-wrap: anywhere;
+}
+.contract-finding {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: baseline;
+}
+.contract-finding__severity--error {
+  background: var(--danger-bg, #fdeaea);
+  color: var(--danger, #a12a2a);
+}
+.contract-finding__severity--warning {
+  background: var(--warn-bg, #fff4dd);
+  color: var(--warn, #8c5b09);
+}
+.contract-finding__severity--info {
+  background: var(--muted-bg, #eef1f6);
+  color: var(--muted, #596579);
+}
+.contract-finding__path {
+  font-size: 12px;
+  color: var(--muted, #596579);
+}

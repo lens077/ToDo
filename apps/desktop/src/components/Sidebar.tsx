@@ -2,7 +2,7 @@ import type { WorkspaceStatus } from '../hooks/useDesktop';
 import { shortProjectName } from '../lib/desktop';
 import { Icon, type IconName } from './Icon';
 
-export type MainView = 'reading' | 'goal' | 'quadrant' | 'capture' | 'ai' | 'review';
+export type MainView = 'reading' | 'goal' | 'quadrant' | 'capture' | 'ai' | 'review' | 'contract';
 
 interface SidebarProps {
   activeView: MainView;
@@ -31,6 +31,7 @@ const navItems: Array<{ id: MainView; label: string; icon: IconName }> = [
   { id: 'capture', label: '随记', icon: 'capture' },
   { id: 'ai', label: 'AI', icon: 'sparkle' },
   { id: 'review', label: '扫描与历史', icon: 'folder' },
+  { id: 'contract', label: '规范', icon: 'settings' },
 ];
 
 export function Sidebar({
