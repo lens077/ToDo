@@ -24,6 +24,11 @@ export function useReading() {
   const [filter, setFilter] = React.useState<ReadingFilter>('all');
   const [adding, setAdding] = React.useState(false);
   const [addError, setAddError] = React.useState<string | null>(null);
+  const [addNotice, setAddNotice] = React.useState<string | null>(null);
+  // The Rust side fetches on a blocking thread, so 取消 stops waiting rather
+  // than the fetch itself: a late result is dropped and the article, if it
+  // did land, shows up on the next refresh.
+  const addCancelled = React.useRef(false);
   const [busy, setBusy] = React.useState<Set<string>>(() => new Set());
   const [open, setOpen] = React.useState<ReadingArticleDetail | null>(null);
   const [opening, setOpening] = React.useState<string | null>(null);
@@ -63,8 +68,10 @@ export function useReading() {
   }, []);
 
   const importBrowserPage = React.useCallback(async (url: string, html: string): Promise<boolean> => {
+    addCancelled.current = false;
     setAdding(true);
     setAddError(null);
+    setAddNotice(null);
     try {
       const detail = await reading.importBrowserPage(url, html);
       setArticles((current) => {
@@ -80,16 +87,25 @@ export function useReading() {
     }
   }, []);
 
+  const cancelAdd = React.useCallback(() => {
+    addCancelled.current = true;
+    setAdding(false);
+    setAddNotice('已取消等待。抓取可能仍在后台进行，若成功文章会稍后出现在列表中。');
+  }, []);
+
   const add = React.useCallback(async (raw: string): Promise<boolean> => {
     const url = normalizeInputUrl(raw);
     if (!url) {
       setAddError('请输入完整的 http/https 链接');
       return false;
     }
+    addCancelled.current = false;
     setAdding(true);
     setAddError(null);
+    setAddNotice(null);
     try {
       const detail = await reading.add(url);
+      if (addCancelled.current) return false;
       setArticles((current) => {
         const { content_html: _h, markdown: _m, image_dir: _d, annotations: _a, ...summary } = detail;
         const without = current.filter((article) => article.id !== summary.id);
@@ -97,10 +113,11 @@ export function useReading() {
       });
       return true;
     } catch (caught) {
+      if (addCancelled.current) return false;
       setAddError(caught instanceof Error ? caught.message : String(caught));
       return false;
     } finally {
-      setAdding(false);
+      if (!addCancelled.current) setAdding(false);
     }
   }, []);
 
@@ -208,7 +225,12 @@ export function useReading() {
     setFilter,
     adding,
     addError,
-    clearAddError: () => setAddError(null),
+    addNotice,
+    cancelAdd,
+    clearAddError: () => {
+      setAddError(null);
+      setAddNotice(null);
+    },
     busy,
     open,
     opening,

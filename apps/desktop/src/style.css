@@ -994,9 +994,10 @@
   .reading-add__icon svg { width: 16px; height: 16px; }
   .reading-add input { min-width: 0; height: 36px; padding: 0 6px; color: var(--ink); background: transparent; border: 0; outline: 0; font-size: 14px; }
   .reading-add input::placeholder { color: var(--ink-3); }
-  .reading-add > button { height: 36px; min-width: 72px; padding: 0 16px; color: var(--primary-ink); background: var(--primary-fill); border: 0; border-radius: var(--radius-control); font-size: 13.5px; font-weight: 500; transition: background 0.3s var(--ease-out); }
-  .reading-add > button:hover:not(:disabled) { background: var(--primary-fill-hover); }
-  .reading-add > button:disabled { color: var(--ink-3); background: var(--panel-2); }
+  .reading-add > button, .reading-add__actions > button { height: 36px; min-width: 72px; padding: 0 16px; color: var(--primary-ink); background: var(--primary-fill); border: 0; border-radius: var(--radius-control); font-size: 13.5px; font-weight: 500; transition: background 0.3s var(--ease-out); white-space: nowrap; }
+  .reading-add > button:hover:not(:disabled), .reading-add__actions > button:hover:not(:disabled) { background: var(--primary-fill-hover); }
+  .reading-add > button:disabled, .reading-add__actions > button:disabled { color: var(--ink-3); background: var(--panel-2); }
+  .reading-add__actions { display: flex; align-items: center; gap: 6px; }
   .reading-add__browser { color: var(--accent) !important; background: var(--accent-wash) !important; border: 1px solid var(--accent) !important; min-width: 104px !important; }
   .reading-add__error, .reading-add__status { grid-column: 2 / -1; padding: 4px 6px 2px; font-size: 12px; }
   .reading-add__error { color: var(--danger); }
@@ -1008,6 +1009,7 @@
   .reading-preview__copy strong { overflow: hidden; color: var(--ink); font-size: 13.5px; font-weight: 500; text-overflow: ellipsis; white-space: nowrap; }
   .reading-preview__copy span { color: var(--ink-3); font-size: 12px; }
   .reading-preview__spinner { width: 18px; height: 18px; border: 3px solid var(--hairline); border-top-color: var(--accent); border-radius: 50%; animation: reading-spin 0.8s linear infinite; }
+  .reading-preview__tools { display: flex; align-items: center; gap: 10px; }
   @keyframes reading-spin { to { transform: rotate(360deg); } }
   .reading-toolbar { display: flex; align-items: center; justify-content: space-between; margin: 0 28px 16px; padding-bottom: 12px; border-bottom: 1px solid var(--hairline-2); }
   .reading-filters { flex-wrap: wrap; }

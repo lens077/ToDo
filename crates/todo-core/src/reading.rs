@@ -552,7 +552,7 @@ fn fetch_page(url: &str) -> Result<FetchedPage> {
         .header("Accept", "text/html,application/xhtml+xml,*/*;q=0.8")
         .header("Accept-Language", "zh-CN,zh;q=0.9,en;q=0.8")
         .send()
-        .map_err(|error| Error::ReadingFetch(classify_fetch_error(error)))?;
+        .map_err(|error| Error::ReadingFetch(fetch_failure_message(url, error)))?;
     let status = response.status();
     if !status.is_success() {
         return Err(Error::ReadingFetch(format!(
@@ -568,7 +568,7 @@ fn fetch_page(url: &str) -> Result<FetchedPage> {
         .and_then(charset_from_content_type);
     let bytes = response
         .bytes()
-        .map_err(|error| Error::ReadingFetch(classify_fetch_error(error)))?;
+        .map_err(|error| Error::ReadingFetch(fetch_failure_message(url, error)))?;
     if bytes.len() > MAX_PAGE_BYTES {
         return Err(Error::ReadingFetch("网页过大，无法保存".into()));
     }
@@ -759,6 +759,18 @@ fn classify_fetch_error(error: reqwest::Error) -> String {
     } else {
         error.to_string()
     }
+}
+
+/// Adds a network-environment hint for sites that usually need a proxy,
+/// instead of leaving the user staring at a bare "抓取超时".
+fn fetch_failure_message(url: &str, error: reqwest::Error) -> String {
+    let message = classify_fetch_error(error);
+    if x_status_id(url).is_some() {
+        return format!(
+            "解析 X（推特）链接失败：{message}。x.com 在部分网络下无法直连，请检查当前网络环境，例如开启全局代理后重试。"
+        );
+    }
+    message
 }
 
 fn charset_from_content_type(value: &str) -> Option<String> {

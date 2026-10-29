@@ -168,7 +168,7 @@ export function ReadingView({ model }: ReadingViewProps) {
           autoComplete="off"
           spellCheck={false}
           name="url"
-          placeholder="粘贴链接，例如微信公众号文章…"
+          placeholder="粘贴链接，支持微信公众号文章、X（推特）链接…"
           aria-label="要添加的链接"
           value={draft}
           disabled={model.adding}
@@ -177,20 +177,34 @@ export function ReadingView({ model }: ReadingViewProps) {
             if (model.addError) model.clearAddError();
           }}
         />
-        <button type="submit" disabled={model.adding || !draft.trim()}>
-          {model.adding ? '抓取中…' : '添加'}
-        </button>
-        <button type="button" className="reading-add__browser" disabled={model.adding} onClick={() => void importCurrentBrowserPage()}>
-          从浏览器保存
-        </button>
+        {model.adding ? (
+          <button type="button" onClick={model.cancelAdd}>
+            取消
+          </button>
+        ) : (
+          <button type="submit" disabled={!draft.trim()}>
+            添加
+          </button>
+        )}
+        <span className="reading-add__actions">
+          <button type="button" className="reading-add__browser" disabled={model.adding} onClick={() => void importCurrentBrowserPage()}>
+            从浏览器保存
+          </button>
+        </span>
         {model.addError && (
           <p className="reading-add__error" role="alert">{model.addError}</p>
+        )}
+        {model.addNotice && (
+          <p className="reading-add__status" role="status">{model.addNotice}</p>
         )}
         {model.adding && (
           <div className="reading-preview reading-preview--loading" role="status">
             <span className="reading-preview__thumb reading-preview__thumb--loading"><Icon name="capture" /></span>
             <span className="reading-preview__copy"><strong>正在抓取正文…</strong><span>标题、正文与图片会保存到本机</span></span>
-            <span className="reading-preview__spinner" aria-hidden="true" />
+            <span className="reading-preview__tools">
+              <button type="button" className="text-action" onClick={model.cancelAdd}>取消等待</button>
+              <span className="reading-preview__spinner" aria-hidden="true" />
+            </span>
           </div>
         )}
       </form>
