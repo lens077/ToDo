@@ -44,6 +44,23 @@ struct Cli {
 }
 
 #[derive(Subcommand)]
+enum ProjectCommand {
+    /// Adoption wizard: scan candidate documents, propose the contract and
+    /// integrations. Without `--yes` this is a dry run.
+    Adopt {
+        /// Project root. Defaults to the current directory.
+        #[arg(long)]
+        root: Option<PathBuf>,
+        /// Apply the planned writes (with backups). Omit to preview only.
+        #[arg(long)]
+        yes: bool,
+        /// Restore the files captured by the most recent adoption backup.
+        #[arg(long, conflicts_with = "yes")]
+        restore_last: bool,
+    },
+}
+
+#[derive(Subcommand)]
 enum ContractCommand {
     /// Validate `.virgo/project.yaml` against the project root (offline, deterministic).
     Check {
@@ -218,6 +235,11 @@ enum Command {
         /// Pass a file path, or `-` to read stdin.
         #[arg(long)]
         review: Option<String>,
+    },
+    /// Project adoption (scan documents, propose the contract).
+    Project {
+        #[command(subcommand)]
+        command: ProjectCommand,
     },
     /// Project Contract operations (`.virgo/project.yaml`).
     Contract {
@@ -590,6 +612,13 @@ fn run(cli: &Cli) -> Result<u8, Error> {
             ContractCommand::Uninstall { root, yes } => {
                 contract_install(cli, root.as_deref(), *yes, true)
             }
+        },
+        Command::Project { command } => match command {
+            ProjectCommand::Adopt {
+                root,
+                yes,
+                restore_last,
+            } => project_adopt(cli, root.as_deref(), *yes, *restore_last),
         },
         Command::Serve {
             port,
@@ -2200,6 +2229,200 @@ fn action_for(file: &str, action: &str) -> ContractInstallAction {
         file: file.to_string(),
         action: action.to_string(),
     }
+}
+
+#[derive(Serialize)]
+struct AdoptData {
+    applied: bool,
+    #[serde(flatten)]
+    plan: todo_core::AdoptPlan,
+    backup_dir: Option<String>,
+}
+
+/// `todo project adopt`: the adoption wizard. Dry run by default; `--yes`
+/// writes the proposed contract and integrations, backing up every file it
+/// replaces under `.virgo/backup/adopt-<ts>/`. A project that already has a
+/// contract only gets the missing integrations (delegated to `contract install`).
+fn project_adopt(
+    cli: &Cli,
+    root: Option<&Path>,
+    yes: bool,
+    restore_last: bool,
+) -> Result<u8, Error> {
+    let root = root.unwrap_or_else(|| Path::new("."));
+    if restore_last {
+        return project_restore_last(cli, root);
+    }
+    if todo_core::load_contract(root)?.is_some() {
+        return contract_install(cli, Some(root), yes, false);
+    }
+    let project_name = root
+        .canonicalize()
+        .ok()
+        .and_then(|path| {
+            path.file_name()
+                .map(|name| name.to_string_lossy().into_owned())
+        })
+        .unwrap_or_else(|| "project".into());
+    let plan = todo_core::plan_adoption(root, &project_name)?;
+    let mut backup_dir: Option<String> = None;
+
+    if yes {
+        let timestamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|elapsed| elapsed.as_secs())
+            .unwrap_or(0);
+        let backup_path = root
+            .join(".virgo/backup")
+            .join(format!("adopt-{timestamp}"));
+        fs::create_dir_all(&backup_path).map_err(|source| todo_io(&backup_path, source))?;
+
+        // Back up every existing file the adoption will replace. The contract
+        // file is new (no contract was found), so only AGENTS.md qualifies.
+        let agent_rel = "AGENTS.md";
+        let agent_path = root.join(agent_rel);
+        if agent_path.exists() {
+            let backup_file = backup_path.join("AGENTS.md");
+            fs::copy(&agent_path, &backup_file).map_err(|source| todo_io(&agent_path, source))?;
+            write_backup_manifest(&backup_path, agent_rel)?;
+        }
+        backup_dir = Some(backup_path.display().to_string());
+
+        // Write the proposed contract.
+        let contract_dir = root.join(".virgo");
+        fs::create_dir_all(&contract_dir).map_err(|source| todo_io(&contract_dir, source))?;
+        todo_core::atomic_write(
+            contract_dir.join("project.yaml"),
+            plan.proposed_contract.as_bytes(),
+        )?;
+
+        // Install the managed block, with the concurrency check between the
+        // read we planned from and the write.
+        let current = if agent_path.exists() {
+            let content =
+                fs::read_to_string(&agent_path).map_err(|source| todo_io(&agent_path, source))?;
+            todo_core::ensure_unmodified(&agent_path, &content)?;
+            Some(content)
+        } else {
+            None
+        };
+        let (updated, _) = todo_core::install_agent_rules(current.as_deref());
+        if current.as_deref() != Some(updated.as_str()) {
+            todo_core::atomic_write(&agent_path, updated.as_bytes())?;
+        }
+
+        // Create the skill file only if the contract references a missing one.
+        let skill_path = root.join(DEFAULT_SKILL_PATH);
+        if !skill_path.exists() {
+            if let Some(parent) = skill_path.parent() {
+                fs::create_dir_all(parent).map_err(|source| todo_io(parent, source))?;
+            }
+            todo_core::atomic_write(&skill_path, SKILL_TEMPLATE.as_bytes())?;
+        }
+    }
+
+    emit(
+        cli,
+        "todo.project-adopt.v1",
+        AdoptData {
+            applied: yes,
+            plan,
+            backup_dir,
+        },
+        |data| {
+            let mut lines = Vec::new();
+            for candidate in &data.plan.candidates {
+                lines.push(format!("{} → {}", candidate.path, candidate.role.as_str()));
+            }
+            for conflict in &data.plan.conflicts {
+                lines.push(format!("conflict: {conflict}"));
+            }
+            for write in &data.plan.writes {
+                lines.push(format!(
+                    "{}: {write}",
+                    if data.applied { "wrote" } else { "would write" }
+                ));
+            }
+            if let Some(backup) = &data.backup_dir {
+                lines.push(format!("backup: {backup}"));
+            }
+            if data.plan.already_adopted {
+                lines.push("already adopted; nothing to write".into());
+            }
+            lines.join("\n")
+        },
+    );
+    Ok(0)
+}
+
+/// Writes `manifest.json` listing the captured files, so restore can undo
+/// exactly this adoption's writes and nothing else.
+fn write_backup_manifest(backup_path: &Path, original_rel: &str) -> Result<(), Error> {
+    let manifest_path = backup_path.join("manifest.json");
+    let mut entries: Vec<serde_json::Value> = Vec::new();
+    if manifest_path.exists() {
+        let existing =
+            fs::read_to_string(&manifest_path).map_err(|source| todo_io(&manifest_path, source))?;
+        entries = serde_json::from_str(&existing).unwrap_or_default();
+    }
+    entries.push(serde_json::json!({ "path": original_rel }));
+    todo_core::atomic_write(
+        &manifest_path,
+        serde_json::to_string_pretty(&entries).unwrap().as_bytes(),
+    )?;
+    Ok(())
+}
+
+/// Restores the files captured by the most recent adoption backup. Only files
+/// listed in that backup's manifest are touched — nothing Virgo did not write.
+fn project_restore_last(cli: &Cli, root: &Path) -> Result<u8, Error> {
+    let backup_root = root.join(".virgo/backup");
+    let mut backups: Vec<PathBuf> = fs::read_dir(&backup_root)
+        .map(|entries| {
+            entries
+                .filter_map(|entry| entry.ok())
+                .map(|entry| entry.path())
+                .filter(|path| path.is_dir() && path.join("manifest.json").exists())
+                .collect()
+        })
+        .unwrap_or_default();
+    backups.sort();
+    let Some(latest) = backups.pop() else {
+        return Err(Error::InvalidConfiguration {
+            path: backup_root,
+            message: "no adoption backup found to restore".into(),
+        });
+    };
+    let manifest_raw = fs::read_to_string(latest.join("manifest.json"))
+        .map_err(|source| todo_io(&latest, source))?;
+    let entries: Vec<serde_json::Value> =
+        serde_json::from_str(&manifest_raw).map_err(|error| Error::InvalidConfiguration {
+            path: latest.join("manifest.json"),
+            message: error.to_string(),
+        })?;
+    let mut restored: Vec<String> = Vec::new();
+    for entry in entries {
+        let Some(rel) = entry["path"].as_str() else {
+            continue;
+        };
+        let backup_file = latest.join(rel);
+        let target = root.join(rel);
+        fs::copy(&backup_file, &target).map_err(|source| todo_io(&target, source))?;
+        restored.push(rel.to_string());
+    }
+    emit(
+        cli,
+        "todo.project-adopt.v1",
+        serde_json::json!({ "applied": true, "restored": restored, "backup_dir": latest.display().to_string() }),
+        |data| {
+            format!(
+                "restored {} file(s) from {}",
+                data["restored"].as_array().map(Vec::len).unwrap_or(0),
+                data["backup_dir"].as_str().unwrap_or_default()
+            )
+        },
+    );
+    Ok(0)
 }
 
 /// `todo contract check`: runs the deterministic Project Contract validator and

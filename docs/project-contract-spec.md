@@ -80,5 +80,5 @@ todo contract check --json     # schema "todo.contract.v1"
 ## 与 spec 草案的差异记录
 
 1. 退出码采用仓库惯例 0/1/6/7，而非草案的 0-4。
-2. 已落地：阶段 0-1（contract + 校验器 + CLI）、阶段 3（`todo contract install/uninstall` 幂等安装器，管理区块 + Skill 文件，未加 `--yes` 时为 dry-run 预览）、阶段 4（`scripts/verify-quick.sh` 与 `.github/workflows/rust-check.yml` 均执行 `contract check`，本地 Hook 被绕过时 CI 独立复检）。未实现：阶段 2 完整接管向导（扫描/Diff/备份/恢复）、多宿主 Agent 适配、桌面 findings 视图（阶段 5）。
+2. 已落地：阶段 0-1（contract + 校验器 + CLI）、阶段 2（`todo project adopt` 接管向导：候选扫描、角色映射与冲突记录、生成的 contract 直接通过校验器、dry-run 默认、`--yes` 写入前备份到 `.virgo/backup/adopt-<ts>/` 并写 manifest、并发修改检测退出码 5、`--restore-last` 只恢复本次备份清单内文件；已接管项目委托给 `contract install` 只补缺失集成）、阶段 3（`todo contract install/uninstall` 幂等安装器，管理区块 + Skill 文件，未加 `--yes` 时为 dry-run 预览）、阶段 4（`scripts/verify-quick.sh` 与 `.github/workflows/rust-check.yml` 均执行 `contract check`，本地 Hook 被绕过时 CI 独立复检）。未实现：多宿主 Agent 适配、桌面 findings 视图（阶段 5）。
 3. 阶段 0 审计报告：`docs/project-contract-audit.md`。

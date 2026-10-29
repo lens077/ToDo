@@ -1,6 +1,7 @@
 //! Lossless parser and surgical writer for TODO.md format v1.
 //! Parsed values are a view over the original bytes; writes never serialize Markdown.
 
+mod adoption;
 mod ai;
 mod column_setup;
 mod contract;
@@ -21,6 +22,7 @@ mod reconcile;
 mod scan;
 mod write;
 
+pub use adoption::{ensure_unmodified, plan_adoption, AdoptPlan};
 pub use ai::*;
 pub use column_setup::{
     ColumnHeadingOption, ColumnHeadingSelection, ColumnSetupOptions, ColumnSetupPreview,

@@ -946,3 +946,97 @@ fn contract_uninstall_removes_only_the_block() {
     let again = todo(dir.path(), &["contract", "uninstall", "--yes"]);
     assert!(again.status.success());
 }
+
+#[test]
+fn project_adopt_dry_run_writes_nothing() {
+    let dir = tempdir().unwrap();
+    fs::write(dir.path().join("TODO.md"), "x").unwrap();
+    let output = todo(dir.path(), &["project", "adopt", "--json"]);
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let json: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(json["data"]["applied"], false);
+    assert_eq!(json["data"]["writes"][0], ".virgo/project.yaml");
+    assert!(
+        !dir.path().join(".virgo").exists(),
+        "dry run must not write"
+    );
+}
+
+#[test]
+fn project_adopt_yes_creates_contract_that_passes_check_and_is_repeatable() {
+    let dir = tempdir().unwrap();
+    fs::write(dir.path().join("TODO.md"), "x").unwrap();
+    fs::write(dir.path().join("CONTEXT.md"), "x").unwrap();
+    let adopt = todo(dir.path(), &["project", "adopt", "--yes"]);
+    assert!(
+        adopt.status.success(),
+        "{}",
+        String::from_utf8_lossy(&adopt.stderr)
+    );
+    // The generated contract must pass the deterministic checker.
+    let check = todo(dir.path(), &["contract", "check", "--json"]);
+    assert!(
+        check.status.success(),
+        "generated contract failed check: {}",
+        String::from_utf8_lossy(&check.stdout)
+    );
+    // Integrations were installed alongside the contract.
+    let agents = fs::read_to_string(dir.path().join("AGENTS.md")).unwrap();
+    assert_eq!(agents.matches("BEGIN VIRGO MANAGED RULES").count(), 1);
+    assert!(dir
+        .path()
+        .join(".agents/skills/virgo-project-memory/SKILL.md")
+        .exists());
+    // Re-running adoption on an adopted project is a no-op, not a duplicate.
+    let again = todo(dir.path(), &["project", "adopt", "--yes"]);
+    assert!(again.status.success());
+    assert_eq!(
+        fs::read_to_string(dir.path().join("AGENTS.md")).unwrap(),
+        agents,
+        "repeat adoption must not append another block"
+    );
+}
+
+#[test]
+fn project_adopt_backs_up_and_restore_last_undo_adoption_writes() {
+    let dir = tempdir().unwrap();
+    fs::write(dir.path().join("TODO.md"), "x").unwrap();
+    fs::write(dir.path().join("AGENTS.md"), "# my rules\n").unwrap();
+    let adopt = todo(dir.path(), &["project", "adopt", "--yes", "--json"]);
+    assert!(
+        adopt.status.success(),
+        "{}",
+        String::from_utf8_lossy(&adopt.stderr)
+    );
+    // Backup captured the pre-adoption AGENTS.md.
+    let backup_json: serde_json::Value = serde_json::from_slice(&adopt.stdout).unwrap();
+    let backup_dir = backup_json["data"]["backup_dir"].as_str().unwrap();
+    assert_eq!(
+        fs::read_to_string(dir.path().join(backup_dir).join("AGENTS.md")).unwrap(),
+        "# my rules\n"
+    );
+    let restore = todo(dir.path(), &["project", "adopt", "--restore-last"]);
+    assert!(
+        restore.status.success(),
+        "{}",
+        String::from_utf8_lossy(&restore.stderr)
+    );
+    // Restore undoes exactly this adoption's write: the managed block is gone,
+    // the user content is back.
+    assert_eq!(
+        fs::read_to_string(dir.path().join("AGENTS.md")).unwrap(),
+        "# my rules\n"
+    );
+}
+
+#[test]
+fn project_restore_last_without_backup_fails_cleanly() {
+    let dir = tempdir().unwrap();
+    let output = todo(dir.path(), &["project", "adopt", "--restore-last"]);
+    assert_eq!(output.status.code(), Some(1));
+    assert!(!String::from_utf8_lossy(&output.stderr).contains("panic"));
+}
