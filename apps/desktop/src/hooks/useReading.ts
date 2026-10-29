@@ -11,6 +11,22 @@ import {
   type ReadingFilter,
 } from '../lib/reading';
 
+export interface BatchState {
+  running: boolean;
+  total: number;
+  done: number;
+  ok: number;
+  failed: number;
+  current: string | null;
+}
+
+const BATCH_IDLE: BatchState = { running: false, total: 0, done: 0, ok: 0, failed: 0, current: null };
+
+export interface BatchError {
+  url: string;
+  message: string;
+}
+
 /**
  * The library as the app sees it: one list read on demand, the article the
  * reader is showing, and the writes that keep both in step. Progress writes
@@ -25,10 +41,13 @@ export function useReading() {
   const [adding, setAdding] = React.useState(false);
   const [addError, setAddError] = React.useState<string | null>(null);
   const [addNotice, setAddNotice] = React.useState<string | null>(null);
+  const [batch, setBatch] = React.useState<BatchState>(BATCH_IDLE);
+  const [batchErrors, setBatchErrors] = React.useState<BatchError[]>([]);
   // The Rust side fetches on a blocking thread, so 取消 stops waiting rather
   // than the fetch itself: a late result is dropped and the article, if it
   // did land, shows up on the next refresh.
   const addCancelled = React.useRef(false);
+  const batchCancelled = React.useRef(false);
   const [busy, setBusy] = React.useState<Set<string>>(() => new Set());
   const [open, setOpen] = React.useState<ReadingArticleDetail | null>(null);
   const [opening, setOpening] = React.useState<string | null>(null);
@@ -91,6 +110,41 @@ export function useReading() {
     addCancelled.current = true;
     setAdding(false);
     setAddNotice('已取消等待。抓取可能仍在后台进行，若成功文章会稍后出现在列表中。');
+  }, []);
+
+  const cancelBatch = React.useCallback(() => {
+    batchCancelled.current = true;
+  }, []);
+
+  const addBatch = React.useCallback(async (urls: string[]): Promise<void> => {
+    if (urls.length === 0) return;
+    batchCancelled.current = false;
+    setBatchErrors([]);
+    setBatch({ running: true, total: urls.length, done: 0, ok: 0, failed: 0, current: urls[0] });
+    let ok = 0;
+    let failed = 0;
+    let done = 0;
+    const failures: BatchError[] = [];
+    for (const url of urls) {
+      if (batchCancelled.current) break;
+      setBatch((current) => ({ ...current, current: url, done, ok, failed, running: true }));
+      try {
+        const detail = await reading.add(url);
+        if (batchCancelled.current) break;
+        setArticles((current) => {
+          const { content_html: _h, markdown: _m, image_dir: _d, annotations: _a, ...summary } = detail;
+          return [summary, ...current.filter((article) => article.id !== summary.id)];
+        });
+        ok += 1;
+      } catch (caught) {
+        failures.push({ url, message: caught instanceof Error ? caught.message : String(caught) });
+        setBatchErrors([...failures]);
+        failed += 1;
+      }
+      done += 1;
+      setBatch((current) => ({ ...current, done, ok, failed }));
+    }
+    setBatch((current) => ({ ...current, running: false, current: null, done, ok, failed }));
   }, []);
 
   const add = React.useCallback(async (raw: string): Promise<boolean> => {
@@ -237,6 +291,10 @@ export function useReading() {
     refresh,
     add,
     importBrowserPage,
+    addBatch,
+    cancelBatch,
+    batch,
+    batchErrors,
     openArticle,
     closeArticle,
     saveProgress,

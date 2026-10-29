@@ -2011,4 +2011,14 @@ mod live_tests {
                 .unwrap_or_else(|_| "https://mp.weixin.qq.com/s/Vo0hZqbCzsKdH3RgLB4R1A".into()),
         );
     }
+
+    /// Ordinary web articles go straight through readability; this probe
+    /// guards the batch-import promise that "simple sites just work".
+    #[test]
+    #[ignore]
+    fn live_generic_site() {
+        probe(&std::env::var("READING_URL").unwrap_or_else(|_| {
+            "https://blog.rust-lang.org/2026/10/26/how-to-fund-rust-contributors/".into()
+        }));
+    }
 }

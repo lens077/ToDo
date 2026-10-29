@@ -2,11 +2,14 @@ import * as React from 'react';
 import type { ReadingModel } from '../hooks/useReading';
 import { absoluteTime, relativeTime } from '../lib/ai';
 import {
+  BATCH_SCOPE_LABEL,
+  extractBatchUrls,
   READING_FILTER_LABEL,
   countByState,
   coverSource,
   hostOf,
   readingState,
+  type BatchScope,
   type ReadingArticle,
   type ReadingFilter,
 } from '../lib/reading';
@@ -117,10 +120,14 @@ function ReadingCard({ article, busy, opening, onOpen, onSetRead, onRemove }: Re
 export function ReadingView({ model }: ReadingViewProps) {
   const [draft, setDraft] = React.useState('');
   const inputRef = React.useRef<HTMLInputElement>(null);
+  const [batchOpen, setBatchOpen] = React.useState(false);
+  const [batchScope, setBatchScope] = React.useState<BatchScope>('all');
+  const [batchDraft, setBatchDraft] = React.useState('');
   const counts = React.useMemo(() => countByState(model.articles), [model.articles]);
+  const batchUrls = React.useMemo(() => extractBatchUrls(batchDraft, batchScope), [batchDraft, batchScope]);
 
   const submit = async () => {
-    if (model.adding || !draft.trim()) return;
+    if (model.adding || model.batch.running || !draft.trim()) return;
     if (await model.add(draft)) {
       setDraft('');
       inputRef.current?.focus();
@@ -187,8 +194,11 @@ export function ReadingView({ model }: ReadingViewProps) {
           </button>
         )}
         <span className="reading-add__actions">
-          <button type="button" className="reading-add__browser" disabled={model.adding} onClick={() => void importCurrentBrowserPage()}>
+          <button type="button" className="reading-add__browser" disabled={model.adding || model.batch.running} onClick={() => void importCurrentBrowserPage()}>
             从浏览器保存
+          </button>
+          <button type="button" className="reading-add__browser" disabled={model.adding || model.batch.running} onClick={() => setBatchOpen(true)}>
+            批量导入
           </button>
         </span>
         {model.addError && (
@@ -208,6 +218,74 @@ export function ReadingView({ model }: ReadingViewProps) {
           </div>
         )}
       </form>
+
+      {batchOpen && (
+        <div className="reading-batch" aria-label="批量导入">
+          <textarea
+            value={batchDraft}
+            onChange={(event) => setBatchDraft(event.target.value)}
+            placeholder="粘贴包含链接的内容，例如聊天记录或笔记。链接之外的文字会被忽略。"
+            aria-label="批量导入内容"
+            rows={5}
+            disabled={model.batch.running}
+          />
+          <div className="reading-batch__row" role="group" aria-label="导入范围">
+            {(Object.keys(BATCH_SCOPE_LABEL) as BatchScope[]).map((scope) => (
+              <button
+                type="button"
+                key={scope}
+                className={`due-summary__chip${batchScope === scope ? ' is-active' : ''}`}
+                aria-pressed={batchScope === scope}
+                disabled={model.batch.running}
+                onClick={() => setBatchScope(scope)}
+              >
+                <span>{BATCH_SCOPE_LABEL[scope]}</span>
+                <strong>{extractBatchUrls(batchDraft, scope).length}</strong>
+              </button>
+            ))}
+            <span className="reading-batch__hint">全部类型同时支持普通网页文章</span>
+            <span className="reading-batch__spacer" />
+            {model.batch.running ? (
+              <button type="button" onClick={model.cancelBatch}>
+                取消
+              </button>
+            ) : (
+              <>
+                <button
+                  type="button"
+                  disabled={batchUrls.length === 0}
+                  onClick={() => void model.addBatch(batchUrls)}
+                >
+                  开始导入
+                </button>
+                <button type="button" className="reading-add__browser" onClick={() => setBatchOpen(false)}>
+                  关闭
+                </button>
+              </>
+            )}
+          </div>
+          {model.batch.running && (
+            <p className="reading-add__status" role="status">
+              正在导入 {model.batch.done + 1}/{model.batch.total} · 成功 {model.batch.ok} · 失败 {model.batch.failed}
+              {model.batch.current && <span title={model.batch.current}>（{hostOf(model.batch.current)}）</span>}
+            </p>
+          )}
+          {!model.batch.running && model.batch.total > 0 && (
+            <p className="reading-add__status" role="status">
+              {model.batch.done < model.batch.total ? '已取消。' : '导入完成。'}成功 {model.batch.ok} · 失败 {model.batch.failed}
+            </p>
+          )}
+          {model.batchErrors.length > 0 && (
+            <ul className="reading-batch__errors" role="list">
+              {model.batchErrors.slice(-5).map((failure) => (
+                <li key={failure.url} title={failure.url}>
+                  <span>{failure.url}</span> — {failure.message}
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
 
       <div className="reading-toolbar">
         <div className="due-summary reading-filters" role="group" aria-label="按阅读状态筛选">

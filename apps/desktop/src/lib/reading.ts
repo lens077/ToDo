@@ -122,6 +122,75 @@ export function normalizeInputUrl(raw: string): string | null {
   }
 }
 
+export type BatchScope = 'all' | 'wechat' | 'x';
+
+export const BATCH_SCOPE_LABEL: Record<BatchScope, string> = {
+  all: '全部类型',
+  wechat: '微信文章',
+  x: 'X（推特）',
+};
+
+function hostOf_(url: string): string {
+  try {
+    return new URL(url).hostname.replace(/^www\./, '');
+  } catch {
+    return '';
+  }
+}
+
+export function isWechatUrl(url: string): boolean {
+  return hostOf_(url) === 'mp.weixin.qq.com';
+}
+
+export function isXStatusUrl(url: string): boolean {
+  try {
+    const host = hostOf_(url);
+    return (
+      (host === 'x.com' || host === 'twitter.com' || host === 'mobile.x.com' || host === 'mobile.twitter.com') &&
+      /\/status(es)?\/\d+/.test(new URL(url).pathname)
+    );
+  } catch {
+    return false;
+  }
+}
+
+const URL_PATTERN = /https?:\/\/[^\s<>"'（）【】《》「」，。；：？！、]+/gi;
+// Links pasted without a scheme, but only for the hosts we special-case.
+const BARE_X_WECHAT_PATTERN =
+  /(?:^|[\s（(<【「"',，;；])((?:x\.com|twitter\.com|mobile\.twitter\.com|mobile\.x\.com|mp\.weixin\.qq\.com)\/[^\s<>"'（）【】《》「」，。；：？！、]+)/gi;
+
+function trimUrlEdge(url: string): string {
+  return url.replace(/[)）\]】」』.,;；:：!！?？'""、，。]+$/u, '');
+}
+
+/**
+ * Pulls every supported link out of free-form pasted text: anything the
+ * extractor cannot parse stays behind, so users can paste whole notes or
+ * chat logs. The scope narrows the result to one source type.
+ */
+export function extractBatchUrls(text: string, scope: BatchScope): string[] {
+  const candidates = new Set<string>();
+  for (const match of text.matchAll(URL_PATTERN)) candidates.add(trimUrlEdge(match[0]));
+  for (const match of text.matchAll(BARE_X_WECHAT_PATTERN)) candidates.add(trimUrlEdge(match[1]));
+  const urls: string[] = [];
+  const seen = new Set<string>();
+  for (const candidate of candidates) {
+    const url = normalizeInputUrl(candidate);
+    if (!url || seen.has(url)) continue;
+    // A bare x.com profile page cannot be turned into an article; only
+    // status links are parseable there.
+    if (hostOf_(url) === 'x.com' || hostOf_(url) === 'twitter.com') {
+      if (!isXStatusUrl(url)) continue;
+    }
+    const matchesScope =
+      scope === 'all' || (scope === 'wechat' ? isWechatUrl(url) : isXStatusUrl(url));
+    if (!matchesScope) continue;
+    seen.add(url);
+    urls.push(url);
+  }
+  return urls;
+}
+
 /**
  * Rewrites the stored `images/<file>` references to URLs the webview may
  * load. In the Tauri shell that is the asset protocol scoped to
