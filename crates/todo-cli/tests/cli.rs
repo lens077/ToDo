@@ -841,3 +841,108 @@ fn contract_check_supports_explicit_root_outside_cwd() {
         String::from_utf8_lossy(&output.stderr)
     );
 }
+
+#[test]
+fn contract_install_creates_files_and_repeated_runs_are_idempotent() {
+    let dir = tempdir().unwrap();
+    fs::create_dir_all(dir.path().join(".virgo")).unwrap();
+    fs::write(
+        dir.path().join(".virgo/project.yaml"),
+        "schema_version: 1\nproject:\n  id: p\n  name: P\npolicy:\n  agent_instructions: AGENTS.md\n",
+    )
+    .unwrap();
+    let first = todo(dir.path(), &["contract", "install", "--yes"]);
+    assert!(
+        first.status.success(),
+        "{}",
+        String::from_utf8_lossy(&first.stderr)
+    );
+    let agents = fs::read_to_string(dir.path().join("AGENTS.md")).unwrap();
+    assert_eq!(agents.matches("BEGIN VIRGO MANAGED RULES").count(), 1);
+    let skill = dir
+        .path()
+        .join(".agents/skills/virgo-project-memory/SKILL.md");
+    assert!(skill.exists());
+    let second = todo(dir.path(), &["contract", "install", "--yes"]);
+    assert!(second.status.success());
+    assert_eq!(
+        fs::read_to_string(dir.path().join("AGENTS.md")).unwrap(),
+        agents,
+        "second install must not append another block"
+    );
+}
+
+#[test]
+fn contract_install_keeps_existing_user_content_and_skill_file() {
+    let dir = tempdir().unwrap();
+    fs::create_dir_all(dir.path().join(".virgo")).unwrap();
+    fs::write(
+        dir.path().join(".virgo/project.yaml"),
+        "schema_version: 1\nproject:\n  id: p\n  name: P\n",
+    )
+    .unwrap();
+    fs::write(
+        dir.path().join("AGENTS.md"),
+        "# My rules\n\n1. be careful\n",
+    )
+    .unwrap();
+    let skill = dir
+        .path()
+        .join(".agents/skills/virgo-project-memory/SKILL.md");
+    fs::create_dir_all(skill.parent().unwrap()).unwrap();
+    fs::write(&skill, "user-owned skill\n").unwrap();
+    let output = todo(dir.path(), &["contract", "install", "--yes"]);
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let agents = fs::read_to_string(dir.path().join("AGENTS.md")).unwrap();
+    assert!(agents.starts_with("# My rules\n\n1. be careful\n"));
+    assert_eq!(agents.matches("BEGIN VIRGO MANAGED RULES").count(), 1);
+    assert_eq!(fs::read_to_string(&skill).unwrap(), "user-owned skill\n");
+}
+
+#[test]
+fn contract_install_without_yes_only_previews() {
+    let dir = tempdir().unwrap();
+    fs::create_dir_all(dir.path().join(".virgo")).unwrap();
+    fs::write(
+        dir.path().join(".virgo/project.yaml"),
+        "schema_version: 1\nproject:\n  id: p\n  name: P\n",
+    )
+    .unwrap();
+    let output = todo(dir.path(), &["contract", "install", "--json"]);
+    assert!(output.status.success());
+    assert!(
+        !dir.path().join("AGENTS.md").exists(),
+        "dry run must not write"
+    );
+    let json: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(json["data"]["applied"], false);
+    assert_eq!(json["data"]["actions"][0]["action"], "would-create");
+}
+
+#[test]
+fn contract_uninstall_removes_only_the_block() {
+    let dir = tempdir().unwrap();
+    fs::write(
+        dir.path().join("AGENTS.md"),
+        "# My rules\n\n1. be careful\n",
+    )
+    .unwrap();
+    let install = todo(dir.path(), &["contract", "install", "--yes"]);
+    assert!(install.status.success());
+    let uninstall = todo(dir.path(), &["contract", "uninstall", "--yes"]);
+    assert!(
+        uninstall.status.success(),
+        "{}",
+        String::from_utf8_lossy(&uninstall.stderr)
+    );
+    assert_eq!(
+        fs::read_to_string(dir.path().join("AGENTS.md")).unwrap(),
+        "# My rules\n\n1. be careful\n"
+    );
+    let again = todo(dir.path(), &["contract", "uninstall", "--yes"]);
+    assert!(again.status.success());
+}

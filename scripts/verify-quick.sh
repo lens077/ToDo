@@ -29,7 +29,9 @@ start=$SECONDS
 run_rust() {
   cargo fmt --all -- --check &&
   cargo clippy --workspace --all-targets --locked -- -D warnings &&
-  cargo test --workspace --locked
+  cargo test --workspace --locked &&
+  # Project Contract 门禁：确定性校验，无发现才放行（阻断性发现退出码 6）。
+  cargo run --quiet --locked -p todo-cli -- contract check --root .
 }
 
 run_web() {

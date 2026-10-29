@@ -20,6 +20,109 @@ pub const CONTRACT_SCHEMA_VERSION: u32 = 1;
 pub const CONTRACT_DIR: &str = ".virgo";
 pub const CONTRACT_FILE: &str = "project.yaml";
 
+pub const MANAGED_BEGIN: &str = "<!-- BEGIN VIRGO MANAGED RULES -->";
+pub const MANAGED_END: &str = "<!-- END VIRGO MANAGED RULES -->";
+
+/// The canonical Virgo agent-instructions block. Installer updates converge on
+/// this text; anything between the markers is replaced wholesale.
+pub const MANAGED_RULES: &str = "\
+<!-- BEGIN VIRGO MANAGED RULES -->
+## Virgo Project Memory
+
+Before work:
+1. Read `.virgo/project.yaml`.
+2. Read the mapped source documents.
+3. Identify task scope and acceptance criteria.
+
+Before handoff:
+1. Update affected source documents.
+2. Record actual verification results.
+3. List unresolved issues.
+4. Run `todo contract check`.
+5. Report changed files and next steps.
+
+Review diffs before writing managed files.
+Keep user-owned instructions intact.
+<!-- END VIRGO MANAGED RULES -->";
+
+/// What an install run did to a file. `Unchanged` means the file already
+/// matched the canonical output — a second install must not append anything.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum InstallOutcome {
+    /// File did not exist; the initial content was generated.
+    Created,
+    /// File existed and was rewritten (block added or block text updated).
+    Updated,
+    /// File already matched; nothing was written.
+    Unchanged,
+}
+
+/// Idempotently installs the managed rules block into `content` (the current
+/// file body, `None` when the file does not exist). User-owned text outside
+/// the markers is preserved byte-for-byte.
+pub fn install_agent_rules(content: Option<&str>) -> (String, InstallOutcome) {
+    match content {
+        None => (
+            format!("# AGENTS.md\n\n{MANAGED_RULES}\n"),
+            InstallOutcome::Created,
+        ),
+        Some(existing) => {
+            if let Some(begin) = existing.find(MANAGED_BEGIN) {
+                let end = existing[begin..]
+                    .find(MANAGED_END)
+                    .map(|end| begin + end + MANAGED_END.len());
+                let Some(end) = end else {
+                    // Unterminated block: treat the whole tail as the block and
+                    // replace it, keeping everything before the opening marker.
+                    let replaced = format!("{}{}", &existing[..begin], MANAGED_RULES);
+                    return (replaced, InstallOutcome::Updated);
+                };
+                let updated = format!(
+                    "{}{}{}",
+                    &existing[..begin],
+                    MANAGED_RULES,
+                    &existing[end..]
+                );
+                if updated == existing {
+                    (existing.to_string(), InstallOutcome::Unchanged)
+                } else {
+                    (updated, InstallOutcome::Updated)
+                }
+            } else {
+                let mut out = existing.to_string();
+                if !out.is_empty() && !out.ends_with("\n\n") {
+                    if out.ends_with('\n') {
+                        out.push('\n');
+                    } else {
+                        out.push_str("\n\n");
+                    }
+                }
+                out.push_str(MANAGED_RULES);
+                out.push('\n');
+                (out, InstallOutcome::Updated)
+            }
+        }
+    }
+}
+
+/// Removes the managed rules block, returning `None` when there is nothing to
+/// remove. Only bytes between the markers (inclusive) are deleted; trailing
+/// blank lines left behind are collapsed.
+pub fn uninstall_agent_rules(content: &str) -> Option<String> {
+    let begin = content.find(MANAGED_BEGIN)?;
+    let end = content[begin..]
+        .find(MANAGED_END)
+        .map(|end| begin + end + MANAGED_END.len())?;
+    let mut out = String::new();
+    out.push_str(&content[..begin]);
+    out.push_str(&content[end..]);
+    while out.ends_with("\n\n") {
+        out.pop();
+    }
+    Some(out)
+}
+
 /// Roles a document can play. Unknown roles are a schema error, so the set of
 /// roles is closed and stable across versions.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
@@ -377,6 +480,12 @@ fn required_roles(checks: &Checks) -> Vec<DocumentRole> {
     roles
 }
 
+/// Public boolean form of the path-safety rule, for installers that validate
+/// contract-referenced paths before writing.
+pub fn path_is_safe_relative(value: &str) -> bool {
+    safe_relative_path(value).is_ok()
+}
+
 enum PathSafetyError {
     Empty,
     Absolute,
@@ -562,6 +671,65 @@ mod tests {
         ));
         let report = check_contract(None, Some(&contract), dir.path());
         assert!(report.findings.iter().any(|f| f.rule == "VPC007"));
+    }
+
+    #[test]
+    fn install_creates_initial_file_with_one_block() {
+        let (content, outcome) = install_agent_rules(None);
+        assert_eq!(outcome, InstallOutcome::Created);
+        assert_eq!(content.matches(MANAGED_BEGIN).count(), 1);
+        assert!(content.starts_with("# AGENTS.md"));
+    }
+
+    #[test]
+    fn repeated_install_is_idempotent() {
+        let (first, outcome1) = install_agent_rules(None);
+        let (second, outcome2) = install_agent_rules(Some(&first));
+        assert_eq!(outcome1, InstallOutcome::Created);
+        assert_eq!(outcome2, InstallOutcome::Unchanged);
+        assert_eq!(first, second);
+    }
+
+    #[test]
+    fn install_preserves_user_content_and_appends_block() {
+        let user = "# My rules\n\n1. Keep it simple.\n";
+        let (installed, outcome) = install_agent_rules(Some(user));
+        assert_eq!(outcome, InstallOutcome::Updated);
+        assert!(installed.starts_with(user));
+        assert_eq!(installed.matches(MANAGED_BEGIN).count(), 1);
+        // Idempotent on the second run.
+        let (again, outcome2) = install_agent_rules(Some(&installed));
+        assert_eq!(outcome2, InstallOutcome::Unchanged);
+        assert_eq!(again, installed);
+    }
+
+    #[test]
+    fn install_replaces_stale_block_in_place() {
+        let stale = format!("{MANAGED_BEGIN}\nstale content\n{MANAGED_END}\n\nuser text\n");
+        let (updated, outcome) = install_agent_rules(Some(&stale));
+        assert_eq!(outcome, InstallOutcome::Updated);
+        assert!(updated.contains("user text"));
+        assert!(!updated.contains("stale content"));
+        assert_eq!(updated.matches(MANAGED_BEGIN).count(), 1);
+    }
+
+    #[test]
+    fn install_recovers_from_unterminated_block() {
+        let broken = "user text\n\n<!-- BEGIN VIRGO MANAGED RULES -->\nno end marker\n";
+        let (updated, outcome) = install_agent_rules(Some(broken));
+        assert_eq!(outcome, InstallOutcome::Updated);
+        assert!(updated.contains(MANAGED_END));
+        assert!(!updated.contains("no end marker"));
+        assert!(updated.starts_with("user text"));
+    }
+
+    #[test]
+    fn uninstall_removes_only_the_block() {
+        let user = "# My rules\n";
+        let (installed, _) = install_agent_rules(Some(user));
+        let removed = uninstall_agent_rules(&installed).expect("block present");
+        assert_eq!(removed, user);
+        assert!(uninstall_agent_rules(user).is_none());
     }
 
     #[test]

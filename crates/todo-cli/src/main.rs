@@ -51,6 +51,25 @@ enum ContractCommand {
         #[arg(long)]
         root: Option<PathBuf>,
     },
+    /// Install the managed agent-instructions block and the project memory skill.
+    /// Without `--yes` this is a dry run: it previews the planned writes.
+    Install {
+        /// Project root. Defaults to the current directory.
+        #[arg(long)]
+        root: Option<PathBuf>,
+        /// Apply the planned writes. Omit to preview only.
+        #[arg(long)]
+        yes: bool,
+    },
+    /// Remove the managed agent-instructions block. User-owned content stays.
+    Uninstall {
+        /// Project root. Defaults to the current directory.
+        #[arg(long)]
+        root: Option<PathBuf>,
+        /// Apply the planned writes. Omit to preview only.
+        #[arg(long)]
+        yes: bool,
+    },
 }
 
 #[derive(Subcommand)]
@@ -565,6 +584,12 @@ fn run(cli: &Cli) -> Result<u8, Error> {
         Command::Align { review } => align(cli, &path, review.as_deref()),
         Command::Contract { command } => match command {
             ContractCommand::Check { root } => contract_check(cli, root.as_deref()),
+            ContractCommand::Install { root, yes } => {
+                contract_install(cli, root.as_deref(), *yes, false)
+            }
+            ContractCommand::Uninstall { root, yes } => {
+                contract_install(cli, root.as_deref(), *yes, true)
+            }
         },
         Command::Serve {
             port,
@@ -2018,6 +2043,162 @@ fn push_archive_block(output: &mut String, raw: &str, newline: &str) {
     output.push_str(raw);
     if !output.ends_with('\n') {
         output.push_str(newline);
+    }
+}
+
+/// Default agent-instructions file when the contract does not name one.
+const DEFAULT_AGENT_FILE: &str = "AGENTS.md";
+/// Default skill location when the contract does not name one. Matches the
+/// spec's `skills/virgo-project-memory` layout inside the project.
+const DEFAULT_SKILL_PATH: &str = ".agents/skills/virgo-project-memory/SKILL.md";
+
+const SKILL_TEMPLATE: &str = "---\n\
+name: virgo-project-memory\n\
+description: 读取并维护 Sumery Virgo 的 Project Contract：工作前读取 .virgo/project.yaml 与映射文档，交接前更新受影响文档并运行 todo contract check。\n\
+---\n\n\
+<!-- BEGIN VIRGO MANAGED RULES -->\n\
+# Virgo Project Memory\n\n\
+Before work:\n\
+1. Read `.virgo/project.yaml`.\n\
+2. Read the mapped source documents (tasks, progress, decisions, agent instructions).\n\
+3. Identify task scope and acceptance criteria.\n\n\
+Before handoff:\n\
+1. Update affected source documents.\n\
+2. Record actual verification results (command + output); never claim success without them.\n\
+3. List unresolved issues and next steps.\n\
+4. Run `todo contract check` (exit 6 means blocking findings).\n\
+5. Report changed files.\n\n\
+Review diffs before writing managed files. Keep user-owned instructions intact.\n\
+<!-- END VIRGO MANAGED RULES -->\n";
+
+#[derive(Serialize)]
+struct ContractInstallAction {
+    file: String,
+    action: String,
+}
+
+#[derive(Serialize)]
+struct ContractInstallData {
+    applied: bool,
+    actions: Vec<ContractInstallAction>,
+}
+
+/// `todo contract install` / `uninstall`: idempotently manage the Virgo agent
+/// rules block and the project memory skill. Without `--yes` it only previews.
+fn contract_install(
+    cli: &Cli,
+    root: Option<&Path>,
+    yes: bool,
+    uninstall: bool,
+) -> Result<u8, Error> {
+    let root = root.unwrap_or_else(|| Path::new("."));
+    let contract = todo_core::load_contract(root)?.map(|(_, contract)| contract);
+    let agent_rel = contract
+        .as_ref()
+        .and_then(|c| c.policy.agent_instructions.clone())
+        .unwrap_or_else(|| DEFAULT_AGENT_FILE.into());
+    let skill_rel = contract
+        .as_ref()
+        .and_then(|c| c.policy.skill.clone())
+        .unwrap_or_else(|| DEFAULT_SKILL_PATH.into());
+    if !todo_core::path_is_safe_relative(&agent_rel)
+        || !todo_core::path_is_safe_relative(&skill_rel)
+    {
+        return Err(Error::InvalidConfiguration {
+            path: root.join(".virgo").join("project.yaml"),
+            message: "policy paths must be relative to the project root".into(),
+        });
+    }
+    let agent_path = root.join(&agent_rel);
+    let skill_path = root.join(&skill_rel);
+
+    let mut actions: Vec<ContractInstallAction> = Vec::new();
+    if uninstall {
+        if agent_path.exists() {
+            let current = fs::read_to_string(&agent_path).map_err(|s| todo_io(&agent_path, s))?;
+            match todo_core::uninstall_agent_rules(&current) {
+                Some(updated) => {
+                    actions.push(action_for(
+                        &agent_rel,
+                        if yes { "removed" } else { "would-remove" },
+                    ));
+                    if yes {
+                        todo_core::atomic_write(&agent_path, updated.as_bytes())?;
+                    }
+                }
+                None => actions.push(action_for(&agent_rel, "no-block")),
+            }
+        } else {
+            actions.push(action_for(&agent_rel, "missing"));
+        }
+        actions.push(action_for(
+            &skill_rel,
+            "kept (uninstall only removes the managed block)",
+        ));
+    } else {
+        let current = if agent_path.exists() {
+            Some(fs::read_to_string(&agent_path).map_err(|s| todo_io(&agent_path, s))?)
+        } else {
+            None
+        };
+        let (updated, outcome) = todo_core::install_agent_rules(current.as_deref());
+        actions.push(action_for(
+            &agent_rel,
+            match (yes, outcome) {
+                (_, todo_core::InstallOutcome::Unchanged) => "unchanged",
+                (false, todo_core::InstallOutcome::Created) => "would-create",
+                (false, todo_core::InstallOutcome::Updated) => "would-update",
+                (true, todo_core::InstallOutcome::Created) => "created",
+                (true, todo_core::InstallOutcome::Updated) => "updated",
+            },
+        ));
+        if yes && outcome != todo_core::InstallOutcome::Unchanged {
+            if let Some(parent) = agent_path.parent() {
+                fs::create_dir_all(parent).map_err(|s| todo_io(parent, s))?;
+            }
+            todo_core::atomic_write(&agent_path, updated.as_bytes())?;
+        }
+        if skill_path.exists() {
+            actions.push(action_for(
+                &skill_rel,
+                "kept (existing skill file is user-owned)",
+            ));
+        } else {
+            actions.push(action_for(
+                &skill_rel,
+                if yes { "created" } else { "would-create" },
+            ));
+            if yes {
+                if let Some(parent) = skill_path.parent() {
+                    fs::create_dir_all(parent).map_err(|s| todo_io(parent, s))?;
+                }
+                todo_core::atomic_write(&skill_path, SKILL_TEMPLATE.as_bytes())?;
+            }
+        }
+    }
+
+    emit(
+        cli,
+        "todo.contract.install.v1",
+        ContractInstallData {
+            applied: yes,
+            actions,
+        },
+        |data| {
+            data.actions
+                .iter()
+                .map(|action| format!("{}: {}", action.file, action.action))
+                .collect::<Vec<_>>()
+                .join("\n")
+        },
+    );
+    Ok(0)
+}
+
+fn action_for(file: &str, action: &str) -> ContractInstallAction {
+    ContractInstallAction {
+        file: file.to_string(),
+        action: action.to_string(),
     }
 }
 

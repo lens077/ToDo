@@ -27,8 +27,9 @@ pub use column_setup::{
     ColumnSetupSelection, PlannedColumn,
 };
 pub use contract::{
-    check_contract, load_contract, ContractCheckReport, ContractFinding, DocumentRef, DocumentRole,
-    Enforcement, Policy, ProjectContract, CONTRACT_SCHEMA_VERSION,
+    check_contract, install_agent_rules, load_contract, path_is_safe_relative,
+    uninstall_agent_rules, ContractCheckReport, ContractFinding, DocumentRef, DocumentRole,
+    Enforcement, InstallOutcome, Policy, ProjectContract, CONTRACT_SCHEMA_VERSION, MANAGED_RULES,
 };
 pub use desktop::*;
 pub use error::{Error, Result};

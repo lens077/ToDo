@@ -80,5 +80,5 @@ todo contract check --json     # schema "todo.contract.v1"
 ## 与 spec 草案的差异记录
 
 1. 退出码采用仓库惯例 0/1/6/7，而非草案的 0-4。
-2. 阶段 0-1 已落地；接管向导（阶段 2）、Skill 安装器（阶段 3）、Hook/CI 集成（阶段 4）、桌面视图（阶段 5）未实现，见 spec 的分阶段计划。
+2. 已落地：阶段 0-1（contract + 校验器 + CLI）、阶段 3（`todo contract install/uninstall` 幂等安装器，管理区块 + Skill 文件，未加 `--yes` 时为 dry-run 预览）、阶段 4（`scripts/verify-quick.sh` 与 `.github/workflows/rust-check.yml` 均执行 `contract check`，本地 Hook 被绕过时 CI 独立复检）。未实现：阶段 2 完整接管向导（扫描/Diff/备份/恢复）、多宿主 Agent 适配、桌面 findings 视图（阶段 5）。
 3. 阶段 0 审计报告：`docs/project-contract-audit.md`。
