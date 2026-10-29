@@ -1,0 +1,41 @@
+# ArgoCD Application：渲染 sponsor-api 的 Helm chart（沙箱配置起步）。
+# 与 virgo-prod 同一 GitLab 部署镜像仓库，路径 apps/sponsor-api/deploy/chart/sponsor-api。
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: sponsor-api-prod
+  namespace: argocd
+  labels:
+    app.kubernetes.io/part-of: virgo
+    app.kubernetes.io/managed-by: git
+    app.kubernetes.io/environment: prod
+spec:
+  project: virgo
+  source:
+    repoURL: https://gitlab.com/sumery/virgo.git
+    targetRevision: main
+    path: apps/sponsor-api/deploy/chart/sponsor-api
+    helm:
+      releaseName: sponsor-api
+      valueFiles:
+        - values.yaml
+        - values-prod.yaml
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: virgo
+  syncPolicy:
+    automated:
+      enabled: true
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=false
+      - FailOnSharedResource=true
+      - PruneLast=true
+    retry:
+      limit: 3
+      backoff:
+        duration: 10s
+        factor: 2
+        maxDuration: 2m
+  revisionHistoryLimit: 10

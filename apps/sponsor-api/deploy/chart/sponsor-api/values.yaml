@@ -1,0 +1,62 @@
+# 通用默认值。生产差异（镜像 tag、域名）放 values-prod.yaml。
+
+api:
+  replicas: 1
+  image:
+    repository: ccr.ccs.tencentyun.com/sumery/virgo-sponsor-api
+    # 形如 "<git sha>@sha256:<digest>"；由 CI 回写，空值会让渲染失败。
+    tag: ""
+    pullPolicy: IfNotPresent
+  resources:
+    requests: { cpu: 10m, memory: 48Mi }
+    limits: { cpu: 500m, memory: 128Mi }
+  imagePullSecret: virgo-tcr
+  # 订单 SQLite 落盘的 PVC 大小（赞助量级很小，1Gi 足够很久）。
+  storage: 1Gi
+
+config:
+  # 对外基址——notify_url 用它拼出来，必须是外网可访问、无重定向的 HTTPS。
+  publicBase: https://sponsor-api.apikv.com
+  # 官网回跳地址。
+  siteOrigin: https://virgo.apikv.com
+  # 静态站跨域调用时放行的来源（空 = 不加 CORS 头，仅同源）。
+  corsOrigin: https://virgo.apikv.com
+  # 只允许沙箱/生产两个官方网关；上线切 https://openapi.alipay.com/gateway.do
+  gateway: https://openapi-sandbox.dl.alipaydev.com/gateway.do
+  # 商户 PID，用于通知的 seller_id 校验（空 = 不校验）。
+  sellerPid: ""
+
+# 支付宝凭据（appId、应用私钥 PKCS#1、支付宝公钥）由 OpenBao 经 ESO 同步；
+# 密钥绝不进 Git。关闭时需手工创建同名 Secret（见 README）。
+alipaySecret:
+  name: sponsor-api-alipay
+  externalSecret:
+    enabled: true
+    storeName: openbao
+    storeKind: ClusterSecretStore
+    remoteKey: k8s/hosting/virgo
+    # OpenBao 里该路径下的四个属性：
+    properties:
+      appId: alipay-app-id
+      privateKey: alipay-private-key
+      publicKey: alipay-public-key
+      sellerPid: alipay-seller-pid
+    refreshInterval: 1h
+
+route:
+  enabled: true
+  gateway:
+    name: cilium-gateway
+    namespace: default
+    httpsSection: https
+    httpSection: http
+  hostnames:
+    - sponsor-api.apikv.com
+  redirectHttp: true
+
+networkPolicy:
+  enabled: true
+
+podDisruptionBudget:
+  # 单副本收款服务：不强制 PDB（驱逐时短暂不可用可接受，通知会重试）。
+  enabled: false

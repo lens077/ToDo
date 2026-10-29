@@ -222,6 +222,15 @@ strong { font-weight: 650; }
   color: var(--cream);
 }
 .tiers li:last-child { border-style: dashed; color: var(--hue-light); }
+.tiers li:has(button) { padding: 0; border: none; background: none; }
+.tiers button {
+  padding: 7px 13px; border-radius: 999px;
+  border: 1px solid rgba(255, 251, 243, 0.22);
+  font: inherit; color: var(--cream); background: none;
+  cursor: pointer;
+}
+.tiers button:hover { border-color: var(--hue-light); color: var(--hue-light); }
+.sponsor-msg { margin-top: 12px; font-size: 0.86rem; color: var(--hue-light); }
 .sponsor .channels { margin-top: 16px; font-size: 0.82rem; color: rgba(255, 251, 243, 0.55); }
 
 .get { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 0.8fr); gap: 48px; align-items: start; }
@@ -312,3 +321,10 @@ strong { font-weight: 650; }
   .todo-ev { grid-column: 2; }
   .findings { width: 100%; margin-top: 12px; transform: none; }
 }
+
+/* ---------- Privacy page & backers ---------- */
+.backers { margin-top: 10px; font-size: 0.8rem; color: rgba(255, 251, 243, 0.45); }
+.privacy-page { max-width: 46em; margin: 0 auto; padding: 64px 24px; }
+.privacy-page h1 { font-size: 1.6rem; }
+.privacy-updated { font-size: 0.85rem; color: var(--ink-soft); }
+.privacy-page p { margin-top: 16px; color: var(--ink-soft); }

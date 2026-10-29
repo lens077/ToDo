@@ -26,6 +26,8 @@ columns:
 - [ ] 拍板首次运行 onboarding 方案（见 docs/onboarding-spec.md） <!--t:jrnlos--> #product #onboarding !2
       ↳ 待定（4）：不做向导方向、todo scan 作为首次价值证明、对账揭示时机、agent 接入提示阈值 <!--n:jrnlos-->
 - [ ] 接入爱发电赞助入口（支付宝完成后再做） <!--t:7gi5ls--> #product #site !2
+- [ ] 签约通过后切生产：切网关 + 回写镜像 tag + make sponsor-k8s-deploy + 生产实测异步通知（等用户指令执行） <!--t:3nd6da--> #sponsor #alipay #release !2
+      ↳ 2026-10-30：开放平台正式应用与密钥已就绪（用户完成，私钥入 OpenBao k8s/hosting/virgo）。等待电脑网站支付签约通过后按序执行：1) values-prod.yaml 网关改 https://openapi.alipay.com/gateway.do；2) make sponsor-image 回写 values-prod 的 api.image.tag；3) make sponsor-k8s-deploy + sponsor-argo-apply；4) 生产实测异步通知验签与幂等；5) 官网 site.mjs sponsor.api 指向 https://sponsor-api.apikv.com 并三端发布。 <!--n:3nd6da-->
 
 ## Doing
 - [ ] 人工验收看板任务写回 TODO.md <!--t:h4m9zc--> #desktop #manual !1 ^3000

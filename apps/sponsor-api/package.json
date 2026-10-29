@@ -1,0 +1,21 @@
+{
+  "name": "@todo/sponsor-api",
+  "private": true,
+  "type": "module",
+  "version": "0.1.0",
+  "description": "Alipay 电脑网站支付 endpoint behind the Virgo sponsorship screen. Sandbox-first; production only after real credentials are configured.",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "start": "node src/server.mjs",
+    "e2e": "node --test e2e/"
+  },
+  "dependencies": {
+    "alipay-sdk": "^4.14.0",
+    "express": "^5.1.0"
+  },
+  "devDependencies": {
+    "playwright": "^1.64.0"
+  }
+}

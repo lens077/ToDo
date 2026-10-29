@@ -136,6 +136,8 @@ export default {
       body: "Sponsoring is not a purchase and does not unlock anything. It only says “this is useful.” The money goes to: the Apple Developer annual fee and notarization, the domain and object storage, and CI time.",
       tiers: ["¥1", "¥6", "¥18", "¥30", "¥68", "¥88", "Custom amount"],
       channels: "In mainland China: Alipay and Afdian. International channels (Ko-fi, GitHub Sponsors) are planned, not open yet.",
+      customLabel: "Custom amount",
+      backers: "Backers: the list has not started yet — leave a note when sponsoring to appear here (optional, may be anonymous; amounts are never shown, no ranking).",
     },
   },
   get: {
@@ -171,5 +173,15 @@ export default {
       ],
       foot: "Reports only — rewrites nothing",
     },
+  },
+  privacy: {
+    title: "Privacy",
+    updated: "Last updated: 2026-10-30",
+    body: [
+      "This site tracks exactly one thing to understand traffic: a self-hosted Umami instance counting page views and button clicks. It sets no cookies, uses no cross-site localStorage tracking, records no IP address, device fingerprint, or identity of any kind, and shares nothing with third parties.",
+      "Sponsorships are processed by Alipay or Afdian. Our own server stores only the order id, the amount, and the payment status, for bookkeeping and the backers list; your Alipay account details are never stored. Everything during payment is governed by Alipay's own privacy policy.",
+      "Task files, the reading library, and annotations are local data of the Virgo app itself — they live on your machine, and the website and sponsorship service never touch them.",
+      "Questions about this page: write to support@looke.cloud.",
+    ],
   },
 };

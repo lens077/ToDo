@@ -11,6 +11,17 @@ export const SITE = {
     websiteId: "f9c9b17e-5777-435d-bfd1-f5e199b70c6d",
     domains: "virgo.apikv.com,virgo-pages.apikv.com,virgo-overseas.pages.dev",
   },
+  /**
+   * Sponsorship payments (Alipay 电脑网站支付). `api` is the base URL of the
+   * sponsor-api service ("" = same origin, e.g. when sponsor-api also serves
+   * the site in local E2E). Keep `api` unset until the production service is
+   * deployed — tier amounts are then rendered as plain text, not pay buttons.
+   */
+  sponsor: {
+    api: "",
+    /** Amounts in CNY, positionally matched to `free.sponsor.tiers` in both content files. */
+    tiers: [1, 6, 18, 30, 68, 88],
+  },
   /** `light` = the Sumery desk (tools); `night` = the dark scene (games). */
   scene: "light",
   themeColor: "#f7efe4",

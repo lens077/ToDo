@@ -14,6 +14,9 @@ EO_PROJECT ?= virgo-site
 K8S_IMAGE ?= ccr.ccs.tencentyun.com/sumery/virgo-site
 K8S_TAG ?= $(shell git rev-parse --short HEAD)
 CHART_DIR ?= web/deploy/chart/virgo
+SPONSOR_IMAGE ?= ccr.ccs.tencentyun.com/sumery/virgo-sponsor-api
+SPONSOR_TAG ?= $(shell git rev-parse --short HEAD)
+SPONSOR_CHART_DIR ?= apps/sponsor-api/deploy/chart/sponsor-api
 
 .PHONY: help install dev icon check check-quick hooks build bundle-macos package-macos package-macos-signed \
         comm-build other-build build-mac-arm64 build-mac-x64 build-win-x64 build-win-arm64 build-linux-x64 \
@@ -150,5 +153,21 @@ argo-apply: ## Register the ArgoCD project and application
 	kubectl apply -f deploy/argocd/namespace.yaml
 	kubectl apply -f deploy/argocd/project.yaml
 	kubectl apply -f deploy/argocd/application.yaml
+
+# 赞助收款 API（沙箱凭据起步）。镜像构建上下文是 apps/sponsor-api/。
+sponsor-image:
+	docker buildx build --platform linux/amd64 -f apps/sponsor-api/deploy/Dockerfile \
+	  -t $(SPONSOR_IMAGE):$(SPONSOR_TAG) --push apps/sponsor-api
+
+# 立即部署（bootstrap / 回滚用）。日常发布与 virgo 站一样走 Git：回写
+# values-prod.yaml 的 tag，ArgoCD 自动同步。
+sponsor-k8s-deploy: sponsor-image
+	helm upgrade --install sponsor-api $(SPONSOR_CHART_DIR) -n virgo \
+	  -f $(SPONSOR_CHART_DIR)/values.yaml -f $(SPONSOR_CHART_DIR)/values-prod.yaml \
+	  --set api.image.tag=$(SPONSOR_TAG) --wait --timeout 5m
+	kubectl -n virgo rollout status deploy/sponsor-api --timeout=180s
+
+sponsor-argo-apply: ## Register the sponsor-api ArgoCD application
+	kubectl apply -f deploy/argocd/application-sponsor-api.yaml
 
 site-deploy: pages-deploy pages-deploy-eo k8s-deploy ## Deploy the landing site to all three origins

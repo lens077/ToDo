@@ -1,0 +1,126 @@
+{{- $name := include "sponsor.fullname" . -}}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "sponsor.labels" . | nindent 4 }}
+spec:
+  selector:
+    {{- include "sponsor.selector" . | nindent 4 }}
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "sponsor.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.api.replicas }}
+  revisionHistoryLimit: 5
+  selector:
+    matchLabels:
+      {{- include "sponsor.selector" . | nindent 6 }}
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  template:
+    metadata:
+      labels:
+        {{- include "sponsor.selector" . | nindent 8 }}
+    spec:
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      terminationGracePeriodSeconds: 15
+      imagePullSecrets:
+        - name: {{ .Values.api.imagePullSecret }}
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: sponsor-api
+          image: {{ include "sponsor.image" .Values.api.image }}
+          imagePullPolicy: {{ .Values.api.image.pullPolicy }}
+          ports:
+            - { name: http, containerPort: 8791 }
+          env:
+            - name: SPONSOR_PUBLIC_BASE
+              value: {{ .Values.config.publicBase | quote }}
+            - name: SPONSOR_SITE_ORIGIN
+              value: {{ .Values.config.siteOrigin | quote }}
+            - name: SPONSOR_CORS_ORIGIN
+              value: {{ .Values.config.corsOrigin | quote }}
+            - name: ALIPAY_GATEWAY
+              value: {{ .Values.config.gateway | quote }}
+            - name: ALIPAY_SELLER_PID
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.alipaySecret.name }}
+                  key: {{ .Values.alipaySecret.externalSecret.properties.sellerPid }}
+                  optional: true
+            - name: ALIPAY_APP_ID
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.alipaySecret.name }}
+                  key: {{ .Values.alipaySecret.externalSecret.properties.appId }}
+            - name: ALIPAY_PRIVATE_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.alipaySecret.name }}
+                  key: {{ .Values.alipaySecret.externalSecret.properties.privateKey }}
+            - name: ALIPAY_PUBLIC_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.alipaySecret.name }}
+                  key: {{ .Values.alipaySecret.externalSecret.properties.publicKey }}
+          readinessProbe:
+            httpGet: { path: /api/healthz, port: http }
+            periodSeconds: 10
+            timeoutSeconds: 3
+          livenessProbe:
+            httpGet: { path: /api/healthz, port: http }
+            periodSeconds: 30
+            timeoutSeconds: 3
+            failureThreshold: 3
+          lifecycle:
+            preStop:
+              exec:
+                command: ["sleep", "5"]
+          resources:
+            {{- toYaml .Values.api.resources | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - { name: data, mountPath: /data }
+            - { name: tmp, mountPath: /tmp }
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: {{ $name }}-data
+        - name: tmp
+          emptyDir: {}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ $name }}-data
+  labels:
+    {{- include "sponsor.labels" . | nindent 4 }}
+spec:
+  accessModes: ["ReadWriteOnce"]
+  resources:
+    requests:
+      storage: {{ .Values.api.storage }}

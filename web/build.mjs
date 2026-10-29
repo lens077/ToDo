@@ -19,7 +19,7 @@ import { fileURLToPath } from "node:url";
 import en from "./src/content.en.mjs";
 import zh from "./src/content.zh.mjs";
 import { SITE } from "./src/site.mjs";
-import { renderPage, renderRouter } from "./src/page.mjs";
+import { renderPage, renderPrivacy, renderRouter } from "./src/page.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const DIST = join(HERE, "dist");
@@ -59,6 +59,10 @@ for (const lang of Object.keys(CONTENT)) {
   const html = renderPage(CONTENT[lang], { lang, cssHref, content: CONTENT });
   mkdirSync(join(DIST, lang), { recursive: true });
   writeFileSync(join(DIST, lang, "index.html"), html);
+  // Privacy page (footer link; noindex, not in the sitemap).
+  const privacy = renderPrivacy(CONTENT[lang], { lang, cssHref, content: CONTENT });
+  mkdirSync(join(DIST, "privacy", lang), { recursive: true });
+  writeFileSync(join(DIST, "privacy", lang, "index.html"), privacy);
 }
 writeFileSync(join(DIST, "index.html"), renderRouter(CONTENT));
 

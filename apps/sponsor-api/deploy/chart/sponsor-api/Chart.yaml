@@ -1,0 +1,7 @@
+apiVersion: v2
+name: sponsor-api
+description: Virgo 赞助收款 API —— 支付宝电脑网站支付的下单、异步通知与回跳查询
+type: application
+# chart 结构变了才升 version；镜像版本在 values-prod.yaml。
+version: 0.1.0
+appVersion: "1"

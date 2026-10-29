@@ -98,14 +98,24 @@ export function renderPage(c, { lang, cssHref, content }) {
       ${c.catalog.shot ? shot(c.catalog.shot) : ""}`,
   );
 
+  const tierItems = c.free.sponsor.tiers
+    .map((t, i) => {
+      const isCustom = t === c.free.sponsor.customLabel;
+      const amount = SITE.sponsor?.tiers[i];
+      const inner = isCustom || !amount ? t : `<button class="tier" type="button" data-sponsor-amount="${amount}">${t}</button>`;
+      return `<li>${inner}</li>`;
+    })
+    .join("");
   const free = section(
     c.free,
     `<div class="free">
         <div class="free-copy"><p>${c.free.body}</p></div>
         <div class="sponsor">
           <p>${c.free.sponsor.body}</p>
-          <ul class="tiers">${c.free.sponsor.tiers.map((t) => `<li>${t}</li>`).join("")}</ul>
+          <ul class="tiers">${tierItems}</ul>
           <p class="channels">${c.free.sponsor.channels}</p>
+          <p class="backers">${c.free.sponsor.backers}</p>
+          <p class="sponsor-msg" data-sponsor-msg hidden></p>
         </div>
       </div>`,
     "band-paper",
@@ -152,6 +162,8 @@ ${alternates}
 <link rel="apple-touch-icon" href="/apple-touch-icon.png">
 <link rel="stylesheet" href="${cssHref}">
 <script defer src="${SITE.umami.src}" data-website-id="${SITE.umami.websiteId}" data-domains="${SITE.umami.domains}" data-exclude-search="true"></script>
+<meta name="sponsor-api" content="${attr(SITE.sponsor?.api ?? "")}">
+<script defer src="/sponsor.js"></script>
 <script>document.addEventListener("click",function(e){var a=e.target.closest&&e.target.closest("[data-lang]");if(a)try{localStorage.setItem("sumery.lang",a.getAttribute("data-lang"))}catch(_){}});</script>
 </head>
 <body>
@@ -177,9 +189,38 @@ ${get}
 </main>
 <footer class="foot">
   <p class="foot-sub">${c.footer.sub}</p>
-  <p class="foot-note">${c.footer.note}</p>
+  <p class="foot-note">${c.footer.note} <a href="/privacy/${lang}/">${c.privacy.title}</a></p>
   <p class="foot-filing">${f.owner} · <a href="${f.icp.href}" rel="noopener noreferrer" target="_blank">${f.icp.text}</a> · <a href="${f.police.href}" rel="noopener noreferrer" target="_blank">${f.police.text}</a> · <a href="mailto:${f.email}">${f.email}</a></p>
 </footer>
+</body>
+</html>
+`;
+}
+
+/**
+ * privacy page: a small standalone page linked from the footer. Rendered per
+ * language by build.mjs into privacy/<lang>/index.html.
+ */
+export function renderPrivacy(c, { lang, cssHref }) {
+  return `<!doctype html>
+<html lang="${c.htmlLang}">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>${esc(c.privacy.title)} · ${esc(c.brand.name)}</title>
+<meta name="robots" content="noindex">
+<link rel="icon" href="/favicon-light.png" type="image/png" media="(prefers-color-scheme: light)">
+<link rel="icon" href="/favicon-dark.png" type="image/png" media="(prefers-color-scheme: dark)">
+<link rel="icon" href="/favicon.png" type="image/png">
+<link rel="stylesheet" href="${cssHref}">
+</head>
+<body>
+<main id="main" class="privacy-page">
+  <h1>${esc(c.privacy.title)}</h1>
+  <p class="privacy-updated">${esc(c.privacy.updated)}</p>
+  ${c.privacy.body.map((p) => `<p>${p}</p>`).join("")}
+  <p><a class="btn btn-text" href="/${lang}/">← ${esc(c.ui.home)}</a></p>
+</main>
 </body>
 </html>
 `;

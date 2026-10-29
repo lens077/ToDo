@@ -1,0 +1,17 @@
+# 生产环境（hosting 集群，namespace virgo）。ArgoCD Application
+# sponsor-api-prod 叠加 values.yaml + 本文件渲染。
+#
+# image.tag 由 CI（或手工 `make sponsor-image-push` 后回写）更新为
+# "<git sha>@sha256:<digest>"。手工回滚：改回旧值提交即可，ArgoCD 自动同步。
+
+api:
+  image:
+    tag: ""   # 首次部署前回写，如 "abc1234@sha256:..."
+
+route:
+  hostnames:
+    - sponsor-api.apikv.com
+
+config:
+  # 签约通过、拿到正式凭据后切换：
+  gateway: https://openapi-sandbox.dl.alipaydev.com/gateway.do
