@@ -46,3 +46,6 @@ apps/desktop/icon/out/
 # Sponsor API: Alipay credentials and order data never get committed
 /apps/sponsor-api/.dev/
 /apps/sponsor-api/data/
+
+# Vendored research repos (not part of the build)
+/twitter-text/
