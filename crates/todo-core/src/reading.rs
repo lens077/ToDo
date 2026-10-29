@@ -539,6 +539,13 @@ fn http_client() -> Result<reqwest::blocking::Client> {
 }
 
 fn fetch_page(url: &str) -> Result<FetchedPage> {
+    // X serves a JS-only shell to plain HTTP clients; the syndication API
+    // returns the tweet as structured JSON without login.
+    if let Some(tweet_id) = x_status_id(url) {
+        if let Some(page) = fetch_x_tweet(&tweet_id, url) {
+            return Ok(page);
+        }
+    }
     let client = http_client()?;
     let response = client
         .get(url)
@@ -567,6 +574,181 @@ fn fetch_page(url: &str) -> Result<FetchedPage> {
     }
     let html = decode_html(&bytes, header_charset.as_deref());
     Ok(FetchedPage { html, final_url })
+}
+
+// ── X (Twitter) ─────────────────────────────────────────────────────────────
+
+/// Tweet id when the URL points at a status on x.com / twitter.com.
+fn x_status_id(url: &str) -> Option<String> {
+    let parsed = reqwest::Url::parse(url).ok()?;
+    let host = parsed.host_str()?.to_ascii_lowercase();
+    let host_ok = matches!(
+        host.as_str(),
+        "x.com"
+            | "www.x.com"
+            | "mobile.x.com"
+            | "twitter.com"
+            | "www.twitter.com"
+            | "mobile.twitter.com"
+    );
+    if !host_ok {
+        return None;
+    }
+    let segments: Vec<&str> = parsed.path().split('/').filter(|s| !s.is_empty()).collect();
+    match segments.as_slice() {
+        [_, "status", id, ..] if id.chars().all(|c| c.is_ascii_digit()) => Some(id.to_string()),
+        _ => None,
+    }
+}
+
+/// Fetches a tweet through the public syndication API and wraps it in a small
+/// self-describing HTML document that `x_tweet_extract` parses back. Returns
+/// `None` so the caller falls through to the ordinary page fetch.
+fn fetch_x_tweet(tweet_id: &str, page_url: &str) -> Option<FetchedPage> {
+    let client = http_client().ok()?;
+    let api =
+        format!("https://cdn.syndication.twimg.com/tweet-result?id={tweet_id}&token=x&lang=zh");
+    let response = client
+        .get(&api)
+        .header("Accept", "application/json")
+        .send()
+        .ok()?;
+    if !response.status().is_success() {
+        return None;
+    }
+    let value: serde_json::Value = response.json().ok()?;
+    let html = x_tweet_html(&value)?;
+    Some(FetchedPage {
+        html,
+        final_url: page_url.to_string(),
+    })
+}
+
+/// Builds the synthetic document from the syndication JSON. The marker
+/// `id="x-tweet"` plus data attributes carry the metadata that readability
+/// cannot see in a shell page.
+fn x_tweet_html(value: &serde_json::Value) -> Option<String> {
+    let author = value.get("user")?.get("name")?.as_str()?;
+    let handle = value.get("user")?.get("screen_name")?.as_str()?;
+    let mut text = value.get("text")?.as_str()?.to_string();
+    if text.trim().is_empty() {
+        return None;
+    }
+    // Media links are t.co placeholders pointing at the images below.
+    if let Some(media) = value.pointer("/entities/media").and_then(|m| m.as_array()) {
+        for item in media {
+            if let Some(short) = item.get("url").and_then(|u| u.as_str()) {
+                text = text.replace(short, "").trim_end().to_string();
+            }
+        }
+    }
+    let photos: Vec<String> = value
+        .get("mediaDetails")
+        .and_then(|m| m.as_array())
+        .map(|items| {
+            items
+                .iter()
+                .filter_map(|item| item.get("media_url_https").and_then(|u| u.as_str()))
+                .map(str::to_string)
+                .collect()
+        })
+        .unwrap_or_default();
+    let escaped_author = escape_html_attr(author);
+    let paragraphs: String = text
+        .split('\n')
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+        .map(|line| format!("<p>{}</p>", escape_html(line)))
+        .collect();
+    let images: String = photos
+        .iter()
+        .map(|url| format!("<figure><img src=\"{}\"></figure>", escape_html(url)))
+        .collect();
+    let cover = photos
+        .first()
+        .map(|url| {
+            format!(
+                "<meta property=\"og:image\" content=\"{}\">",
+                escape_html(url)
+            )
+        })
+        .unwrap_or_default();
+    let title = first_line(&text);
+    Some(format!(
+        "<html><head><title>{} (@{handle}) on X</title>{cover}</head>\
+         <body><article id=\"x-tweet\" data-author=\"{escaped_author}\" data-handle=\"{handle}\">\
+         {paragraphs}{images}</article></body></html>",
+        escape_html(&title),
+    ))
+}
+
+/// Parses the synthetic tweet document back into an `Extracted`, bypassing
+/// readability (which has nothing to score in it).
+fn x_tweet_extract(html: &str) -> Option<Extracted> {
+    let marker = Regex::new(
+        r#"(?is)<article\s+id="x-tweet"\s+data-author="([^"]*)"\s+data-handle="([^"]*)"[^>]*>(.*?)</article>"#,
+    )
+    .ok()?;
+    let captures = marker.captures(html)?;
+    let author = decode_entities(&captures[1]);
+    let handle = decode_entities(&captures[2]);
+    let body = &captures[3];
+    let paragraphs: Vec<String> = Regex::new(r"(?is)<p>(.*?)</p>")
+        .ok()?
+        .captures_iter(body)
+        .map(|c| decode_entities(&c[1]))
+        .collect();
+    if paragraphs.is_empty() {
+        return None;
+    }
+    let photos: Vec<String> = Regex::new(r#"(?is)<img\s+src="([^"]+)""#)
+        .ok()?
+        .captures_iter(body)
+        .map(|c| decode_entities(&c[1]))
+        .collect();
+    let content_html = {
+        let text_part: String = paragraphs.iter().map(|p| format!("<p>{p}</p>")).collect();
+        let image_part: String = photos
+            .iter()
+            .map(|url| format!("<figure><img src=\"{url}\"></figure>"))
+            .collect();
+        sanitize_html(&format!("{text_part}{image_part}"))
+    };
+    let full_text = paragraphs.join(" ");
+    let text = collapse_whitespace(&full_text);
+    let (word_count, reading_minutes) = reading_stats(&text);
+    let title = truncate_chars(&paragraphs[0], 60);
+    Some(Extracted {
+        title,
+        // Like WeChat, the reader recognises the author, not the platform.
+        site_name: author,
+        excerpt: truncate_chars(&text, 160),
+        byline: Some(format!("@{handle}")),
+        cover_url: photos.first().cloned(),
+        content_html,
+        markdown: None,
+        word_count,
+        reading_minutes,
+    })
+}
+
+fn first_line(text: &str) -> String {
+    text.lines()
+        .map(str::trim)
+        .find(|line| !line.is_empty())
+        .unwrap_or(text)
+        .to_string()
+}
+
+fn escape_html(value: &str) -> String {
+    value
+        .replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+}
+
+fn escape_html_attr(value: &str) -> String {
+    escape_html(value).replace('"', "&quot;")
 }
 
 fn classify_fetch_error(error: reqwest::Error) -> String {
@@ -633,6 +815,9 @@ fn extract(page: &FetchedPage, requested_url: &str) -> Result<Extracted> {
         .output_markdown(true)
         .sanitize_content(true)
         .build();
+    if let Some(tweet) = x_tweet_extract(&html) {
+        return Ok(tweet);
+    }
     if is_wechat_error_shell(&html) {
         return Err(Error::ReadingFetch(
             "微信返回了参数错误页，请在微信或浏览器中打开后使用“保存到阅读”".into(),
@@ -1048,6 +1233,68 @@ mod tests {
     }
 
     #[test]
+    fn x_status_urls_are_recognised_and_other_hosts_rejected() {
+        assert_eq!(
+            x_status_id(
+                "https://x.com/zhang_baoqing/status/2115643540248445072?a=mIxGQIcCFC0Zk2Q5wjo&s=19"
+            ),
+            Some("2115643540248445072".into())
+        );
+        assert_eq!(
+            x_status_id("https://twitter.com/user/status/1234567890123456789"),
+            Some("1234567890123456789".into())
+        );
+        assert_eq!(x_status_id("https://x.com/zhang_baoqing"), None);
+        assert_eq!(x_status_id("https://example.com/a/status/123"), None);
+        assert_eq!(
+            x_status_id("https://x.com/zhang_baoqing/status/notanumber"),
+            None
+        );
+    }
+
+    #[test]
+    fn x_tweet_html_round_trips_through_extract() {
+        let value = serde_json::json!({
+            "text": "最近发现的网站\n\n会实时更新 https://t.co/tBzMtou8IT",
+            "user": {"name": "一地鸡毛", "screen_name": "zhang_baoqing"},
+            "entities": {"media": [{"url": "https://t.co/tBzMtou8IT"}]},
+            "mediaDetails": [{"media_url_https": "https://pbs.twimg.com/media/HVxGNglaUAAjoIW.jpg"}]
+        });
+        let html = x_tweet_html(&value).unwrap();
+        let extracted = x_tweet_extract(&html).unwrap();
+        assert_eq!(extracted.title, "最近发现的网站");
+        assert_eq!(extracted.site_name, "一地鸡毛");
+        assert_eq!(extracted.byline.as_deref(), Some("@zhang_baoqing"));
+        assert!(extracted.content_html.contains("会实时更新"));
+        assert!(!extracted.content_html.contains("t.co"));
+        assert!(extracted
+            .content_html
+            .contains(r#"src="https://pbs.twimg.com/media/HVxGNglaUAAjoIW.jpg""#));
+        assert_eq!(
+            extracted.cover_url.as_deref(),
+            Some("https://pbs.twimg.com/media/HVxGNglaUAAjoIW.jpg")
+        );
+    }
+
+    #[test]
+    fn x_tweet_html_escapes_hostile_text_and_rejects_empty() {
+        assert!(x_tweet_html(
+            &serde_json::json!({"text": "", "user": {"name": "a", "screen_name": "b"}})
+        )
+        .is_none());
+        let value = serde_json::json!({
+            "text": "<script>alert(1)</script>",
+            "user": {"name": "Evil \"Quote\" & <Co>", "screen_name": "e"}
+        });
+        let html = x_tweet_html(&value).unwrap();
+        assert!(html.contains("&lt;script&gt;"));
+        assert!(html.contains("Evil &quot;Quote&quot; &amp; &lt;Co&gt;"));
+        let extracted = x_tweet_extract(&html).unwrap();
+        assert!(!extracted.content_html.contains("<script>"));
+        assert_eq!(extracted.site_name, "Evil \"Quote\" & <Co>");
+    }
+
+    #[test]
     fn reading_stats_count_cjk_by_character_and_latin_by_word() {
         let (words, minutes) = reading_stats("你好世界 hello world");
         assert_eq!(words, 6);
@@ -1232,6 +1479,16 @@ mod live_tests {
             detail.markdown.as_ref().map(|m| m.len()).unwrap_or(0)
         );
         assert!(detail.content_html.len() > 200);
+    }
+
+    #[test]
+    #[ignore]
+    fn live_x_tweet() {
+        probe(
+            &std::env::var("READING_URL").unwrap_or_else(|_| {
+                "https://x.com/zhang_baoqing/status/2115643540248445072".into()
+            }),
+        );
     }
 
     #[test]
