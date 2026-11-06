@@ -844,3 +844,18 @@ Session 存为项目内 Markdown（`<project>/.virgo/sessions/s-<ts>.md`），�
 - 见决策文档各条「已知边界」：M1 多来源解析（D-M1-2）、M2 DSH 桥未升级（D-M2-3）、M4 无拼音/语义搜索（D-M4-1）、M5 `b6r1vy` 复选框状态待用户裁决（D-M5-1）。
 - push、历史整理（`f5f3ed3` 折叠）、CSP 收窄三项均待用户验收时单独授权（D-M0-1/2/3）。
 - 执行报告：`docs/audits/2026-11-07-m0b-execution.html`。
+
+## 2026-11-07 远端合并与 push（D-M0-2 执行）
+
+用户授权「push 与远端合并」后执行：
+
+1. `git fetch origin`：远端仍在 `3613d96`，本地领先 15 个提交。
+2. `git merge origin/main` → 干净合并 `5b44806`（远端提交只改 `web/deploy/chart/virgo/values-prod.yaml`，与本地零文件交集，预期零冲突兑现）。
+3. `make check-quick`：合并后首次以 `merge-base(HEAD, origin/main)=3613d96` 为 diff 基准，暴露 `docs/workspace-project-knowledge-spec.html` EOF 多一空行（`93d7965` 提交时即存在，此前 check-quick 的基准未覆盖该文件）→ `9022267` 修复 → **verify-quick 绿（25s）**。
+4. 决策文档 D-M0-2 标记为已执行。
+5. `git push origin main`：见下方结果行。
+
+### 已知边界 / 未完成
+
+- D-M0-1（`f5f3ed3` 折叠）按决策保留未折叠历史，已随本次 push 进入远端；如需可二分历史需在远端做强制操作，不建议。
+- D-M0-3（CSP 收窄）仍挂起到发布前。

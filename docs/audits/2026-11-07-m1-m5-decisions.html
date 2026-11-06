@@ -94,10 +94,10 @@
   <div class="card">
     <h3><span class="d-id">D-M0-2</span> 与 origin/main 合并 + push 的时机</h3>
     <div class="kv"><b class="k">选项</b> A 本轮合并并 push｜B 推迟到验收后</div>
-    <div class="kv"><b class="k">决定</b> <span class="badge deferred">B：推迟</span> 全程不 push、不合并远端。</div>
-    <div class="kv"><b class="k">理由</b> push 是对外发布动作，你此前的授权明确要求单独批准；「继续执行直至实现完成」指 M1–M5 的实现，不视为对 push 的解禁。</div>
-    <div class="kv"><b class="k">锚点</b> 本地 <code>main</code>（7 ahead / 1 behind <code>3613d96</code>，零文件交集）</div>
-    <div class="kv"><b class="k">如何修改</b> 验收时说「push」即可：顺序为 <code>git merge origin/main</code>（预期零冲突）→ <code>make check-quick</code> → <code>git push</code>。</div>
+    <div class="kv"><b class="k">决定</b> <span class="badge decided">已执行（2026-11-07，用户授权「push 与远端合并」）</span>：<code>git merge origin/main</code> 干净合并（<code>5b44806</code>，零冲突）→ <code>make check-quick</code> 绿（期间暴露并修复蓝图 HTML 的 EOF 空行，<code>9022267</code>）→ <code>git push origin main</code>。</div>
+    <div class="kv"><b class="k">理由</b> 用户在验收时明确解禁；合并/门禁/push 按本文档预设顺序执行。</div>
+    <div class="kv"><b class="k">锚点</b> 合并提交 <code>5b44806</code>；推送结果见 verification-log 2026-11-07 条目</div>
+    <div class="kv"><b class="k">如何修改</b> 已完成，无后续动作；回滚需 revert 合并提交（不建议）。</div>
   </div>
 
   <div class="card">
