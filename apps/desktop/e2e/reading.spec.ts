@@ -19,7 +19,8 @@ test.describe('阅读', () => {
   test('sits first in the sidebar and counts unfinished articles', async ({ page }) => {
     await page.goto('/');
     const items = page.getByRole('navigation', { name: '主要视图' }).getByRole('button');
-    await expect(items.first()).toHaveAccessibleName('阅读');
+    await expect(items.first()).toHaveAccessibleName('总览');
+    await expect(items.nth(1)).toHaveAccessibleName('阅读');
     await expect(nav(page)).toContainText('2');
   });
 
@@ -118,5 +119,50 @@ test.describe('阅读', () => {
     await expect(page.locator('.reader__meta')).toContainText(/已读$/);
     await page.getByRole('button', { name: '标为未读' }).click();
     await expect(page.getByRole('button', { name: '标为已读' })).toBeVisible();
+  });
+});
+
+test.describe('阅读上下文', () => {
+  async function openFirstArticle(page: Page) {
+    await openReading(page);
+    await page.getByTestId('reading-card').first().getByRole('button', { name: /继续阅读|开始阅读|重读/ }).click();
+    await expect(page.getByTestId('reading-context')).toBeVisible();
+  }
+
+  test('saves context, links project/task, and refetch keeps everything', async ({ page }) => {
+    await openFirstArticle(page);
+    const panel = page.getByTestId('reading-context');
+    await page.getByRole('button', { name: '阅读上下文' }).click();
+
+    await page.getByPlaceholder(/为什么保存这篇文章/).fill('研究 E2E 定位方式');
+    await page.getByPlaceholder(/以后阅读时重点回答什么问题/).fill('能否兼容 Playwright？');
+    await page.getByPlaceholder(/阅读后的理解与结论/).fill('可访问性树方案可行');
+    // Blur the last field triggers one save.
+    await page.getByPlaceholder(/阅读后的理解与结论/).blur();
+    await expect(page.getByText('上下文已保存')).toBeVisible();
+
+    // Link a project and a task by reference ID.
+    await page.getByPlaceholder(/输入项目或任务 ID 关联/).fill('proj-1');
+    await page.getByRole('button', { name: '关联项目' }).click();
+    await expect(panel.locator('.rctx__chip', { hasText: 'proj-1' })).toBeVisible();
+    await page.getByPlaceholder(/输入项目或任务 ID 关联/).fill('a1b2c3');
+    await page.getByRole('button', { name: '关联任务' }).click();
+    await expect(panel.locator('.rctx__chip', { hasText: 'a1b2c3' })).toBeVisible();
+
+    // Re-parse: source refreshes, context/notes/links survive.
+    await page.getByRole('button', { name: '重新解析' }).click();
+    await expect(page.getByText('已重新解析（上下文与笔记保留）')).toBeVisible();
+    await expect(panel.getByPlaceholder(/为什么保存这篇文章/)).toHaveValue('研究 E2E 定位方式');
+    await expect(panel.getByPlaceholder(/阅读后的理解与结论/)).toHaveValue('可访问性树方案可行');
+    await expect(panel.locator('.rctx__chip', { hasText: 'proj-1' })).toBeVisible();
+    await expect(panel.locator('.rctx__chip', { hasText: 'a1b2c3' })).toBeVisible();
+
+    // Export copies a Markdown reference card to the clipboard.
+    await page.context().grantPermissions(['clipboard-read', 'clipboard-write']);
+    await page.getByRole('button', { name: '导出引用' }).click();
+    await expect(page.getByText('引用卡片已复制到剪贴板')).toBeVisible();
+    const clipboard = await page.evaluate(() => navigator.clipboard.readText());
+    expect(clipboard).toContain('# 收藏原因');
+    expect(clipboard).toContain('研究 E2E 定位方式');
   });
 });

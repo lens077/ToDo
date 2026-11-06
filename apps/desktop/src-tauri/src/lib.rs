@@ -2,6 +2,7 @@ pub mod ops;
 mod preferences;
 mod reading;
 mod watch;
+pub mod workspace;
 
 use serde::Serialize;
 use std::{
@@ -110,6 +111,39 @@ fn reopen_last_project(app: &tauri::AppHandle, state: &State<'_, AppState>) {
         #[cfg(not(debug_assertions))]
         Err(_) => {}
     }
+}
+
+/// Opens a registered project by its stable registry ID. The path comes from
+/// the workspace registry, so a moved project must be re-linked first (the
+/// registry reports `missing` and the UI offers re-linking).
+#[tauri::command]
+fn workspace_open_project(
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+    workspace_state: State<'_, workspace::WorkspaceState>,
+    project_id: String,
+) -> Result<ProjectSnapshot, String> {
+    let store = workspace_state
+        .store
+        .clone()
+        .ok_or_else(|| "工作空间注册表不可用：无法确定用户主目录".to_string())?;
+    let connection = store.list_projects().map_err(|error| error.to_string())?;
+    let project = connection
+        .into_iter()
+        .find(|project| project.id == project_id)
+        .ok_or_else(|| format!("注册项目不存在: {project_id}"))?;
+    if project.path_status != "reachable" {
+        return Err(format!(
+            "项目目录不可达：{}。请重新关联目录。",
+            project.root_path
+        ));
+    }
+    let snapshot = state.ops.open_project(&project.root_path)?;
+    let project_path = PathBuf::from(&snapshot.project_path);
+    start_watcher(&app, &state, project_path.clone())?;
+    preferences::remember_project(state.preferences_path.as_deref(), &project_path);
+    let _ = store.touch_project(&project_id);
+    Ok(snapshot)
 }
 
 #[tauri::command]
@@ -628,6 +662,9 @@ pub fn run() {
         .manage(reading::ReadingState {
             store: reading::runtime_reading_store(),
         })
+        .manage(workspace::WorkspaceState {
+            store: workspace::runtime_workspace_store(),
+        })
         .manage(AppState {
             ops,
             watcher: Mutex::new(None),
@@ -676,7 +713,39 @@ pub fn run() {
             reading::reading_set_read,
             reading::reading_remove,
             reading::reading_annotation_upsert,
-            reading::reading_annotation_delete
+            reading::reading_annotation_delete,
+            reading::reading_update_context,
+            reading::reading_refetch,
+            reading::reading_link_project,
+            reading::reading_unlink_project,
+            reading::reading_link_task,
+            reading::reading_unlink_task,
+            reading::reading_export_reference,
+            reading::reading_export_project_index,
+            workspace::workspace_list,
+            workspace::workspace_create,
+            workspace::workspace_rename,
+            workspace::workspace_delete,
+            workspace::workspace_add_project,
+            workspace::workspace_remove_project,
+            workspace::workspace_relink_project,
+            workspace::workspace_delete_project,
+            workspace::project_profile_get,
+            workspace::project_profile_set,
+            workspace::environment_get,
+            workspace::environment_scan,
+            workspace::environment_set_declared,
+            workspace::knowledge_scan,
+            workspace::knowledge_list,
+            workspace::knowledge_confirm,
+            workspace::knowledge_read,
+            workspace::session_begin,
+            workspace::session_finish,
+            workspace::session_interrupt,
+            workspace::session_list,
+            workspace::session_resume,
+            workspace::overview_summary,
+            workspace_open_project
         ])
         .setup(move |app| {
             let shortcut = if cfg!(target_os = "macos") {

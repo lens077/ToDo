@@ -17,6 +17,8 @@ import { ProviderSettings } from './components/ProviderSettings';
 import { ReviewView } from './components/ReviewView';
 import { SettingsDialog } from './components/SettingsDialog';
 import { Sidebar, type MainView } from './components/Sidebar';
+import { WorkspaceView } from './components/WorkspaceView';
+import { OverviewView } from './components/OverviewView';
 import { StatusBanner } from './components/StatusBanner';
 import { useAiFeed } from './hooks/useAiFeed';
 import { useDesktop } from './hooks/useDesktop';
@@ -303,7 +305,14 @@ export function App() {
             />
           )}
           <div className="source-content" key={sourceContextKey}>
-          {activeView === 'reading' && transportCapabilities() ? (
+          {activeView === 'overview' ? (
+            <OverviewView />
+          ) : activeView === 'workspaces' ? (
+            <WorkspaceView
+              onOpenProject={(projectId) => model.openRegisteredProject(projectId)}
+              openProjectPath={snapshot?.project_path ?? null}
+            />
+          ) : activeView === 'reading' && transportCapabilities() ? (
             <p className="source-unavailable" role="status">HTTP 项目服务不开放个人阅读库，请使用桌面版。</p>
           ) : activeView === 'reading' && readingModel.open ? (
             <ReaderView key={readingModel.open.id} detail={readingModel.open} model={readingModel} />

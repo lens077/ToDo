@@ -2,7 +2,7 @@ import type { WorkspaceStatus } from '../hooks/useDesktop';
 import { shortProjectName } from '../lib/desktop';
 import { Icon, type IconName } from './Icon';
 
-export type MainView = 'reading' | 'goal' | 'quadrant' | 'capture' | 'ai' | 'review' | 'contract';
+export type MainView = 'overview' | 'workspaces' | 'reading' | 'goal' | 'quadrant' | 'capture' | 'ai' | 'review' | 'contract';
 
 interface SidebarProps {
   activeView: MainView;
@@ -25,7 +25,9 @@ interface SidebarProps {
 // 目标 then holds what is in flight, what is queued, and what is finished, so
 // "what should I do now" never needs a second view.
 const navItems: Array<{ id: MainView; label: string; icon: IconName }> = [
+  { id: 'overview', label: '总览', icon: 'target' },
   { id: 'reading', label: '阅读', icon: 'book' },
+  { id: 'workspaces', label: '工作空间', icon: 'board' },
   { id: 'goal', label: '目标', icon: 'target' },
   { id: 'quadrant', label: '象限', icon: 'grid' },
   { id: 'capture', label: '随记', icon: 'capture' },

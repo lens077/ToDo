@@ -41,11 +41,50 @@ export interface ReadingAnnotation {
   updated_at: number;
 }
 
+export interface ReadingLink {
+  reference: string;
+  label: string;
+  created_at: number;
+}
+
+export interface ReadingContext {
+  saved_reason: string;
+  focus_questions: string;
+  revisit_condition: string;
+  personal_notes: string;
+  revisit_type: string;
+  parse_status: string;
+  project_links: ReadingLink[];
+  task_links: ReadingLink[];
+}
+
+export interface ReadingContextInput {
+  saved_reason: string;
+  focus_questions: string;
+  revisit_condition: string;
+  personal_notes: string;
+  revisit_type: string;
+}
+
 export interface ReadingArticleDetail extends ReadingArticle {
   content_html: string;
   markdown: string | null;
   image_dir: string;
   annotations: ReadingAnnotation[];
+  context: ReadingContext;
+}
+
+function emptyContext(): ReadingContext {
+  return {
+    saved_reason: '',
+    focus_questions: '',
+    revisit_condition: '',
+    personal_notes: '',
+    revisit_type: 'NONE',
+    parse_status: 'ok',
+    project_links: [],
+    task_links: [],
+  };
 }
 
 export interface AnnotationInput {
@@ -329,6 +368,7 @@ const mockArticles: ReadingArticleDetail[] = [
         updated_at: Date.now() - 86_400_000,
       },
     ],
+    context: emptyContext(),
   },
   {
     id: 'rmock2',
@@ -350,6 +390,7 @@ const mockArticles: ReadingArticleDetail[] = [
     markdown: null,
     image_dir: '',
     annotations: [],
+    context: emptyContext(),
   },
 ];
 
@@ -409,6 +450,7 @@ export const reading = {
       markdown: null,
       image_dir: '',
       annotations: [],
+      context: emptyContext(),
     };
     mockArticles.unshift(detail);
     return detail;
@@ -443,6 +485,70 @@ export const reading = {
       if (found.progress_percent === 100) found.progress_percent = 0;
     }
     return mockSummary(found);
+  },
+
+  async updateContext(id: string, input: ReadingContextInput): Promise<ReadingArticleDetail> {
+    if (isTauriRuntime()) return call<ReadingArticleDetail>('reading_update_context', { id, context: input });
+    const found = mockFind(id);
+    found.context = { ...found.context, ...input, revisit_type: input.revisit_type || 'NONE' };
+    return found;
+  },
+
+  /** Re-fetch: only source metadata/body change; context is untouched. */
+  async refetch(id: string): Promise<ReadingArticleDetail> {
+    if (isTauriRuntime()) return call<ReadingArticleDetail>('reading_refetch', { id });
+    const found = mockFind(id);
+    found.title = `${found.title}（已重新解析）`;
+    found.context.parse_status = 'ok';
+    return found;
+  },
+
+  async linkProject(id: string, projectRef: string, label: string): Promise<ReadingArticleDetail> {
+    if (isTauriRuntime()) return call<ReadingArticleDetail>('reading_link_project', { id, projectRef, label });
+    const found = mockFind(id);
+    if (!found.context.project_links.some((link) => link.reference === projectRef)) {
+      found.context.project_links.push({ reference: projectRef, label, created_at: Date.now() });
+    }
+    return found;
+  },
+
+  async unlinkProject(id: string, projectRef: string): Promise<ReadingArticleDetail> {
+    if (isTauriRuntime()) return call<ReadingArticleDetail>('reading_unlink_project', { id, projectRef });
+    const found = mockFind(id);
+    found.context.project_links = found.context.project_links.filter((link) => link.reference !== projectRef);
+    return found;
+  },
+
+  async linkTask(id: string, taskRef: string, label: string): Promise<ReadingArticleDetail> {
+    if (isTauriRuntime()) return call<ReadingArticleDetail>('reading_link_task', { id, taskRef, label });
+    const found = mockFind(id);
+    if (!found.context.task_links.some((link) => link.reference === taskRef)) {
+      found.context.task_links.push({ reference: taskRef, label, created_at: Date.now() });
+    }
+    return found;
+  },
+
+  async unlinkTask(id: string, taskRef: string): Promise<ReadingArticleDetail> {
+    if (isTauriRuntime()) return call<ReadingArticleDetail>('reading_unlink_task', { id, taskRef });
+    const found = mockFind(id);
+    found.context.task_links = found.context.task_links.filter((link) => link.reference !== taskRef);
+    return found;
+  },
+
+  /** Markdown 引用卡片. The mock mirrors the Rust layout. */
+  async exportReference(id: string): Promise<string> {
+    if (isTauriRuntime()) return call<string>('reading_export_reference', { id });
+    const found = mockFind(id);
+    const context = found.context;
+    return [
+      '---', 'type: reading', `title: ${found.title}`, `url: ${found.url}`,
+      `captured_at: ${found.added_at}`, '---', '', `# ${found.title}`, '',
+      '# 收藏原因', '', context.saved_reason || '（未填写）', '',
+      '# 未来关注点', '', context.focus_questions || '（未填写）', '',
+      '# 阅读笔记', '', context.personal_notes || '（未填写）', '',
+      ...context.project_links.map((link) => `- ${link.reference}${link.label ? `（${link.label}）` : ''}`),
+      ...context.task_links.map((link) => `- ${link.reference}`),
+    ].join('\n');
   },
 
   async remove(id: string): Promise<void> {

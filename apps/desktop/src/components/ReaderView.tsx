@@ -15,6 +15,7 @@ import {
   type ReadingAnnotation,
   type ReadingArticleDetail,
 } from '../lib/reading';
+import { ReadingContextPanel } from './ReadingContextPanel';
 import { Icon } from './Icon';
 
 interface ReaderViewProps {
@@ -553,6 +554,7 @@ export function ReaderView({ detail, model }: ReaderViewProps) {
               </button>
             </div>
           )}
+          <ReadingContextPanel detail={detail} onDetailChanged={model.applyDetail} />
           <div className="reader-paper" ref={paperRef}>
             <div className="reader-body" ref={bodyRef} data-testid="reader-body" onClick={handleArticleLink} />
             {pendingSelection && (

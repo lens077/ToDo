@@ -297,6 +297,10 @@ export function useReading() {
     batchErrors,
     openArticle,
     closeArticle,
+    /** Replaces the open detail (e.g. after a context save or re-fetch). */
+    applyDetail: (next: ReadingArticleDetail) => {
+      setOpen((current) => (current && current.id === next.id ? next : current));
+    },
     saveProgress,
     setRead,
     remove,

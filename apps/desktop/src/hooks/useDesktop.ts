@@ -13,6 +13,7 @@ import {
   type MoveCompletionDetails,
   type TriageResult,
 } from '../lib/desktop';
+import { workspace } from '../lib/workspace';
 
 export type LoadPhase = 'loading' | 'ready' | 'no-project' | 'load-error';
 
@@ -410,6 +411,33 @@ export function useDesktop() {
     }
   }, [applySnapshot, withBusy]);
 
+  /// Opens a workspace-registered project by stable ID. The registry reports
+  /// `missing` projects; the view offers re-linking instead of opening.
+  const openRegisteredProject = React.useCallback(async (projectId: string) => {
+    const context = ++contextSequence.current;
+    ++snapshotReadSequence.current;
+    setSourceBusy(true);
+    try {
+      snapshotEpoch.current += 1;
+      if (desktop.isTauri) {
+        const opened = await withBusy('project', () => desktop.openRegisteredProject(projectId));
+        if (!opened || context !== contextSequence.current) return;
+        selectedSourceRef.current = opened.selected_source ?? null;
+        applySnapshot(opened, true);
+        setBanner(null);
+        setPhase('ready');
+      } else {
+        await workspace.openProject(projectId);
+        await refreshSnapshot();
+      }
+    } catch (error) {
+      if (context !== contextSequence.current) return;
+      setBanner(bannerFor(error));
+    } finally {
+      if (context === contextSequence.current) setSourceBusy(false);
+    }
+  }, [applySnapshot, refreshSnapshot, withBusy]);
+
   const appendCapture = React.useCallback(
     async (text: string): Promise<boolean> => {
       try {
@@ -596,6 +624,7 @@ export function useDesktop() {
     busyKeys,
     partialTriages,
     chooseProject,
+    openRegisteredProject,
     refreshSnapshot,
     // Adopts a snapshot from a write that bypassed `mutate`, such as a confirmed
     // rewrite. Authoritative: the caller already wrote the file.

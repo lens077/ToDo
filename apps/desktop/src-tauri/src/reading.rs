@@ -3,6 +3,7 @@
 //! Fetching a page blocks on the network, so `reading_add` runs on the
 //! blocking pool; every other call is a local SQLite read or write.
 
+use crate::workspace::WorkspaceState;
 use serde::Deserialize;
 use tauri::State;
 use todo_core::{
@@ -143,5 +144,108 @@ pub fn reading_annotation_delete(state: State<'_, ReadingState>, id: String) -> 
     state
         .store()?
         .delete_annotation(&id)
+        .map_err(|error| error.to_string())
+}
+
+// ── Reading Context (Phase 6) ────────────────────────────────────────────────
+
+#[tauri::command]
+pub fn reading_update_context(
+    state: State<'_, ReadingState>,
+    id: String,
+    context: todo_core::ReadingContextInput,
+) -> Result<ReadingArticleDetail, String> {
+    state
+        .store()?
+        .update_context(&id, &context)
+        .map_err(|error| error.to_string())
+}
+
+/// Re-fetches source metadata and body. User context is structurally
+/// untouched: the Rust UPDATE never mentions those columns.
+#[tauri::command]
+pub async fn reading_refetch(
+    state: State<'_, ReadingState>,
+    id: String,
+) -> Result<ReadingArticleDetail, String> {
+    let store = state.store()?;
+    tauri::async_runtime::spawn_blocking(move || store.refetch(&id))
+        .await
+        .map_err(|error| format!("重新解析任务中断：{error}"))?
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub fn reading_link_project(
+    state: State<'_, ReadingState>,
+    id: String,
+    project_ref: String,
+    label: String,
+) -> Result<ReadingArticleDetail, String> {
+    state
+        .store()?
+        .link_project(&id, &project_ref, &label)
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub fn reading_unlink_project(
+    state: State<'_, ReadingState>,
+    id: String,
+    project_ref: String,
+) -> Result<ReadingArticleDetail, String> {
+    state
+        .store()?
+        .unlink_project(&id, &project_ref)
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub fn reading_link_task(
+    state: State<'_, ReadingState>,
+    id: String,
+    task_ref: String,
+    label: String,
+) -> Result<ReadingArticleDetail, String> {
+    state
+        .store()?
+        .link_task(&id, &task_ref, &label)
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub fn reading_unlink_task(
+    state: State<'_, ReadingState>,
+    id: String,
+    task_ref: String,
+) -> Result<ReadingArticleDetail, String> {
+    state
+        .store()?
+        .unlink_task(&id, &task_ref)
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub fn reading_export_reference(
+    state: State<'_, ReadingState>,
+    id: String,
+) -> Result<String, String> {
+    state
+        .store()?
+        .export_reference(&id)
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub fn reading_export_project_index(
+    _state: State<'_, WorkspaceState>,
+    project_ref: String,
+) -> Result<String, String> {
+    // The index projection lives in the reading store; the project_ref is the
+    // workspace registry ID, kept as an opaque string on the reading side.
+    let reading = crate::reading::runtime_reading_store()
+        .ok_or_else(|| "阅读库不可用：无法确定用户主目录".to_string())?;
+    reading
+        .export_project_index(&project_ref)
         .map_err(|error| error.to_string())
 }

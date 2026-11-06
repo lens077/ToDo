@@ -996,6 +996,12 @@ export const desktop = {
     throw new DesktopBridgeError('浏览器不能打开本机目录，请使用桌面端或连接目标仓库的 todo serve 项目服务。');
   },
 
+  /** Opens a workspace-registered project by its stable registry ID. */
+  async openRegisteredProject(projectId: string): Promise<DesktopSnapshot> {
+    if (isTauriRuntime()) return normalizeSnapshot(await call<unknown>('workspace_open_project', { projectId }));
+    throw new DesktopBridgeError('浏览器不能打开本机目录，请使用桌面端或连接目标仓库的 todo serve 项目服务。');
+  },
+
   /**
    * Scans the repository. Passing `importInto` also prepares the rewrite that
    * importing would produce; nothing is written either way.
