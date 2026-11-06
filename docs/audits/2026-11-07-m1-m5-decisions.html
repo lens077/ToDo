@@ -188,8 +188,29 @@
 </section>
 
 <section id="s4">
-  <h2><span class="no">§4</span>M3 · 确定性验证器</h2>
-  <p class="filelist">（待实施）</p>
+  <h2><span class="no">§4</span>M3 · 确定性验证器 <span class="badge decided">已实现并验证</span></h2>
+
+  <div class="card">
+    <h3><span class="d-id">D-M3-1</span> 白名单范围——Virgo 自己跑哪些检查</h3>
+    <div class="kv"><b class="k">选项</b> A 三项确定性检查（lint/对账结构层/docs validate）｜B 加上项目测试命令（<code>make check</code> 等）｜C 不自动跑</div>
+    <div class="kv"><b class="k">决定</b> <span class="badge decided">A</span>。明确<b>不</b>执行项目任意测试/构建——<code>session.rs:1-8</code> 的「app never runs tests」原则保持不变：agent 自报的命令行在前，Virgo 行在后，两者在表里天然分层可审计。</div>
+    <div class="kv"><b class="k">理由</b> 三项检查都是本 CLI 自己的确定性逻辑（无外部命令、无网络、秒级），越权风险为零；而跑 <code>make check</code> 需要完整工具链与数分钟阻塞，属于 Agent 宿主的职责。</div>
+    <div class="kv"><b class="k">锚点</b> <code>session.rs::run_virgo_checks()</code>（唯一新增函数；<code>finish()</code> 在写表前调用）</div>
+    <div class="kv"><b class="k">如何修改</b> 增删检查项只改这一个函数；不想自动验证时删除那一行 <code>extend</code> 即可整体关闭。</div>
+  </div>
+
+  <div class="card">
+    <h3><span class="d-id">D-M3-2</span> 检查失败的处理</h3>
+    <div class="kv"><b class="k">决定</b> <span class="badge decided">记录不阻断</span>：任何检查出错/发现 findings 都如实写行（如「1 个重复稳定 ID」「N findings, M 项检查未运行」），<code>finish</code> 永远成功；无 TODO.md 的项目 lint 行显示「跳过」。</div>
+    <div class="kv"><b class="k">理由</b> finish 是会话收尾动作，阻断它会逼 agent 不写总结——那比缺验证更糟；行内如实的失败描述本身就是证据。</div>
+    <div class="kv"><b class="k">锚点</b> <code>run_virgo_checks()</code> 全部 <code>unwrap_or_default()</code>/<code>match Err</code> 分支</div>
+  </div>
+
+  <div class="card">
+    <h3><span class="d-id">D-M3-3</span> 行的位置与来源标注</h3>
+    <div class="kv"><b class="k">决定</b> <span class="badge decided">agent 行在前、virgo 行后附</span>；每行 evidence 固定为 <code>virgo 自动（确定性检查，非 agent 自报）</code>，一眼区分自报与机检。</div>
+    <div class="kv"><b class="k">锚点</b> <code>finish()</code> 的 <code>validation_rows</code> 组装；测试 <code>finish_appends_deterministic_virgo_validation_rows</code> 断言行序</div>
+  </div>
 </section>
 
 <section id="s5">
@@ -219,6 +240,9 @@
         <tr><td class="d-id">D-M2-2</td><td>盲 ack/错摘要均 exit 1，锁内校验</td><td>ai.rs ack() + error.rs</td><td>低</td></tr>
         <tr><td class="d-id">D-M2-3</td><td>v1 发布方与存量文件双向兼容</td><td>normalize/read_ai_file</td><td>低</td></tr>
         <tr><td class="d-id">D-M2-4</td><td>卡片呈现 action+params，按钮「确认执行」</td><td>AiView/useAiFeed</td><td>低</td></tr>
+        <tr><td class="d-id">D-M3-1</td><td>白名单三项检查，不执行项目测试</td><td>run_virgo_checks()</td><td>低（单函数）</td></tr>
+        <tr><td class="d-id">D-M3-2</td><td>检查失败记录不阻断</td><td>run_virgo_checks()</td><td>低</td></tr>
+        <tr><td class="d-id">D-M3-3</td><td>agent 行在前，virgo 行标注来源</td><td>finish() 组装</td><td>低</td></tr>
       </tbody>
     </table>
   </div>

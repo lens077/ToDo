@@ -9,7 +9,7 @@ Session 与文档校验的 Agent 接入方式、CLI 契约、CI 模板。Session
 | 命令 | 作用 | Schema |
 |---|---|---|
 | `todo session begin --goal "…"` | 开始会话；已有活动会话时报错 | `todo.session.v1` |
-| `todo session finish --completed … --decision … --validation "cmd\|result\|evidence" --unresolved … --next … --context "…"` | 完成会话并写入总结（含 git 变更文件清单） | `todo.session.v1` |
+| `todo session finish --completed … --decision … --validation "cmd\|result\|evidence" --unresolved … --next … --task <id> --context "…"` | 完成会话并写入总结（含 git 变更文件清单、任务链接、Virgo 确定性验证行） | `todo.session.v1` |
 | `todo session interrupt` | 中断活动会话，解锁新会话 | `todo.session.v1` |
 | `todo session list` | 会话列表（新→旧） | `todo.session-list.v1` |
 | `todo session resume [--json]` | 跨天恢复：最新摘要 + outstanding（active 取目标，completed 取下一步） | `todo.session-resume.v1` |

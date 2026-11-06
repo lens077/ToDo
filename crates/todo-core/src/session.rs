@@ -124,6 +124,11 @@ pub fn finish(project_root: &Path, input: &SessionFinishInput) -> Result<Session
         .ok_or_else(|| Error::WorkspaceInvalid("没有进行中的会话".into()))?;
     let changed_files = collect_git_changed_files(project_root);
     let task_ids = normalize_task_ids(&input.task_ids);
+    let validation_rows = {
+        let mut rows = input.validation.clone();
+        rows.extend(run_virgo_checks(project_root));
+        rows
+    };
     let now = now_ms();
     let mut markdown = format!(
         "---\nsession_id: \"{}\"\nstatus: \"completed\"\nstarted_at: \"{}\"\nfinished_at: \"{}\"\n---\n\n",
@@ -143,11 +148,11 @@ pub fn finish(project_root: &Path, input: &SessionFinishInput) -> Result<Session
     markdown.push('\n');
     push_list(&mut markdown, "Decisions", &input.decisions);
     markdown.push_str("## Validation\n\n");
-    if input.validation.is_empty() {
+    if validation_rows.is_empty() {
         markdown.push_str("| Command | Result | Evidence |\n|---|---|---|\n| （未记录） | | |\n\n");
     } else {
         markdown.push_str("| Command | Result | Evidence |\n|---|---|---|\n");
-        for entry in &input.validation {
+        for entry in &validation_rows {
             markdown.push_str(&format!(
                 "| {} | {} | {} |\n",
                 escape_cell(&entry.command),
@@ -432,8 +437,7 @@ fn iso_or_epoch(ms: i64) -> String {
 /// Deterministic git evidence: `git status --porcelain` paths. Any failure
 /// (not a repo, git missing) yields an empty list, never an error — sessions
 /// must work outside git too.
-fn collect_git_changed_files(project_root: &Path) -> Vec<String> {
-    let output = Command::new("git")
+fn collect_git_changed_files(project_root: &Path) -> Vec<String> {    let output = Command::new("git")
         .arg("-C")
         .arg(project_root)
         .args(["status", "--porcelain"])
@@ -450,6 +454,70 @@ fn collect_git_changed_files(project_root: &Path) -> Vec<String> {
         .map(|path| path.trim().to_string())
         .filter(|path| !path.is_empty())
         .collect()
+}
+
+/// The checks Virgo runs itself on `finish` (M3). Strictly whitelisted and
+/// deterministic: lint of the root TODO.md, the structural reconciliation
+/// layer, and the docs validator. The app still never runs arbitrary project
+/// tests — command rows above the virgo ones stay agent/user supplied.
+/// Every failure lands in the table as a row; nothing here blocks the finish.
+fn run_virgo_checks(project_root: &Path) -> Vec<ValidationEntry> {
+    const SOURCE: &str = "virgo 自动（确定性检查，非 agent 自报）";
+    let mut rows = Vec::new();
+    let document = crate::parse::parse_file(project_root.join("TODO.md")).ok();
+    match &document {
+        None => rows.push(ValidationEntry {
+            command: "todo lint".into(),
+            result: "跳过（根目录无 TODO.md）".into(),
+            evidence: SOURCE.into(),
+        }),
+        Some(document) => {
+            let duplicates = document.duplicate_ids();
+            rows.push(ValidationEntry {
+                command: "todo lint".into(),
+                result: if duplicates.is_empty() {
+                    "ok".into()
+                } else {
+                    format!("{} 个重复稳定 ID", duplicates.len())
+                },
+                evidence: SOURCE.into(),
+            });
+            let report = crate::reconcile::Reconciler::new(project_root).reconcile(
+                document,
+                &crate::reconcile::ReconcileOptions::structural_only(),
+            );
+            rows.push(match report {
+                Ok(report) => ValidationEntry {
+                    command: "todo reconcile（结构层）".into(),
+                    result: format!(
+                        "{} findings, {} 项检查未运行",
+                        report.confirmed.len() + report.suspected.len(),
+                        report.checks_skipped.len()
+                    ),
+                    evidence: SOURCE.into(),
+                },
+                Err(_) => ValidationEntry {
+                    command: "todo reconcile（结构层）".into(),
+                    result: "未运行（对账器错误）".into(),
+                    evidence: SOURCE.into(),
+                },
+            });
+        }
+    }
+    let findings = docs_validate(project_root).unwrap_or_default();
+    let result = if findings.is_empty() {
+        "ok".to_string()
+    } else if docs_validate_blocking(&findings) {
+        format!("{} findings（含 ERROR）", findings.len())
+    } else {
+        format!("{} findings（warning/info）", findings.len())
+    };
+    rows.push(ValidationEntry {
+        command: "todo docs validate".into(),
+        result,
+        evidence: SOURCE.into(),
+    });
+    rows
 }
 
 fn now_ms() -> i64 {
@@ -700,6 +768,53 @@ mod tests {
         assert_eq!(resumed.linked_tasks.len(), 1);
         assert!(!resumed.linked_tasks[0].found);
         assert_eq!(resumed.linked_tasks[0].id, "abc123");
+    }
+
+    #[test]
+    fn finish_appends_deterministic_virgo_validation_rows() {
+        let root = project();
+        // Duplicate stable IDs must surface in the virgo lint row.
+        fs::write(
+            root.path().join("TODO.md"),
+            "---\ntodo-spec: 1\ncolumns:\n  - {id: todo, name: Todo}\n---\n\n## Todo\n\n- [ ] 一 <!--t:abc123-->\n- [ ] 二 <!--t:abc123-->\n",
+        )
+        .unwrap();
+        begin_active(root.path(), "M3");
+        let summary = finish(
+            root.path(),
+            &SessionFinishInput {
+                validation: vec![ValidationEntry {
+                    command: "make check-quick".into(),
+                    result: "绿".into(),
+                    evidence: "agent 自报".into(),
+                }],
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        let content =
+            fs::read_to_string(root.path().join(SESSIONS_DIR).join(&summary.file_name)).unwrap();
+        assert!(content.contains("| todo lint | 1 个重复稳定 ID |"), "{content}");
+        assert!(content.contains("| todo reconcile（结构层） |"), "{content}");
+        assert!(content.contains("| todo docs validate |"), "{content}");
+        assert!(content.contains("virgo 自动（确定性检查，非 agent 自报）"));
+        // Agent-supplied rows come first; virgo rows are appended after.
+        let agent = content.find("| make check-quick | 绿 |").expect("agent row");
+        let lint = content.find("| todo lint |").expect("lint row");
+        assert!(agent < lint);
+    }
+
+    #[test]
+    fn finish_virgo_rows_pass_on_a_clean_project() {
+        let root = project();
+        begin_active(root.path(), "M3 clean");
+        let summary = finish(root.path(), &SessionFinishInput::default()).unwrap();
+        let content =
+            fs::read_to_string(root.path().join(SESSIONS_DIR).join(&summary.file_name)).unwrap();
+        // No TODO.md → lint is skipped, never an error. The project has one
+        // finished session (this one), so docs validate reports ok.
+        assert!(content.contains("| todo lint | 跳过（根目录无 TODO.md） |"), "{content}");
+        assert!(content.contains("| todo docs validate | ok |"), "{content}");
     }
 }
 
