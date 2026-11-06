@@ -359,8 +359,13 @@ fn ai_list(
 }
 
 #[tauri::command]
-fn ai_ack(state: State<'_, AppState>, source: String, session: String) -> Result<AiRecord, String> {
-    state.ops.ai_ack(&source, &session)
+fn ai_ack(
+    state: State<'_, AppState>,
+    source: String,
+    session: String,
+    confirm_digest: Option<String>,
+) -> Result<AiRecord, String> {
+    state.ops.ai_ack(&source, &session, confirm_digest.as_deref())
 }
 
 #[tauri::command]

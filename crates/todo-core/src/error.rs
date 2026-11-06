@@ -76,6 +76,12 @@ pub enum Error {
     InvalidAiFile { path: PathBuf, message: String },
     #[error("ai session not found: {0}")]
     AiSessionNotFound(String),
+    /// The record carries a params digest, so a blind ack is refused.
+    #[error("此记录需要参数摘要确认；先用 `todo ai get` 查看最新参数，再用 --confirm-digest <摘要> 确认")]
+    AiConfirmationRequired,
+    /// The provided digest does not match the stored one: the params changed.
+    #[error("参数摘要不匹配（期望 {0}）；记录参数已变化，旧审批失效，请查看最新参数后重新确认")]
+    AiParamsChanged(String),
     #[error("阅读记录不存在: {0}")]
     ReadingArticleNotFound(String),
     #[error("{0}")]

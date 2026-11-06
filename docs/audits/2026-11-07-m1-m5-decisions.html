@@ -151,8 +151,40 @@
 </section>
 
 <section id="s3">
-  <h2><span class="no">§3</span>M2 · 审批确认对象（Outbox-lite）</h2>
-  <p class="filelist">（待实施）</p>
+  <h2><span class="no">§3</span>M2 · 审批确认对象（Outbox-lite） <span class="badge decided">已实现并验证</span></h2>
+
+  <div class="card">
+    <h3><span class="d-id">D-M2-1</span> 参数摘要（digest）算法与计算方</h3>
+    <div class="kv"><b class="k">选项</b> A 宿主自算摘要传入｜B ToDo 对 params 规范化 JSON 计算 SHA-256</div>
+    <div class="kv"><b class="k">决定</b> <span class="badge decided">B</span>：ToDo 侧对 <code>params</code> 做<b>键排序、去空白</b>的规范化后取 SHA-256（小写 hex）；宿主声明的摘要一律忽略。</div>
+    <div class="kv"><b class="k">理由</b> 计算方与校验方同一，才杜绝「摘要与参数不符」的伪造面；规范化让 <code>{"a":1,"b":2}</code> 与 <code>{"b":2, "a":1}</code> 等价，宿主序列化差异不影响审批。</div>
+    <div class="kv"><b class="k">锚点</b> <code>ai.rs::canonical_params_digest()</code> + <code>normalize()</code>（<code>params_digest</code> 只在此产生）；依赖 <code>sha2 0.10.9</code>（已在依赖树中，锁文件仅 +1 行）</div>
+    <div class="kv"><b class="k">如何修改</b> 换哈希/规范化规则只改这一个函数；<b>改算法会使存量确认对象的旧摘要失效</b>（安全方向失效，可接受）。</div>
+  </div>
+
+  <div class="card">
+    <h3><span class="d-id">D-M2-2</span> 门禁语义与错误码</h3>
+    <div class="kv"><b class="k">选项</b> A 盲 ack 静默通过｜B 缺摘要与错摘要都拒绝（exit 1）｜C 新增退出码</div>
+    <div class="kv"><b class="k">决定</b> <span class="badge decided">B</span>：缺摘要 → <code>Error::AiConfirmationRequired</code>；不匹配 → <code>Error::AiParamsChanged(期望值)</code>；均 exit 1 + JSON 错误信封。宿主以新参数重发（<code>event_at</code> 更新）自动清 <code>acked_at</code>——旧审批失效复用既有规则 2。</div>
+    <div class="kv"><b class="k">理由</b> 不新增退出码，避免破坏 AGENTS.md 已固化的 exit-code 契约；门禁在锁内校验（<code>modify</code> 闭包改为返回 <code>Result</code>），无 get/ack 竞态窗口。</div>
+    <div class="kv"><b class="k">锚点</b> <code>ai.rs::ack()</code>、<code>error.rs</code> 两个新变体、<code>main.rs</code> <code>ack --confirm-digest</code>、<code>serve.rs</code> <code>AiAckInput.confirm_digest</code></div>
+    <div class="kv"><b class="k">如何修改</b> 放宽/收紧只动 <code>ack()</code> 一处；桌面端 <code>ops.rs::ai_ack</code> 已带透传参数。</div>
+  </div>
+
+  <div class="card">
+    <h3><span class="d-id">D-M2-3</span> v1 兼容策略</h3>
+    <div class="kv"><b class="k">决定</b> <span class="badge decided">双向兼容</span>：upsert 接受 spec 1–2；<code>~/.todo/ai/sessions.json</code> 存量 v1 文件可读，写入升级为 2；无确认字段的记录 ack 行为与 v1 完全一致。</div>
+    <div class="kv"><b class="k">理由</b> 已实测真实 store（含 2 条 v1 DSH 记录）正常读取；DSH 桥无需改代码即可继续工作。</div>
+    <div class="kv"><b class="k">锚点</b> <code>ai.rs::normalize()</code>（spec 检查）、<code>read_ai_file()</code>（文件级检查）；<code>docs/ai-feed-spec.md</code> 已升 v2 并记录差异</div>
+    <div class="kv"><b class="k">如何修改</b> 未来 v3：沿用「接受 1..=N、文件级同规则」的模式，新增字段全部 <code>serde(default)</code>。</div>
+  </div>
+
+  <div class="card">
+    <h3><span class="d-id">D-M2-4</span> 桌面端确认交互</h3>
+    <div class="kv"><b class="k">决定</b> <span class="badge decided">卡片内呈现</span>：确认对象显示「待确认：{action}」+ <code>params</code> 原文（pre 块）；按钮文案从「标记已读」变「确认执行」；摘要由前端从当前记录取（<code>useAiFeed.ack</code>），参数在点击前一刻被宿主更新时后端拒绝、经既有 <code>feed.error</code> 面提示并刷新。mock 增加一条演示确认记录 + 同契约的门禁。</div>
+    <div class="kv"><b class="k">锚点</b> <code>AiView.tsx</code>（<code>.ai-card__confirm</code>）、<code>useAiFeed.ts::ack</code>、<code>lib/desktop.ts::aiAck</code>（三传输均透传 <code>confirmDigest</code>）、<code>lib/ai.ts</code> 类型</div>
+    <div class="kv"><b class="k">如何修改</b> 交互改版只动 <code>AiView.tsx</code> + 样式；门禁语义不受影响。</div>
+  </div>
 </section>
 
 <section id="s4">
@@ -183,6 +215,10 @@
         <tr><td class="d-id">D-M1-2</td><td>resume 仅解析根 TODO.md（v1）</td><td>resolve_linked_tasks()</td><td>低（单函数可升级）</td></tr>
         <tr><td class="d-id">D-M1-3</td><td>仅 finish 记录关联（--task）</td><td>CLI/Tauri/前端</td><td>低</td></tr>
         <tr><td class="d-id">D-M1-4</td><td>UI 用文本框 + 状态列表</td><td>ProjectDetailPanel</td><td>低</td></tr>
+        <tr><td class="d-id">D-M2-1</td><td>ToDo 计算规范化 JSON 的 SHA-256</td><td>canonical_params_digest()</td><td>低（单函数）</td></tr>
+        <tr><td class="d-id">D-M2-2</td><td>盲 ack/错摘要均 exit 1，锁内校验</td><td>ai.rs ack() + error.rs</td><td>低</td></tr>
+        <tr><td class="d-id">D-M2-3</td><td>v1 发布方与存量文件双向兼容</td><td>normalize/read_ai_file</td><td>低</td></tr>
+        <tr><td class="d-id">D-M2-4</td><td>卡片呈现 action+params，按钮「确认执行」</td><td>AiView/useAiFeed</td><td>低</td></tr>
       </tbody>
     </table>
   </div>

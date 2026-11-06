@@ -402,7 +402,7 @@ enum AiCommand {
             conflicts_with_all = [
                 "source", "session", "workspace", "state", "outcome", "title", "question",
                 "reply", "reply_truncated", "changed_files", "changed_file_count", "open_url",
-                "event_at",
+                "event_at", "action", "params",
             ]
         )]
         stdin: bool,
@@ -445,6 +445,12 @@ enum AiCommand {
         /// Source-side event time, Unix epoch milliseconds. Defaults to now.
         #[arg(long)]
         event_at: Option<i64>,
+        /// What the user is asked to approve; requires `--state waiting`.
+        #[arg(long)]
+        action: Option<String>,
+        /// JSON object of the params to approve; digest is computed here.
+        #[arg(long)]
+        params: Option<String>,
     },
     /// List sessions in contract order. Hides handled and removed ones unless --all.
     List {
@@ -461,7 +467,14 @@ enum AiCommand {
     /// Show one session.
     Get { source: String, session: String },
     /// Mark one session as read in ToDo.
-    Ack { source: String, session: String },
+    Ack {
+        source: String,
+        session: String,
+        /// Required for confirmation objects: the `params_digest` the user
+        /// reviewed. Mismatching or missing digests are refused.
+        #[arg(long = "confirm-digest")]
+        confirm_digest: Option<String>,
+    },
     /// Hide one session from `list`. The host may still update it.
     Remove { source: String, session: String },
     /// Link one session to a project task's stable ID.
@@ -1170,6 +1183,8 @@ fn run_ai(cli: &Cli, command: &AiCommand) -> Result<u8, Error> {
             changed_file_count,
             open_url,
             event_at,
+            action,
+            params,
         } => {
             let input = if *stdin {
                 read_ai_upsert_stdin()?
@@ -1190,6 +1205,8 @@ fn run_ai(cli: &Cli, command: &AiCommand) -> Result<u8, Error> {
                     changed_file_count: *changed_file_count,
                     open_url: open_url.clone(),
                     event_at: *event_at,
+                    action: action.clone(),
+                    params: params.clone(),
                 }
             };
             let outcome = store.upsert(input)?;
@@ -1241,8 +1258,12 @@ fn run_ai(cli: &Cli, command: &AiCommand) -> Result<u8, Error> {
             });
             Ok(0)
         }
-        AiCommand::Ack { source, session } => {
-            let record = store.ack(source, session)?;
+        AiCommand::Ack {
+            source,
+            session,
+            confirm_digest,
+        } => {
+            let record = store.ack(source, session, confirm_digest.as_deref())?;
             emit(cli, "todo.ai.record.v1", AiRecordData { record }, |data| {
                 format!("acked {}", ai_key(&data.record))
             });

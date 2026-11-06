@@ -723,12 +723,21 @@ async fn ai_sessions(
         connected: store.path().exists(),
     }))
 }
+#[derive(Deserialize, Default)]
+struct AiAckInput {
+    #[serde(default)]
+    confirm_digest: Option<String>,
+}
 async fn ai_ack(
     State(state): State<Arc<ServeState>>,
     AxumPath((source, id)): AxumPath<(String, String)>,
+    payload: Option<axum::Json<AiAckInput>>,
 ) -> ApiResult<AiRecord> {
     state.writable()?;
-    Ok(Json(state.ai_store()?.ack(&source, &id)?))
+    let confirm_digest = payload.and_then(|input| input.0.confirm_digest);
+    Ok(Json(
+        state.ai_store()?.ack(&source, &id, confirm_digest.as_deref())?,
+    ))
 }
 async fn ai_remove(
     State(state): State<Arc<ServeState>>,

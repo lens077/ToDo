@@ -17,8 +17,10 @@ use serde::{Deserialize, Serialize};
 
 use crate::{desktop::Clock, Error, LockedWriter, Result};
 
-/// Contract version this build reads and writes.
-pub const AI_FEED_SPEC: u32 = 1;
+/// Contract version this build reads and writes. v2 adds the confirmation
+/// object fields (`action` / `params` / `params_digest`); v1 publishers stay
+/// valid — their records simply never require digest confirmation.
+pub const AI_FEED_SPEC: u32 = 2;
 /// Records kept per workspace; older ones by `event_at` are dropped on write.
 pub const AI_KEEP_PER_WORKSPACE: usize = 200;
 /// Default age (days) after which handled or hidden records are pruned.
@@ -30,6 +32,8 @@ pub const AI_MAX_TITLE_BYTES: usize = 200;
 pub const AI_MAX_QUESTION_BYTES: usize = 2000;
 pub const AI_MAX_REPLY_BYTES: usize = 4000;
 pub const AI_MAX_CHANGED_FILES: usize = 32;
+pub const AI_MAX_ACTION_BYTES: usize = 200;
+pub const AI_MAX_PARAMS_BYTES: usize = 4096;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -146,6 +150,13 @@ pub struct AiUpsert {
     pub open_url: Option<String>,
     #[serde(default)]
     pub event_at: Option<i64>,
+    /// What the user is being asked to approve (v2). Only with `waiting`.
+    #[serde(default)]
+    pub action: Option<String>,
+    /// JSON object describing exactly what will be done (v2). The digest is
+    /// computed here, never trusted from the wire.
+    #[serde(default)]
+    pub params: Option<String>,
 }
 
 /// One stored record: the host fields plus ToDo's local marks.
@@ -168,6 +179,17 @@ pub struct AiRecord {
     pub acked_at: Option<i64>,
     pub hidden: bool,
     pub task_id: Option<String>,
+    /// The approval being requested; present only on confirmation objects.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub action: Option<String>,
+    /// The params JSON exactly as published (capped), for human review.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub params: Option<String>,
+    /// SHA-256 (hex) of the canonical params JSON. Ack requires the matching
+    /// digest, so re-publishing with changed params invalidates stale
+    /// approvals.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub params_digest: Option<String>,
 }
 
 impl AiRecord {
@@ -319,16 +341,30 @@ impl AiStore {
         })
     }
 
-    pub fn ack(&self, source: &str, session_id: &str) -> Result<AiRecord> {
+    /// Marks a record read. A confirmation object (one carrying
+    /// `params_digest`) refuses the ack unless `confirm_digest` matches the
+    /// stored digest — re-published params always invalidate stale approvals.
+    pub fn ack(&self, source: &str, session_id: &str, confirm_digest: Option<&str>) -> Result<AiRecord> {
         let now = self.now_ms();
         self.modify(source, session_id, |record| {
+            if let Some(expected) = &record.params_digest {
+                match confirm_digest.map(str::trim).filter(|digest| !digest.is_empty()) {
+                    None => return Err(Error::AiConfirmationRequired),
+                    Some(provided) if !provided.eq_ignore_ascii_case(expected) => {
+                        return Err(Error::AiParamsChanged(expected.clone()))
+                    }
+                    Some(_) => {}
+                }
+            }
             record.acked_at = Some(now);
+            Ok(())
         })
     }
 
     pub fn remove(&self, source: &str, session_id: &str) -> Result<AiRecord> {
         self.modify(source, session_id, |record| {
             record.hidden = true;
+            Ok(())
         })
     }
 
@@ -340,6 +376,7 @@ impl AiStore {
         let task_id = task_id.to_string();
         self.modify(source, session_id, move |record| {
             record.task_id = Some(task_id);
+            Ok(())
         })
     }
 
@@ -365,14 +402,14 @@ impl AiStore {
 
     fn modify<F>(&self, source: &str, session_id: &str, change: F) -> Result<AiRecord>
     where
-        F: FnOnce(&mut AiRecord),
+        F: FnOnce(&mut AiRecord) -> Result<()>,
     {
         self.update(|records| {
             let record = records
                 .iter_mut()
                 .find(|record| record.source == source && record.session_id == session_id)
                 .ok_or_else(|| Error::AiSessionNotFound(format!("{source}/{session_id}")))?;
-            change(record);
+            change(record)?;
             Ok((record.clone(), true))
         })
     }
@@ -427,9 +464,9 @@ pub fn sort_records(records: &mut [AiRecord]) {
 }
 
 fn normalize(input: AiUpsert, now: i64) -> Result<AiRecord> {
-    if input.spec != AI_FEED_SPEC {
+    if input.spec == 0 || input.spec > AI_FEED_SPEC {
         return Err(Error::InvalidAiFeed(format!(
-            "unsupported ai-feed-spec {}; this build accepts {AI_FEED_SPEC}",
+            "unsupported ai-feed-spec {}; this build accepts 1-{AI_FEED_SPEC}",
             input.spec
         )));
     }
@@ -474,6 +511,52 @@ fn normalize(input: AiUpsert, now: i64) -> Result<AiRecord> {
         .changed_file_count
         .unwrap_or(listed as u32)
         .max(changed_files.len() as u32);
+    // Confirmation-object fields (v2): only a `waiting` record can ask for
+    // approval, params must be a JSON object, and the digest is computed here
+    // so a publisher can never attach a digest that does not match its params.
+    let action = input
+        .action
+        .map(|text| text.trim().to_string())
+        .filter(|text| !text.is_empty());
+    if let Some(action) = &action {
+        if action.len() > AI_MAX_ACTION_BYTES {
+            return Err(Error::InvalidAiFeed(format!(
+                "action exceeds {AI_MAX_ACTION_BYTES} bytes"
+            )));
+        }
+        if input.state != AiState::Waiting {
+            return Err(Error::InvalidAiFeed(
+                "action requires state=waiting".into(),
+            ));
+        }
+    }
+    let params = input
+        .params
+        .map(|text| text.trim().to_string())
+        .filter(|text| !text.is_empty());
+    let params_digest = match &params {
+        None => None,
+        Some(params) => {
+            if action.is_none() {
+                return Err(Error::InvalidAiFeed(
+                    "params require action; an approval must say what it approves".into(),
+                ));
+            }
+            if params.len() > AI_MAX_PARAMS_BYTES {
+                return Err(Error::InvalidAiFeed(format!(
+                    "params exceed {AI_MAX_PARAMS_BYTES} bytes"
+                )));
+            }
+            let value: serde_json::Value = serde_json::from_str(params)
+                .map_err(|_| Error::InvalidAiFeed("params must be valid JSON".into()))?;
+            if !value.is_object() {
+                return Err(Error::InvalidAiFeed(
+                    "params must be a JSON object".into(),
+                ));
+            }
+            Some(canonical_params_digest(&value))
+        }
+    };
     Ok(AiRecord {
         source: source.to_string(),
         session_id: session_id.to_string(),
@@ -494,7 +577,56 @@ fn normalize(input: AiUpsert, now: i64) -> Result<AiRecord> {
         acked_at: None,
         hidden: false,
         task_id: None,
+        action,
+        params,
+        params_digest,
     })
+}
+
+/// SHA-256 (lowercase hex) of a deterministic canonical JSON form. Keys are
+/// sorted and whitespace removed, so the same logical params always hash the
+/// same regardless of how the publisher serialized them.
+pub fn canonical_params_digest(value: &serde_json::Value) -> String {
+    use sha2::{Digest, Sha256};
+    fn write_canonical(value: &serde_json::Value, out: &mut String) {
+        match value {
+            serde_json::Value::Null => out.push_str("null"),
+            serde_json::Value::Bool(true) => out.push_str("true"),
+            serde_json::Value::Bool(false) => out.push_str("false"),
+            serde_json::Value::Number(number) => out.push_str(&number.to_string()),
+            serde_json::Value::String(text) => {
+                out.push_str(&serde_json::to_string(text).unwrap_or_else(|_| "\"\"".into()));
+            }
+            serde_json::Value::Array(items) => {
+                out.push('[');
+                for (index, item) in items.iter().enumerate() {
+                    if index > 0 {
+                        out.push(',');
+                    }
+                    write_canonical(item, out);
+                }
+                out.push(']');
+            }
+            serde_json::Value::Object(map) => {
+                let mut keys: Vec<&String> = map.keys().collect();
+                keys.sort();
+                out.push('{');
+                for (index, key) in keys.iter().enumerate() {
+                    if index > 0 {
+                        out.push(',');
+                    }
+                    out.push_str(&serde_json::to_string(key).unwrap_or_else(|_| "\"\"".into()));
+                    out.push(':');
+                    write_canonical(&map[*key], out);
+                }
+                out.push('}');
+            }
+        }
+    }
+    let mut canonical = String::new();
+    write_canonical(value, &mut canonical);
+    let digest = Sha256::digest(canonical.as_bytes());
+    digest.iter().map(|byte| format!("{byte:02x}")).collect()
 }
 
 /// Cuts on a char boundary so a truncated field stays valid UTF-8.
@@ -556,7 +688,8 @@ fn read_ai_file(path: &Path) -> Result<AiFile> {
         path: path.to_path_buf(),
         message: error.to_string(),
     })?;
-    if file.spec != AI_FEED_SPEC {
+    // v1 stores stay readable: only a file written by a newer binary is refused.
+    if file.spec == 0 || file.spec > AI_FEED_SPEC {
         return Err(Error::InvalidAiFile {
             path: path.to_path_buf(),
             message: format!("unsupported ai-feed-spec {}", file.spec),
@@ -609,7 +742,101 @@ mod tests {
             changed_file_count: None,
             open_url: None,
             event_at: Some(event_at),
+            action: None,
+            params: None,
         }
+    }
+
+    fn confirm_upsert(
+        session: &str,
+        action: Option<&str>,
+        params: Option<&str>,
+        event_at: i64,
+    ) -> AiUpsert {
+        AiUpsert {
+            action: action.map(str::to_string),
+            params: params.map(str::to_string),
+            ..upsert(session, AiState::Waiting, event_at)
+        }
+    }
+
+    #[test]
+    fn confirmation_object_digests_canonical_params_and_gates_ack() {
+        let dir = tempfile::tempdir().unwrap();
+        let (store, _) = store(&dir, 1_000);
+        let published = store
+            .upsert(confirm_upsert(
+                "s-confirm",
+                Some("删除生产数据库"),
+                Some(r#"{"path": "/prod/db" , "count": 3}"#),
+                100,
+            ))
+            .unwrap();
+        let digest = published.record.params_digest.clone().unwrap();
+        assert_eq!(digest.len(), 64);
+        assert!(published.record.action.as_deref() == Some("删除生产数据库"));
+
+        // Same logical params in a different serialization hash identically.
+        let republished = store
+            .upsert(confirm_upsert(
+                "s-confirm",
+                Some("删除生产数据库"),
+                Some("{\n  \"count\": 3,\n  \"path\": \"/prod/db\"\n}"),
+                150,
+            ))
+            .unwrap();
+        assert_eq!(republished.record.params_digest.as_deref(), Some(digest.as_str()));
+
+        // A blind ack is refused; a wrong digest is refused; the right one acks.
+        assert!(matches!(
+            store.ack("dsh", "s-confirm", None),
+            Err(Error::AiConfirmationRequired)
+        ));
+        assert!(matches!(
+            store.ack("dsh", "s-confirm", Some("deadbeef")),
+            Err(Error::AiParamsChanged(_))
+        ));
+        let acked = store.ack("dsh", "s-confirm", Some(&digest)).unwrap();
+        assert!(acked.acked_at.is_some());
+
+        // Params changed → digest changes → the stale approval is void.
+        let changed = store
+            .upsert(confirm_upsert(
+                "s-confirm",
+                Some("删除生产数据库"),
+                Some(r#"{"path": "/prod/db2", "count": 3}"#),
+                200,
+            ))
+            .unwrap();
+        assert_ne!(changed.record.params_digest.as_deref(), Some(digest.as_str()));
+        assert!(changed.record.acked_at.is_none());
+        assert!(matches!(
+            store.ack("dsh", "s-confirm", Some(&digest)),
+            Err(Error::AiParamsChanged(_))
+        ));
+    }
+
+    #[test]
+    fn confirmation_fields_are_validated() {
+        let dir = tempfile::tempdir().unwrap();
+        let (store, _) = store(&dir, 1_000);
+        // action without waiting is refused.
+        let mut input = confirm_upsert("s1", Some("删除"), Some("{}"), 100);
+        input.state = AiState::Running;
+        assert!(store.upsert(input).is_err());
+        // params without action is refused.
+        assert!(store
+            .upsert(confirm_upsert("s1", None, Some("{}"), 100))
+            .is_err());
+        // Non-object or non-JSON params are refused.
+        assert!(store
+            .upsert(confirm_upsert("s1", Some("删除"), Some("[1,2]"), 100))
+            .is_err());
+        assert!(store
+            .upsert(confirm_upsert("s1", Some("删除"), Some("not json"), 100))
+            .is_err());
+        // A plain waiting record without action stays valid (v1 hosts).
+        assert!(store.upsert(upsert("s1", AiState::Waiting, 100)).is_ok());
     }
 
     #[test]
@@ -620,7 +847,7 @@ mod tests {
         assert!(!first.unchanged);
         assert_eq!(first.record.received_at, 1_000);
 
-        store.ack("dsh", "s1").unwrap();
+        store.ack("dsh", "s1", None).unwrap();
         store.link("dsh", "s1", "kq3n8w").unwrap();
         assert!(store.get("dsh", "s1").unwrap().acked_at.is_some());
 
@@ -639,7 +866,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let (store, _) = store(&dir, 1_000);
         store.upsert(upsert("s1", AiState::Unread, 200)).unwrap();
-        store.ack("dsh", "s1").unwrap();
+        store.ack("dsh", "s1", None).unwrap();
 
         let stale = store.upsert(upsert("s1", AiState::Running, 100)).unwrap();
         assert!(stale.unchanged);
@@ -763,7 +990,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let (store, _) = store(&dir, 1_000);
         let mut bad_spec = upsert("s", AiState::Running, 1);
-        bad_spec.spec = 2;
+        bad_spec.spec = AI_FEED_SPEC + 1;
         assert!(matches!(
             store.upsert(bad_spec),
             Err(Error::InvalidAiFeed(_))

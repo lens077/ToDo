@@ -452,6 +452,16 @@ let mockAiRecords: AiRecord[] = mockAiMode === 'default' ? [
     reply: '我准备在「快速开始」第二段加入 cargo install 的命令，并在下面注明需要 Rust 1.80 以上。是否继续？',
   }),
   mockAiRecord({
+    session_id: 's_confirm1',
+    state: 'waiting',
+    event_at: mockAiNow - 90_000,
+    title: '清理 target 目录以释放磁盘',
+    action: '执行 `cargo clean` 并删除 target 下的旧产物',
+    params: '{"scope":"apps/desktop/src-tauri/target","dry_run":false}',
+    params_digest: 'a3f1c0e9b2d4476881aac5e0f3b97d21c64e8f5a90d3b7c2e148af6d035b9e71',
+    question: 'target 目录已占 8.2 GB，是否现在清理？',
+  }),
+  mockAiRecord({
     session_id: 's_fail1',
     state: 'failed',
     outcome: 'error',
@@ -734,6 +744,9 @@ function normalizeAiRecord(raw: unknown): AiRecord {
     acked_at: typeof record.acked_at === 'number' ? record.acked_at : null,
     hidden: record.hidden === true,
     task_id: text(record.task_id),
+    action: text(record.action),
+    params: text(record.params),
+    params_digest: text(record.params_digest),
   };
 }
 
@@ -1343,13 +1356,19 @@ export const desktop = {
     };
   },
 
-  async aiAck(source: string, session: string): Promise<AiRecord> {
-    if (isTauriRuntime()) return normalizeAiRecord(await call<unknown>('ai_ack', { source, session }));
+  async aiAck(source: string, session: string, confirmDigest?: string | null): Promise<AiRecord> {
+    if (isTauriRuntime()) return normalizeAiRecord(await call<unknown>('ai_ack', { source, session, confirmDigest: confirmDigest ?? null }));
     if (useHttp()) {
       if (!httpCapabilities?.writable) throw new DesktopBridgeError('服务端处于只读模式，无法标记会话');
-      return normalizeAiRecord(await api<unknown>(`/ai/sessions/${encodeURIComponent(source)}/${encodeURIComponent(session)}/ack`, { method: 'POST', body: {} }));
+      return normalizeAiRecord(await api<unknown>(`/ai/sessions/${encodeURIComponent(source)}/${encodeURIComponent(session)}/ack`, { method: 'POST', body: confirmDigest ? { confirm_digest: confirmDigest } : {} }));
     }
-    return mockAiModify(source, session, (record) => ({ ...record, acked_at: Date.now() }));
+    // Mock mirrors the Rust contract: confirmation objects refuse blind acks.
+    const record = mockAiRecords.find((item) => item.source === source && item.session_id === session);
+    if (record?.params_digest) {
+      if (!confirmDigest) throw new DesktopBridgeError('此记录需要参数摘要确认；请先查看最新参数');
+      if (confirmDigest !== record.params_digest) throw new DesktopBridgeError('参数摘要不匹配；记录参数已变化，旧审批失效');
+    }
+    return mockAiModify(source, session, (item) => ({ ...item, acked_at: Date.now() }));
   },
 
   async aiRemove(source: string, session: string): Promise<AiRecord> {

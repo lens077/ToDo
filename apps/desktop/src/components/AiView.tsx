@@ -162,6 +162,12 @@ function AiCard({ record, busy, readOnly, target, onOpen, onToTask, onAck, onRem
         </time>
       </header>
       <h3 className="ai-card__title">{title}</h3>
+      {record.action && (
+        <div className="ai-card__confirm" data-testid="ai-confirm">
+          <strong>待确认：{record.action}</strong>
+          {record.params && <pre className="ai-card__params">{record.params}</pre>}
+        </div>
+      )}
       {record.question && <QuestionPreview question={record.question} />}
       <ReplyPreview record={record} />
       <ChangedFiles record={record} />
@@ -190,7 +196,7 @@ function AiCard({ record, busy, readOnly, target, onOpen, onToTask, onAck, onRem
         )}
         {canAck(record) && (
           <button type="button" className="text-action" disabled={busy || readOnly} onClick={() => onAck(record)}>
-            标记已读
+            {record.params_digest ? '确认执行' : '标记已读'}
           </button>
         )}
         <button

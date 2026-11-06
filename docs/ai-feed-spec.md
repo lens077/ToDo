@@ -1,8 +1,9 @@
-# AI Feed 契约 v1
+# AI Feed 契约 v2
 
-`ai-feed-spec: 1`。本文是 DSH（或其他 agent 宿主）向 ToDo 发布会话状态的唯一接口契约。三方实现——`todo ai` CLI、桌面端「AI」视图、DSH 外部扩展 `dsh-todo-bridge`——只依赖本文，不依赖彼此的源码。
+`ai-feed-spec: 2`。本文是 DSH（或其他 agent 宿主）向 ToDo 发布会话状态的唯一接口契约。三方实现——`todo ai` CLI、桌面端「AI」视图、DSH 外部扩展 `dsh-todo-bridge`——只依赖本文，不依赖彼此的源码。
 
-已定决策（2026-09-11）：存储全局；v1 单向（宿主 → ToDo）；DSH 桥接作为外部扩展分发；一个会话一条记录。
+已定决策（2026-09-11）：存储全局；单向（宿主 → ToDo）；DSH 桥接作为外部扩展分发；一个会话一条记录。
+v2（2026-11-07）：新增确认对象字段（§1.1 `action` / `params`、§1.3 `params_digest`）与 ack 门禁（§3.5）。`ai-feed-spec: 1` 的发布方仍然有效——其记录不含确认字段，ack 行为与 v1 相同。
 
 ## 1. 记录
 
@@ -12,7 +13,7 @@
 
 | 字段 | 类型 | 必填 | 说明 |
 |---|---|---|---|
-| `ai-feed-spec` | `1` | 是 | 契约版本。其他值被拒绝，退出码 `2` |
+| `ai-feed-spec` | `1` 或 `2` | 是 | 契约版本。更大或其他值被拒绝，退出码 `2` |
 | `source` | string | 是 | 来源标识，小写字母、数字、`-`，1–32 字节。DSH 使用 `dsh` |
 | `session_id` | string | 是 | 来源内唯一的会话 ID，1–128 字节 |
 | `workspace` | string | 是 | 会话工作目录的绝对路径。桌面端据此匹配当前项目 |
@@ -26,6 +27,25 @@
 | `changed_file_count` | integer | 否 | 改动文件总数，可大于 `changed_files.len()`；缺省等于列表长度 |
 | `open_url` | string \| null | 否 | 打开该会话的链接；`http`/`https` |
 | `event_at` | integer | 是 | 来源侧状态变化时间，Unix epoch 毫秒 |
+| `action` | string \| null | 否 | **v2**：请求用户批准的动作描述，≤ 200 字节；仅 `state: waiting` 时允许 |
+| `params` | string \| null | 否 | **v2**：待批准参数的 JSON **对象**（序列化为字符串），≤ 4096 字节；必须与 `action` 同现；摘要由 ToDo 计算 |
+
+### 1.2 ToDo 本地字段
+
+由 ToDo 写入，宿主传入时忽略：
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| `received_at` | integer | CLI 写入时间，epoch 毫秒 |
+| `acked_at` | integer \| null | 用户在 ToDo 中标记已读的时间 |
+| `hidden` | bool | 用户在 ToDo 中移除；`list` 默认不显示 |
+| `task_id` | string \| null | 关联的 Project Task 稳定 ID |
+
+### 1.3 ToDo 派生字段（v2）
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| `params_digest` | string \| null | `params` 规范化 JSON（键排序、去空白）的 SHA-256 小写十六进制。由 ToDo 计算，宿主声明的摘要一律忽略；确认时必须回传该值（§3.5） |
 
 超过长度上限的字符串字段由 CLI 截断到上限，不拒绝；`changed_files` 超过 32 项时截断列表并保留 `changed_file_count`。
 
@@ -61,6 +81,8 @@
 2. `event_at` 大于已存记录时，`acked_at` 清空，`hidden` 与 `task_id` 保留。
 3. 记录以外的顶层字段忽略，不报错，便于宿主先行扩展。
 4. 缺少必填字段、类型错误、枚举值未知：退出码 `2`，不写入。
+5. **确认门禁（v2）**：`params_digest` 非空的记录，`ack` 必须回传一致的 `--confirm-digest`；缺失报错退出码 `1`，不匹配报错退出码 `1`（「参数摘要不匹配……旧审批失效」）。宿主以新参数重新发布（`event_at` 更新）即自动作废旧审批（规则 2 清空 `acked_at`）。
+6. `action` / `params` 违反组合约束（非 `waiting`、`params` 无 `action`、`params` 非 JSON 对象、超长）：退出码 `2`，不写入。
 
 ## 4. 存储
 
@@ -71,10 +93,12 @@
 
 ```json
 {
-  "ai-feed-spec": 1,
+  "ai-feed-spec": 2,
   "sessions": [ { …记录… } ]
 }
 ```
+
+v1 文件（`"ai-feed-spec": 1`）继续可读；写入时升级为 `2`。
 
 - 保留：每个 `workspace` 最多 200 条，超出按 `event_at` 升序丢弃；`handled` 或 `hidden` 且 `event_at` 早于 30 天的记录在 `prune` 时清理。
 
@@ -85,10 +109,10 @@ todo ai upsert --stdin
 todo ai upsert --source <s> --session <id> --workspace <路径> --state <状态>
               [--outcome <值>] [--title <文本>] [--question <文本>] [--reply <文本>]
               [--reply-truncated] [--changed-file <路径>]... [--changed-file-count <n>]
-              [--open-url <url>] [--event-at <ms>]
+              [--open-url <url>] [--event-at <ms>] [--action <文本>] [--params <json>]
 todo ai list [--workspace <路径>] [--state <状态>]... [--all]
 todo ai get <source> <session>
-todo ai ack <source> <session>
+todo ai ack <source> <session> [--confirm-digest <hex>]
 todo ai remove <source> <session>
 todo ai link <source> <session> <task-id>
 todo ai prune [--older-than <天>]

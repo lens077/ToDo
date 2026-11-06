@@ -1041,6 +1041,80 @@ fn project_restore_last_without_backup_fails_cleanly() {
     assert!(!String::from_utf8_lossy(&output.stderr).contains("panic"));
 }
 
+// ── AI confirmation objects (ai-feed-spec v2) ───────────────────────────────
+
+#[test]
+fn ai_confirmation_object_requires_matching_digest_to_ack() {
+    let dir = tempdir().unwrap();
+    let store_path = dir.path().join("ai-store");
+    let run = |args: &[&str]| {
+        Command::new(env!("CARGO_BIN_EXE_todo"))
+            .current_dir(dir.path())
+            .env("TODO_AI_STORE", &store_path)
+            .args(args)
+            .output()
+            .unwrap()
+    };
+
+    // Publish a confirmation object; ToDo computes the digest from the params.
+    let upsert = run(&[
+        "--json",
+        "ai",
+        "upsert",
+        "--source",
+        "dsh",
+        "--session",
+        "s-1",
+        "--workspace",
+        dir.path().to_str().unwrap(),
+        "--state",
+        "waiting",
+        "--action",
+        "删除生产数据",
+        "--params",
+        r#"{"path":"/prod/db","count":3}"#,
+    ]);
+    assert!(
+        upsert.status.success(),
+        "{}",
+        String::from_utf8_lossy(&upsert.stderr)
+    );
+
+    // Ack without a digest is refused with a JSON error envelope (exit 1).
+    let blind = run(&["--json", "ai", "ack", "dsh", "s-1"]);
+    assert_eq!(blind.status.code(), Some(1));
+    assert!(String::from_utf8_lossy(&blind.stdout).contains("\"ok\":false"));
+
+    // The published digest is visible via `ai get` for the human to review.
+    let get = run(&["--json", "ai", "get", "dsh", "s-1"]);
+    let get_json = String::from_utf8_lossy(&get.stdout);
+    let marker = "\"params_digest\":\"";
+    let start = get_json.find(marker).expect("digest present in get") + marker.len();
+    let digest = get_json[start..].split('"').next().unwrap().to_string();
+    assert_eq!(digest.len(), 64);
+
+    // A wrong digest fails; the reviewed digest acks.
+    let wrong = run(&[
+        "--json",
+        "ai",
+        "ack",
+        "dsh",
+        "s-1",
+        "--confirm-digest",
+        &"0".repeat(64),
+    ]);
+    assert_eq!(wrong.status.code(), Some(1));
+    assert!(String::from_utf8_lossy(&wrong.stdout).contains("参数摘要不匹配"));
+
+    let ok = run(&["--json", "ai", "ack", "dsh", "s-1", "--confirm-digest", &digest]);
+    assert!(
+        ok.status.success(),
+        "{}",
+        String::from_utf8_lossy(&ok.stderr)
+    );
+    assert!(String::from_utf8_lossy(&ok.stdout).contains("\"acked_at\":"));
+}
+
 // ── Session CLI & docs validator (workspace blueprint Phase 5) ──────────────
 
 #[test]

@@ -59,8 +59,8 @@ impl DesktopOps {
             connected: store.path().exists(),
         })
     }
-    pub fn ai_ack(&self, source: &str, session: &str) -> Result<AiRecord, String> {
-        self.ai_store()?.ack(source, session).map_err(stringify)
+    pub fn ai_ack(&self, source: &str, session: &str, confirm_digest: Option<&str>) -> Result<AiRecord, String> {
+        self.ai_store()?.ack(source, session, confirm_digest).map_err(stringify)
     }
     pub fn ai_remove(&self, source: &str, session: &str) -> Result<AiRecord, String> {
         self.ai_store()?.remove(source, session).map_err(stringify)

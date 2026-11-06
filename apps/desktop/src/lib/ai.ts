@@ -32,6 +32,12 @@ export interface AiRecord {
   acked_at: number | null;
   hidden: boolean;
   task_id: string | null;
+  /** v2 确认对象：请求用户批准的动作（仅 waiting）。 */
+  action?: string | null;
+  /** 审批参数原文（封顶存储），供人工复核。 */
+  params?: string | null;
+  /** params 规范化 JSON 的 SHA-256；确认时必须回传一致值。 */
+  params_digest?: string | null;
 }
 
 export interface AiListResult {

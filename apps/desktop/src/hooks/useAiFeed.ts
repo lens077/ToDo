@@ -115,7 +115,10 @@ export function useAiFeed({ projectPath, onSnapshot }: UseAiFeedOptions) {
   }, []);
 
   const ack = React.useCallback(async (record: AiRecord) => {
-    const updated = await withBusy(recordKey(record), () => desktop.aiAck(record.source, record.session_id));
+    // Confirmation objects must echo the digest the user reviewed; the
+    // backend refuses a stale digest, and withBusy surfaces that error.
+    const updated = await withBusy(recordKey(record), () =>
+      desktop.aiAck(record.source, record.session_id, record.params_digest ?? null));
     if (updated) applyRecord(updated);
     void refresh();
     return updated !== null;

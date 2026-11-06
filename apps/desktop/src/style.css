@@ -894,6 +894,8 @@
   .ai-card__time { margin-left: auto; font-variant-numeric: tabular-nums; white-space: nowrap; }
   .ai-card__workspace { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--mono); font-size: 11px; }
   .ai-card__outcome { padding: 1px 6px; color: var(--danger); border: 1px solid currentColor; border-radius: var(--radius-chip); font-size: 10.5px; line-height: 1.4; }
+  .ai-card__confirm { display: grid; gap: 4px; padding: 8px 10px; border: 1px solid color-mix(in srgb, var(--warning, #b45309) 45%, transparent); border-radius: 8px; background: color-mix(in srgb, var(--warning, #b45309) 8%, transparent); font-size: 12.5px; }
+  .ai-card__params { margin: 0; padding: 6px 8px; border-radius: 6px; background: color-mix(in srgb, var(--ink, #26221d) 6%, transparent); font-family: var(--mono, monospace); font-size: 11.5px; overflow-x: auto; white-space: pre-wrap; word-break: break-all; }
   .ai-badge { display: inline-flex; align-items: center; padding: 2px 7px; font-size: 11px; line-height: 1.4; color: var(--ink-2); background: var(--panel-2); border: 1px solid transparent; border-radius: var(--radius-chip); }
   .ai-badge--waiting { color: var(--accent); background: var(--accent-wash); }
   .ai-badge--failed { color: var(--danger); background: var(--danger-wash); }
