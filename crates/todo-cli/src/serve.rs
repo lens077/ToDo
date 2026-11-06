@@ -731,10 +731,18 @@ struct AiAckInput {
 async fn ai_ack(
     State(state): State<Arc<ServeState>>,
     AxumPath((source, id)): AxumPath<(String, String)>,
-    payload: Option<axum::Json<AiAckInput>>,
+    body: axum::body::Bytes,
 ) -> ApiResult<AiRecord> {
     state.writable()?;
-    let confirm_digest = payload.and_then(|input| input.0.confirm_digest);
+    // Lenient body: empty (v1 clients) means no digest; garbage is treated the
+    // same because a confirmation object refuses a missing digest anyway.
+    let confirm_digest = if body.is_empty() {
+        None
+    } else {
+        serde_json::from_slice::<AiAckInput>(&body)
+            .ok()
+            .and_then(|input| input.confirm_digest)
+    };
     Ok(Json(
         state.ai_store()?.ack(&source, &id, confirm_digest.as_deref())?,
     ))

@@ -102,6 +102,8 @@ fn upsert(store: &std::path::Path, session: &str, workspace: &str, state: AiStat
             changed_file_count: None,
             open_url: Some(format!("http://127.0.0.1:3080/?session={session}")),
             event_at: Some(event_at),
+            action: None,
+            params: None,
         })
         .unwrap();
 }

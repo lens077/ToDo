@@ -134,7 +134,8 @@ fn stdin_upsert_round_trips_through_json_envelope() {
 
     let stored: serde_json::Value =
         serde_json::from_str(&fs::read_to_string(&h.store).unwrap()).unwrap();
-    assert_eq!(stored["ai-feed-spec"], 1);
+    // A v1 record is accepted and the store is upgraded to the current version.
+    assert_eq!(stored["ai-feed-spec"], 2);
     assert_eq!(stored["sessions"].as_array().unwrap().len(), 1);
 
     let got = h.json(&["ai", "get", "dsh", "s_8f2a", "--json"]);
@@ -213,7 +214,7 @@ fn stale_event_is_reported_unchanged_and_equal_event_overwrites() {
 #[test]
 fn contract_violations_exit_2_and_write_nothing() {
     let h = Harness::new();
-    let bad_spec = SPEC_EXAMPLE.replace("\"ai-feed-spec\": 1", "\"ai-feed-spec\": 2");
+    let bad_spec = SPEC_EXAMPLE.replace("\"ai-feed-spec\": 1", "\"ai-feed-spec\": 3");
     let output = h.run_stdin(&["ai", "upsert", "--stdin"], &bad_spec);
     assert_eq!(output.status.code(), Some(2));
     assert!(String::from_utf8_lossy(&output.stderr).contains("ai-feed-spec"));
