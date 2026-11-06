@@ -86,6 +86,14 @@ pub enum Error {
     ReadingExtract(String),
     #[error("标记无效: {0}")]
     InvalidReadingAnnotation(String),
+    #[error("工作空间不存在: {0}")]
+    WorkspaceNotFound(String),
+    #[error("注册项目不存在: {0}")]
+    WorkspaceProjectNotFound(String),
+    #[error("工作空间注册表无效: {0}")]
+    WorkspaceInvalid(String),
+    #[error("路径已被其他项目注册: {0}")]
+    WorkspacePathAlreadyRegistered(String),
 }
 
 impl Error {

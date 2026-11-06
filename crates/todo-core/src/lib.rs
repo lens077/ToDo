@@ -10,16 +10,21 @@ mod error;
 mod heading_priority;
 mod history;
 mod id;
+mod knowledge;
 mod llm;
 mod lock;
 mod model;
+mod overview;
 mod parse;
+mod profile;
 mod project;
 mod projection;
 mod prompt;
 mod reading;
 mod reconcile;
 mod scan;
+mod session;
+mod workspace;
 mod write;
 
 pub use adoption::{ensure_unmodified, plan_adoption, AdoptPlan};
@@ -44,10 +49,19 @@ pub use history::{
     STATE_DIR,
 };
 pub use id::{generate_task_id, DEFAULT_ID_LENGTH};
+pub use knowledge::{
+    render_markdown, KnowledgeDocument, KnowledgeDocumentContent, KnowledgeScanReport,
+    LOGICAL_TYPES,
+};
 pub use llm::{LlmConfig, LlmProvider, LlmSemanticReconciler};
 pub use lock::{FileLockGuard, LockedWriter};
 pub use model::*;
+pub use overview::{OverviewReport, ProjectOverview};
 pub use parse::{parse, parse_file};
+pub use profile::{
+    scan_environment, EnvironmentProfile, ObservedCommand, ObservedEnvironment, ProjectProfile,
+    ScanSummary,
+};
 pub use project::*;
 pub use projection::{
     project_document, ProjectedTask, Projection, ProjectionSnapshot, UpdateStats, SCHEMA_HASH,
@@ -58,8 +72,14 @@ pub use prompt::{
 };
 pub use reading::{
     reading_stats, ReadingAnnotation, ReadingAnnotationInput, ReadingArticle, ReadingArticleDetail,
-    ReadingStore,
+    ReadingContext, ReadingContextInput, ReadingLink, ReadingStore,
 };
 pub use reconcile::*;
 pub use scan::{import_text, scan, CodeComment, LooseCheckbox, ScanOptions, ScanReport, ScanStats};
+pub use session::{
+    begin as session_begin, docs_validate, docs_validate_blocking, finish as session_finish,
+    interrupt as session_interrupt, list as session_list, resume as session_resume, DocsFinding,
+    DocsSeverity, SessionFinishInput, SessionResume, SessionSummary, ValidationEntry,
+};
+pub use workspace::{AddedProject, ProjectSummary, WorkspaceStore, WorkspaceSummary};
 pub use write::{apply_changes, atomic_write, Change, Edit, InsertPosition, OptimisticLock};
