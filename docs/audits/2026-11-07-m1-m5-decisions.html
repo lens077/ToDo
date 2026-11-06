@@ -242,8 +242,17 @@
 </section>
 
 <section id="s6">
-  <h2><span class="no">§6</span>M5 · SQLite 投影接入决策</h2>
-  <p class="filelist">（待实施）</p>
+  <h2><span class="no">§6</span>M5 · SQLite 投影接入决策 <span class="badge decided">已代决策（数据驱动）</span></h2>
+
+  <div class="card">
+    <h3><span class="d-id">D-M5-1</span> 是否把 SQLite 投影接入 serve/桌面端</h3>
+    <div class="kv"><b class="k">背景</b> <code>TODO.md</code> <code>b6r1vy</code>：11-03 审计指出"投影未接入、无性能证据支撑决策"。本轮新建基准 <code>benchmark_projection_10k_tasks</code>（<code>#[ignore]</code>，可复跑）。</div>
+    <div class="kv"><b class="k">实测（release，10k 任务）</b> 内存解析 <b>59 ms</b> ｜ 投影全量重建 <b>28 ms</b> ｜ 增量更新（1 任务翻转）<b>132 ms</b></div>
+    <div class="kv"><b class="k">决定</b> <span class="badge decided">暂不接入</span>：内存快照以 10 倍余量满足"1k 任务 <100 ms"的原始门槛；增量路径甚至慢于全量重建——投影在此规模是无收益的第二数据面。</div>
+    <div class="kv"><b class="k">重开触发</b> 活跃任务 &gt;20k ｜ 常驻 serve 多客户端轮询成 CPU 热点 ｜ 快照 p95 &gt;500 ms</div>
+    <div class="kv"><b class="k">锚点</b> <code>DECISIONS.md</code> 决策⑥（完整论证与接线点）；<code>TODO.md</code> <code>b6r1vy</code> 备注已用 <code>todo note</code> 更新（任务状态保留待你复核）</div>
+    <div class="kv"><b class="k">如何修改</b> 推翻 = 按决策⑥末尾的接线点把 snapshot 路径换 <code>Projection</code>，数据层已就绪（测试全绿）。</div>
+  </div>
 </section>
 
 <section id="s7">
@@ -269,6 +278,7 @@
         <tr><td class="d-id">D-M4-1</td><td>FTS5 + CJK 字间空格短语查询</td><td>knowledge.rs 三辅助函数</td><td>低</td></tr>
         <tr><td class="d-id">D-M4-2</td><td>索引随扫描全量重建，schema v4</td><td>workspace.rs migrate</td><td>低</td></tr>
         <tr><td class="d-id">D-M4-3</td><td>前端订阅既有事件 5s 去抖重建</td><td>ProjectDetailPanel effect</td><td>低</td></tr>
+        <tr><td class="d-id">D-M5-1</td><td>投影暂不接入（实测 10k=59ms），三触发条件重开</td><td>DECISIONS.md ⑥ / TODO b6r1vy</td><td>中（接线点已写明）</td></tr>
       </tbody>
     </table>
   </div>

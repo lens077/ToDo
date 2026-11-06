@@ -18,7 +18,7 @@ columns:
 - [ ] 人工验收原生文件选择器打开项目 <!--t:p7v2ld--> #desktop #manual !1 ^2000
 - [ ] 人工验收外部编辑后界面刷新 <!--t:w8s5rt--> #desktop #manual !1 ^4000
 - [ ] 按既定触发条件让 todo serve 与桌面端使用 SQLite 投影 <!--t:b6r1vy--> #cli #perf !3 ^8000
-      ↳ 评估已完成：约 10000 任务或常驻进程需要投影；当前 serve 与桌面端仍只调用内存 project_document，尚未打开 Projection 数据库 <!--n:b6r1vy-->
+      ↳ 2026-11-07 决策⑥：benchmark_projection_10k_tasks 实测（release）parse 59ms / 投影全量重建 28ms / 增量更新 132ms；内存快照以 10 倍余量满足交互阈值，暂不接入。重开触发：活跃任务 >20k、常驻 serve 轮询 CPU 热点、快照 p95 >500ms。详见 DECISIONS.md 决策⑥ <!--n:b6r1vy-->
 - [ ] 产出可分发的桌面端 release 构建 <!--t:d3l8hn--> #desktop #release !3 ^9000 ◐80
       ↳ release workflow、打包脚本与发布文档已完成；待真实 Developer ID 签名与 Apple 公证凭据验收 <!--n:d3l8hn-->
 - [ ] 落地「目前免费 + 赞助」：赞助屏与收款入口 <!--t:aiw1hs--> #product #site !1

@@ -130,3 +130,51 @@ fn schema_hash_mismatch_rebuilds_derived_tables() {
     assert!(projection.tasks().unwrap().is_empty());
     assert_eq!(projection.schema_hash().unwrap(), todo_core::SCHEMA_HASH);
 }
+
+/// M5 decision input (TODO `b6r1vy`): how the in-memory path and the SQLite
+/// projection scale at 10k tasks. `#[ignore]`d so the default suite stays
+/// fast; run with
+/// `cargo test -p todo-core --release --test projection -- --ignored --nocapture benchmark`.
+#[test]
+#[ignore]
+fn benchmark_projection_10k_tasks() {
+    const TASKS: usize = 10_000;
+    let body: String = (0..TASKS)
+        .map(|index| {
+            format!("- [ ] 任务 {index} <!--t:bench{index:06}--> #bench !2 📅2026-09-10\n")
+        })
+        .collect();
+    let markdown = source(&body);
+
+    let started = std::time::Instant::now();
+    let document = parse(&markdown).unwrap();
+    let parse_elapsed = started.elapsed();
+
+    let directory = tempdir().unwrap();
+    let mut projection = Projection::open(directory.path().join("index.db")).unwrap();
+    let started = std::time::Instant::now();
+    projection
+        .rebuild(&[(Path::new("TODO.md"), &document)])
+        .unwrap();
+    let rebuild_elapsed = started.elapsed();
+
+    // The edit the projection exists for: one checkbox flips, everything else
+    // must survive untouched.
+    let changed_markdown = markdown.replacen("- [ ] 任务 42", "- [x] 任务 42", 1);
+    let changed = parse(&changed_markdown).unwrap();
+    let started = std::time::Instant::now();
+    let stats = projection
+        .update_file(Path::new("TODO.md"), &changed)
+        .unwrap();
+    let update_elapsed = started.elapsed();
+    assert_eq!(stats.updated, 1);
+    assert_eq!(stats.deleted, 0);
+    assert_eq!(projection.tasks().unwrap().len(), TASKS + 1);
+
+    eprintln!(
+        "10k tasks: parse {parse_elapsed:?}, projection rebuild {rebuild_elapsed:?}, incremental update {update_elapsed:?}"
+    );
+    // Generous ceilings keep this a regression tripwire, not a benchmark harness.
+    assert!(parse_elapsed < std::time::Duration::from_secs(10));
+    assert!(rebuild_elapsed < std::time::Duration::from_secs(10));
+}

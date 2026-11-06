@@ -227,3 +227,21 @@
 | ③ | 移动端形态 | 4 | P1 技术选型与 spike 排期 |
 
 对应的可跟踪任务已建在 `TODO.md`:`aiw1hs`(决策④)、`jrnlos`(决策⑤)。
+
+---
+
+## 决策⑥:SQLite 投影是否接入 serve/桌面端 —— 已定:暂不接入(2026-11-07 代决策,验收时可推翻)
+
+对应 `TODO.md` `b6r1vy`。依据 2026-11-07 新增基准 `benchmark_projection_10k_tasks`(`crates/todo-core/tests/projection.rs`,`#[ignore]`,release 实测):
+
+| 路径 | 10k 任务耗时(release) |
+|---|---|
+| 内存解析(parse,即 serve/桌面端现状) | **59 ms** |
+| 投影全量重建(rebuild) | 28 ms |
+| 投影增量更新(update_file,1 个任务翻转) | 132 ms |
+
+结论:内存快照在 10k 任务规模仍远低于交互阈值(1k 任务 <100 ms 的原始门槛以 10 倍余量满足),投影在此规模无收益、增量路径甚至慢于全量重建。**不接入**,`serve`/桌面端继续用内存 `project_document`。
+
+重开触发条件(满足其一即重评):① 单项目活跃任务 >20,000;② `todo serve` 常驻多客户端轮询使重复解析成为可测 CPU 热点;③ 实测快照 p95 >500 ms。
+
+如推翻本决策:接线点在 `serve.rs` 与 `ops.rs` 的 snapshot 路径换 `Projection::open + update_file`,数据层已就绪(`tests/projection.rs` 全绿)。
