@@ -769,3 +769,40 @@ Session 存为项目内 Markdown（`<project>/.virgo/sessions/s-<ts>.md`），�
 
 - Phase 1–7 成果仍未提交 Git（等用户批准 M0-B 提交计划后执行）；本地 `main` 仍落后 `origin/main` 1 个提交（`3613d96`，只改 `web/deploy/chart/virgo/values-prod.yaml`，与本轮全部改动无文件交集）。
 - `make check-quick` 128s 仍超脚本 2 分钟目标（沿用 2026-11-03 审计 P3 项，本轮未处理）。
+
+## 2026-11-07 M0-B 提交执行（6 个提交，工作区清零，未 push）
+
+用户批准 M0-B 计划（`docs/audits/2026-11-06-m0b-commit-plan.html`）后逐个执行；51 个文件全部入库，`git status` 清零。**未执行 push；与 `origin/main` 的合并留待 push 授权时处理。**
+
+### 提交序列
+
+| # | 提交 | 内容 |
+|---|---|---|
+| C1 | `77cf6ab` feat(core) | workspace/profile/knowledge/session/overview 五模块 + lib/error（+3,062） |
+| C2 | `f33a9ff` feat(cli) | session/docs 子命令 + agent 会话指引 + 集成测试（+399） |
+| F | `f5f3ed3` fix(core) | **计划外修复提交**：reading.rs 落库（+818），见下「执行偏差」 |
+| C3′ | `ccd662e` feat(desktop) | 原计划 C3+C4 合并：九视图 + 23 命令 + 阅读上下文 UI + e2e（22 文件，+2,930） |
+| C4′ | `3f243f1` chore(deps) | Tauri 客户端版本固定（用户自主变更独立成提交） |
+| C5′ | `93d7965` docs | 阶段文档对齐 + 验证日志 + M0-A 杂项（17 文件，+2,142） |
+
+### 执行偏差（两点，均有代码证据）
+
+1. **原计划 C3+C4 合并为 C3′**：预检发现 `lib.rs` 的 diff 同时包含 workspace 命令注册与 C4 的 6 个 reading 命令注册（`reading::reading_update_context` 等，diff 行 69–76）——`generate_handler!` 引用尚不存在的函数会使 C3 单独无法编译，而 C4 又依赖 C3 的 `crate::workspace`，构成循环耦合。按计划排除的 `add -p` 宏内拆行不采用，合并为一个提交；总提交数仍为 6。
+2. **计划外 fix 提交 `f5f3ed3`**：C1 提交后符号核查发现其快照不可编译——C1 的 `lib.rs` 再导出 `ReadingContext/ReadingContextInput/ReadingLink`，但三个类型在未提交的 `reading.rs` 中（`cargo test` 编译的是工作区而非提交快照，属验证盲区）。因 `git reset` 属禁令需单独批准，采用修复性提交落库 `reading.rs`；**`77cf6ab` 与 `f33a9ff` 两个快照保留该编译瑕疵**，push 前如需完全可二分的历史，可将 `f5f3ed3` 折叠进 `77cf6ab`（需届时批准 rebase/reset）。
+
+### 逐步验证
+
+| 时点 | 命令 | 结果 |
+|---|---|---|
+| C1 后 | `cargo test -p todo-core --locked` | ✅ 278 passed / 0 failed（注：编译对象为工作区，快照缺陷由后继符号核查暴露） |
+| C2 后 | `cargo test -p todo-cli --locked` | ✅ 103 passed / 0 failed |
+| fix 后 | `git show HEAD` 符号复核 | ✅ 三个类型齐备，HEAD 起每个提交可编译 |
+| C3′ 前 | `pnpm typecheck` + `pnpm build` | ✅ tsc 0 错误、vite built |
+| C4′ 前 | `pnpm install --frozen-lockfile` | ✅ 锁文件一致（275ms） |
+| C5′ 后 | `make check` 全量 | ✅ 退出码 0；mock E2E 155 passed、web E2E 15 passed |
+
+### 已知边界 / 未完成
+
+- **未 push**：本地 `main` 现领先 `origin/main` 6 个提交、落后 1 个（`3613d96`）。push 前需合并该提交（零文件交集，预期无冲突），合并与 push 均待单独授权。
+- C1/C2 快照编译瑕疵（上述偏差 2）；`f5f3ed3` 提交信息中已写明折叠方案。
+- 执行报告：`docs/audits/2026-11-07-m0b-execution.html`。

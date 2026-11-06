@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>M0-B 执行报告 · Virgo 收口 · 2026-11-07</title>
+<style>
+  :root { --paper:#faf9f7; --panel:#fff; --ink:#26221d; --ink-soft:#6b6258; --line:#e6e0d6;
+    --accent:#b45309; --accent-soft:#fdf3e7; --ok:#15803d; --ok-soft:#ecfdf3; --info:#1d4ed8; --info-soft:#eef4fb; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--paper); color:var(--ink);
+    font:15px/1.75 -apple-system,BlinkMacSystemFont,"PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif; }
+  .page { max-width:960px; margin:0 auto; padding:48px 28px 80px; }
+  header { border-bottom:3px double var(--line); padding-bottom:24px; margin-bottom:32px; }
+  .kicker { font-size:12px; letter-spacing:.18em; color:var(--accent); font-weight:700; text-transform:uppercase; }
+  h1 { font-size:30px; line-height:1.3; margin:8px 0 6px; font-weight:800; }
+  .subtitle { color:var(--ink-soft); margin:0 0 18px; }
+  .chips { display:flex; flex-wrap:wrap; gap:8px; }
+  .chip { background:var(--panel); border:1px solid var(--line); border-radius:999px; padding:3px 12px; font-size:12.5px; color:var(--ink-soft); }
+  .chip b { color:var(--ink); } .chip code { font-family:ui-monospace,Menlo,monospace; font-size:11.5px; color:var(--ink); }
+  .verdict { display:flex; gap:14px; background:var(--ok-soft); border:1px solid #bbe7c9; border-left:5px solid var(--ok);
+    border-radius:10px; padding:14px 18px; margin-bottom:36px; }
+  .verdict .mark { font-size:22px; } .verdict b { color:var(--ok); } .verdict .note { color:var(--ink-soft); font-size:13.5px; }
+  section { margin-bottom:40px; }
+  h2 { font-size:19px; margin:0 0 14px; padding-left:12px; font-weight:800; border-left:4px solid var(--accent); }
+  h2 .no { color:var(--accent); margin-right:6px; }
+  h3 { font-size:15px; margin:18px 0 8px; }
+  .card { background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:18px 20px; margin-bottom:16px; overflow-x:auto; }
+  table { width:100%; border-collapse:collapse; background:var(--panel); font-size:13.5px; }
+  th,td { border:1px solid var(--line); padding:8px 12px; text-align:left; vertical-align:top; }
+  th { background:#f5f1ea; white-space:nowrap; }
+  tbody tr:nth-child(even) td { background:#fcfbf9; }
+  code { font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:12.5px; background:#f3efe8;
+    border-radius:4px; padding:1px 5px; color:#43331f; word-break:break-all; }
+  .badge { display:inline-block; border-radius:6px; padding:1px 9px; font-size:12px; font-weight:700; white-space:nowrap; }
+  .badge.ok { background:var(--ok-soft); color:var(--ok); border:1px solid #bbe7c9; }
+  .badge.warn { background:var(--accent-soft); color:var(--accent); border:1px solid #f2d9b8; }
+  .badge.info { background:var(--info-soft); color:var(--info); border:1px solid #c7d8f5; }
+  ul,ol { margin:8px 0; padding-left:22px; } li { margin:4px 0; }
+  .depflow { font-family:ui-monospace,Menlo,monospace; font-size:13px; background:#fbfaf8; border:1px solid var(--line);
+    border-radius:8px; padding:12px 16px; overflow-x:auto; white-space:pre; }
+  .toc { display:flex; flex-wrap:wrap; gap:8px; margin-bottom:30px; }
+  .toc a { text-decoration:none; color:var(--ink); background:var(--panel); border:1px solid var(--line);
+    border-radius:8px; padding:4px 12px; font-size:13px; }
+  .toc a:hover { border-color:var(--accent); color:var(--accent); }
+  .foot { border-top:3px double var(--line); margin-top:48px; padding-top:18px; color:var(--ink-soft); font-size:13px; }
+  @media print { body{background:#fff} .page{padding:0;max-width:none} .toc{display:none} section{break-inside:avoid-page} }
+</style>
+</head>
+<body>
+<div class="page">
+
+<header>
+  <div class="kicker">Sumery · Virgo · 工程收口</div>
+  <h1>M0-B 执行报告</h1>
+  <p class="subtitle">批准的提交计划已执行完毕：51 个文件全部入库，工作区清零，最终门禁全绿</p>
+  <div class="chips">
+    <span class="chip">执行时间 <b>2026-11-06 23:39 – 11-07 00:00</b></span>
+    <span class="chip">提交 <b>6 个</b></span>
+    <span class="chip">push <b>未执行</b></span>
+    <span class="chip">工作区 <b>0 条（干净）</b></span>
+  </div>
+</header>
+
+<div class="verdict">
+  <span class="mark">✅</span>
+  <div>
+    <b>执行结论：完成。最终 <code>make check</code> 全绿（退出码 0）。</b>
+    <div class="note">与批准计划有两点偏差（C3+C4 合并、计划外 fix 提交），均因提交快照可编译性而起，已在 §2 详述并写入验证日志；未推送，历史仍可按你的决定整理。</div>
+  </div>
+</div>
+
+<nav class="toc">
+  <a href="#s1">1 提交序列</a>
+  <a href="#s2">2 执行偏差</a>
+  <a href="#s3">3 逐步验证</a>
+  <a href="#s4">4 当前状态与下一步</a>
+</nav>
+
+<section id="s1">
+  <h2><span class="no">1</span>提交序列（本地 main，未推送）</h2>
+  <div class="card">
+    <table>
+      <thead><tr><th style="width:70px">#</th><th style="width:100px">提交</th><th>内容</th><th style="width:110px">规模</th></tr></thead>
+      <tbody>
+        <tr><td>C1</td><td><code>77cf6ab</code></td><td><code>feat(core)</code> workspace/profile/knowledge/session/overview 五模块 + lib/error，45 单测</td><td class="num">7 文件 +3,062</td></tr>
+        <tr><td>C2</td><td><code>f33a9ff</code></td><td><code>feat(cli)</code> session/docs 子命令 + agent 会话指引 + 集成测试</td><td class="num">3 文件 +399</td></tr>
+        <tr><td>F</td><td><code>f5f3ed3</code></td><td><code>fix(core)</code> <b>计划外</b>：reading.rs 落库，修复 C1 快照再导出缺型</td><td class="num">1 文件 +818</td></tr>
+        <tr><td>C3′</td><td><code>ccd662e</code></td><td><code>feat(desktop)</code> 原计划 C3+C4 合并：九视图 + 23 Tauri 命令 + 阅读上下文 UI + e2e</td><td class="num">22 文件 +2,930</td></tr>
+        <tr><td>C4′</td><td><code>3f243f1</code></td><td><code>chore(deps)</code> Tauri 客户端版本固定（用户自主变更）</td><td class="num">2 文件 ±40</td></tr>
+        <tr><td>C5′</td><td><code>93d7965</code></td><td><code>docs</code> 阶段文档对齐 + 验证日志 + M0-A 收口杂项</td><td class="num">17 文件 +2,142</td></tr>
+      </tbody>
+    </table>
+    <div class="depflow">origin/main ── 3613d96 (chore(site), 1 文件，零交集)
+                                    │
+  77cf6ab → f33a9ff → f5f3ed3 → ccd662e → 3f243f1 → 93d7965   ← 本地 main（6 ahead, 1 behind）</div>
+  </div>
+</section>
+
+<section id="s2">
+  <h2><span class="no">2</span>执行偏差（两点）</h2>
+  <div class="card">
+    <h3><span class="badge warn">偏差 1</span> 原计划 C3+C4 合并为 C3′</h3>
+    <p>预检发现 <code>lib.rs</code> 的 diff 同时包含 workspace 命令注册与 C4 的 6 个 reading 命令注册（<code>reading::reading_update_context</code> 等）——<code>generate_handler!</code> 引用尚不存在的函数会使 C3 单独无法编译，而 C4 的 <code>src-tauri/reading.rs:6</code> 又依赖 C3 的 <code>crate::workspace</code>，构成<b>循环耦合</b>。计划排除的 <code>add -p</code> 宏内拆行不采用，合并为一个提交；提交总数仍为 6，文件归属除边界外与计划一致。</p>
+    <h3><span class="badge warn">偏差 2</span> 计划外 fix 提交 <code>f5f3ed3</code></h3>
+    <p>C1 提交后做符号核查（<code>git show</code> 对比 <code>lib.rs</code> 再导出与 <code>reading.rs</code> 定义）发现 <b>C1 快照不可编译</b>：<code>lib.rs</code> 再导出的 <code>ReadingContext / ReadingContextInput / ReadingLink</code> 定义在尚未提交的 <code>reading.rs</code> 里。此前的 <code>cargo test</code> 编译的是工作区而非提交快照，属验证盲区——已补入流程。因 <code>git reset</code> 属你的禁令清单需单独批准，采用<b>修复性提交</b>落库 <code>reading.rs</code>。</p>
+    <ul>
+      <li>影响：<code>77cf6ab</code>（C1）与 <code>f33a9ff</code>(C2) 两个快照 checkout 后无法编译；<code>f5f3ed3</code> 起每个提交可编译（符号复核通过）。</li>
+      <li>可选整理（<b>需你届时批准，未执行</b>）：push 前将 <code>f5f3ed3</code> 折叠进 <code>77cf6ab</code>（<code>git rebase -i</code> / reset --soft），得到完全可二分的 5 提交历史。</li>
+      <li><code>f5f3ed3</code> 的提交信息已写明该方案，任何看到历史的人都能理解。</li>
+    </ul>
+  </div>
+</section>
+
+<section id="s3">
+  <h2><span class="no">3</span>逐步验证（实际命令与结果）</h2>
+  <div class="card">
+    <table>
+      <thead><tr><th style="width:110px">时点</th><th>命令</th><th style="width:220px">结果</th></tr></thead>
+      <tbody>
+        <tr><td>C1 后</td><td><code>cargo test -p todo-core --locked</code></td><td><span class="badge ok">✅ 278 passed / 0 failed</span></td></tr>
+        <tr><td>C2 后</td><td><code>cargo test -p todo-cli --locked</code></td><td><span class="badge ok">✅ 103 passed / 0 failed</span></td></tr>
+        <tr><td>fix 后</td><td><code>git show HEAD</code> 符号复核</td><td><span class="badge ok">✅ 三个类型齐备</span></td></tr>
+        <tr><td>C3′ 前</td><td><code>pnpm typecheck</code> + <code>pnpm build</code></td><td><span class="badge ok">✅ tsc 0 错误 · vite built</span></td></tr>
+        <tr><td>C4′ 前</td><td><code>pnpm install --frozen-lockfile</code></td><td><span class="badge ok">✅ 锁文件一致（275ms）</span></td></tr>
+        <tr><td>C5′ 后</td><td><code>make check</code>（verify.sh 全量）</td><td><span class="badge ok">✅ 退出码 0</span>：mock E2E 155 passed、web E2E 15 passed、cargo/clippy/fmt/typecheck/identity 全过</td></tr>
+        <tr><td>收尾</td><td><code>git status --porcelain</code></td><td><span class="badge ok">✅ 0 条（完全干净）</span></td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section id="s4">
+  <h2><span class="no">4</span>当前状态与下一步</h2>
+  <div class="card">
+    <ul>
+      <li><b>仓库状态</b>：本地 <code>main</code> 领先 <code>origin/main</code> 6 个提交、落后 1 个（<code>3613d96</code>，零文件交集）。</li>
+      <li><b>未执行</b>：push、与远端合并、任何历史整理——均待你的单独授权。</li>
+      <li><b>建议顺序（待批准）</b>：① 决定是否先折叠 <code>f5f3ed3</code>（可二分历史 vs 保留诚实痕迹）；② 合并 <code>origin/main</code>（预期零冲突）；③ push。</li>
+      <li>M0 里程碑至此全部完成；下一步回到路线图 M1（Session–Task 关联闭环）。</li>
+    </ul>
+  </div>
+</section>
+
+<div class="foot">
+  <p>证据链：<code>docs/verification-log.md</code>（2026-11-07 M0-B 条目）· <code>docs/audits/2026-11-06-m0b-commit-plan.html</code>（批准的计划）· <code>docs/audits/2026-11-06-m0a-acceptance.html</code>（M0-A 验收）。</p>
+</div>
+
+</div>
+</body>
+</html>
