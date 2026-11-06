@@ -1048,6 +1048,18 @@ fn session_begin_finish_resume_round_trip_over_json() {
     let dir = tempdir().unwrap();
     assert!(todo(dir.path(), &["init", "--json"]).status.success());
 
+    // Plant a task with a known stable ID so resume can resolve the link.
+    let todo_path = dir.path().join("TODO.md");
+    let markdown = fs::read_to_string(&todo_path).unwrap();
+    fs::write(
+        &todo_path,
+        markdown.replace(
+            "## Todo\n",
+            "## Todo\n\n- [ ] 接入 watcher 增量 <!--t:abc123-->\n",
+        ),
+    )
+    .unwrap();
+
     let begin = todo(
         dir.path(),
         &["--json", "session", "begin", "--goal", "接入 watcher"],
@@ -1085,6 +1097,12 @@ fn session_begin_finish_resume_round_trip_over_json() {
             "make check-quick|绿|137s",
             "--next",
             "补 Session E2E",
+            "--task",
+            "abc123",
+            "--task",
+            "  ",
+            "--task",
+            "nope999",
             "--context",
             "watcher 在 src-tauri/watch.rs",
         ],
@@ -1109,6 +1127,12 @@ fn session_begin_finish_resume_round_trip_over_json() {
         "{resume_json}"
     );
     assert!(resume_json.contains("补 Session E2E"), "{resume_json}");
+    // Task links round-trip: the planted task resolves, the bogus ID does not.
+    assert!(resume_json.contains("\"task_ids\":[\"abc123\",\"nope999\"]"), "{resume_json}");
+    assert!(resume_json.contains("\"id\":\"abc123\""), "{resume_json}");
+    assert!(resume_json.contains("\"found\":true"), "{resume_json}");
+    assert!(resume_json.contains("\"found\":false"), "{resume_json}");
+    assert!(resume_json.contains("接入 watcher 增量"), "{resume_json}");
 
     // The summary file is real Markdown in the project, git-trackable.
     let sessions = fs::read_to_string(

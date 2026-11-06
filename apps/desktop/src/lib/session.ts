@@ -12,6 +12,7 @@ export interface SessionSummary {
   started_at: number;
   finished_at: number | null;
   next_actions: string[];
+  task_ids: string[];
   file_name: string;
 }
 
@@ -27,7 +28,16 @@ export interface SessionFinishInput {
   validation: ValidationEntry[];
   unresolved: string[];
   next_actions: string[];
+  task_ids: string[];
   context_for_next: string;
+}
+
+export interface LinkedTask {
+  id: string;
+  found: boolean;
+  completed: boolean;
+  column: string | null;
+  body: string;
 }
 
 export interface SessionResume {
@@ -35,6 +45,7 @@ export interface SessionResume {
   summary_markdown: string;
   changed_files: string[];
   outstanding: string[];
+  linked_tasks: LinkedTask[];
 }
 
 async function call<T>(command: string, args?: Record<string, unknown>): Promise<T> {
@@ -45,6 +56,13 @@ async function call<T>(command: string, args?: Record<string, unknown>): Promise
 
 const mockSessions: Record<string, SessionSummary[]> = {};
 const mockChangedFiles = ['src/lib/workspace.ts', 'src/components/WorkspaceView.tsx'];
+
+// Demo task index so the mock can resolve linked task IDs the same way the
+// Rust side resolves them against the project root's TODO.md.
+const mockTaskIndex: Record<string, { body: string; completed: boolean; column: string }> = {
+  m0ckwatch: { body: '接入 watcher 增量扫描', completed: false, column: 'doing' },
+  m0ckdone: { body: '已完成的示例任务', completed: true, column: 'done' },
+};
 
 export function resetSessionMock(): void {
   for (const key of Object.keys(mockSessions)) delete mockSessions[key];
@@ -71,6 +89,7 @@ export const session = {
       started_at: now,
       finished_at: null,
       next_actions: [],
+      task_ids: [],
       file_name: `s-${now}.md`,
     };
     (mockSessions[projectId] ??= []).unshift(created);
@@ -87,6 +106,7 @@ export const session = {
       status: 'completed',
       finished_at: now,
       next_actions: input.next_actions,
+      task_ids: [...new Set(input.task_ids.map((id) => id.trim()).filter(Boolean))],
     };
     mockSessions[projectId] = mockSessions[projectId].map((entry) =>
       entry.id === active.id ? finished : entry,
@@ -115,8 +135,14 @@ export const session = {
     const sessions = mockSessions[projectId] ?? [];
     const latest = sessions[0] ?? null;
     if (!latest) {
-      return { latest: null, summary_markdown: '（项目还没有会话记录）', changed_files: [], outstanding: [] };
+      return { latest: null, summary_markdown: '（项目还没有会话记录）', changed_files: [], outstanding: [], linked_tasks: [] };
     }
+    const linkedTasks: LinkedTask[] = latest.task_ids.map((id) => {
+      const task = mockTaskIndex[id];
+      return task
+        ? { id, found: true, completed: task.completed, column: task.column, body: task.body }
+        : { id, found: false, completed: false, column: null, body: '' };
+    });
     const summaryMarkdown = [
       `# Session Summary`,
       ``,
@@ -131,12 +157,17 @@ export const session = {
       `## Next Actions`,
       ``,
       ...(latest.next_actions.length ? latest.next_actions.map((item) => `- ${item}`) : ['- （未记录）']),
+      ``,
+      `## Task Links`,
+      ``,
+      ...(latest.task_ids.length ? latest.task_ids.map((id) => `- ${id}`) : ['- （未记录）']),
     ].join('\n');
     return {
       latest,
       summary_markdown: summaryMarkdown,
       changed_files: [...mockChangedFiles],
       outstanding: latest.status === 'active' ? [latest.goal] : latest.next_actions,
+      linked_tasks: linkedTasks,
     };
   },
 };

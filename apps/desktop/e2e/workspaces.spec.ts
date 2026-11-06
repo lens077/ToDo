@@ -152,14 +152,19 @@ test.describe('开发会话', () => {
     const form = page.locator('.ws-session__form');
     // Textareas: completed, decisions, unresolved, next actions, context.
     await form.locator('textarea').nth(0).fill('watcher 事件接入');
-    // Inputs: validation command, result, evidence.
+    // Inputs: validation command, result, evidence, linked task IDs.
     await form.locator('input').nth(0).fill('make check-quick');
     await form.locator('input').nth(1).fill('绿');
     await form.locator('textarea').nth(3).fill('补 Session E2E');
+    await form.locator('input').nth(3).fill('m0ckwatch, m0ckgone');
     await page.getByRole('button', { name: '完成会话' }).click();
     await expect(page.getByText('会话总结已写入 .virgo/sessions/')).toBeVisible();
     await expect(page.getByTestId('session-resume')).toContainText('已完成');
     await expect(page.getByTestId('session-resume')).toContainText('待续：补 Session E2E');
+    // Task links resolve against the (mock) task index; unknown IDs say so.
+    await expect(page.getByTestId('session-resume')).toContainText('m0ckwatch');
+    await expect(page.getByTestId('session-resume')).toContainText('○ 未完成');
+    await expect(page.getByTestId('session-resume')).toContainText('未在根 TODO.md 找到');
 
     // Switching views and back keeps the session history (mock mirrors the
     // on-disk store that survives restarts).

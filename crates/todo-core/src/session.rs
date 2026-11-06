@@ -24,6 +24,9 @@ pub struct SessionSummary {
     pub started_at: i64,
     pub finished_at: Option<i64>,
     pub next_actions: Vec<String>,
+    /// Task stable IDs linked during the session (`## Task Links` section).
+    #[serde(default)]
+    pub task_ids: Vec<String>,
     pub file_name: String,
 }
 
@@ -44,6 +47,21 @@ pub struct SessionFinishInput {
     pub unresolved: Vec<String>,
     pub next_actions: Vec<String>,
     pub context_for_next: String,
+    /// Stable IDs of tasks this session worked on, resolved by `resume`
+    /// against the project root's `TODO.md`.
+    #[serde(default)]
+    pub task_ids: Vec<String>,
+}
+
+/// One linked task as of `resume`: the current state read from `TODO.md`, so
+/// the next session sees where the work stands instead of just the ID.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct LinkedTask {
+    pub id: String,
+    pub found: bool,
+    pub completed: bool,
+    pub column: Option<String>,
+    pub body: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -57,6 +75,9 @@ pub struct SessionResume {
     /// The unfinished work: next actions of the latest session, or all
     /// sections when it is still active.
     pub outstanding: Vec<String>,
+    /// Current state of the tasks linked by the latest session.
+    #[serde(default)]
+    pub linked_tasks: Vec<LinkedTask>,
 }
 
 /// Opens a session. Only one active session per project: `begin` while one is
@@ -82,6 +103,7 @@ pub fn begin(project_root: &Path, goal: &str) -> Result<SessionSummary> {
         started_at: now,
         finished_at: None,
         next_actions: Vec::new(),
+        task_ids: Vec::new(),
         file_name: file_name.clone(),
     };
     fs::create_dir_all(&sessions).map_err(|source| Error::Io {
@@ -101,6 +123,7 @@ pub fn finish(project_root: &Path, input: &SessionFinishInput) -> Result<Session
     let (file_name, started_at, goal) = active_session(&sessions)?
         .ok_or_else(|| Error::WorkspaceInvalid("没有进行中的会话".into()))?;
     let changed_files = collect_git_changed_files(project_root);
+    let task_ids = normalize_task_ids(&input.task_ids);
     let now = now_ms();
     let mut markdown = format!(
         "---\nsession_id: \"{}\"\nstatus: \"completed\"\nstarted_at: \"{}\"\nfinished_at: \"{}\"\n---\n\n",
@@ -136,6 +159,7 @@ pub fn finish(project_root: &Path, input: &SessionFinishInput) -> Result<Session
     }
     push_list(&mut markdown, "Unresolved", &input.unresolved);
     push_list(&mut markdown, "Next Actions", &input.next_actions);
+    push_list(&mut markdown, "Task Links", &task_ids);
     markdown.push_str(&format!(
         "## Context for Next Session\n\n{}\n",
         if input.context_for_next.trim().is_empty() {
@@ -153,6 +177,7 @@ pub fn finish(project_root: &Path, input: &SessionFinishInput) -> Result<Session
         started_at,
         finished_at: Some(now),
         next_actions: input.next_actions.clone(),
+        task_ids,
         file_name,
     })
 }
@@ -178,6 +203,7 @@ pub fn interrupt(project_root: &Path) -> Result<SessionSummary> {
         started_at,
         finished_at: Some(now_ms()),
         next_actions: Vec::new(),
+        task_ids: Vec::new(),
         file_name,
     })
 }
@@ -219,8 +245,8 @@ pub fn resume(project_root: &Path) -> Result<SessionResume> {
     let sessions = sessions_dir(project_root)?;
     let summaries = list(project_root)?;
     let latest = summaries.first().cloned();
-    let (summary_markdown, changed_files, outstanding) = match &latest {
-        None => ("（项目还没有会话记录）".into(), Vec::new(), Vec::new()),
+    let (summary_markdown, changed_files, outstanding, linked_tasks) = match &latest {
+        None => ("（项目还没有会话记录）".into(), Vec::new(), Vec::new(), Vec::new()),
         Some(summary) => {
             let path = sessions.join(&summary.file_name);
             let markdown =
@@ -234,7 +260,8 @@ pub fn resume(project_root: &Path) -> Result<SessionResume> {
             } else {
                 extract_section_list(&markdown, "Next Actions")
             };
-            (markdown.clone(), changed, outstanding)
+            let linked = resolve_linked_tasks(project_root, &summary.task_ids);
+            (markdown.clone(), changed, outstanding, linked)
         }
     };
     Ok(SessionResume {
@@ -242,6 +269,7 @@ pub fn resume(project_root: &Path) -> Result<SessionResume> {
         summary_markdown,
         changed_files,
         outstanding,
+        linked_tasks,
     })
 }
 
@@ -297,7 +325,7 @@ fn active_session(sessions_dir: &Path) -> Result<Option<(String, i64, String)>> 
 
 fn render_active(summary: &SessionSummary) -> String {
     format!(
-        "---\nsession_id: \"{}\"\nstatus: \"active\"\nstarted_at: \"{}\"\n---\n\n# Session Summary\n\n## Goal\n\n{}\n\n## Completed\n\n## Files Changed\n\n## Decisions\n\n## Validation\n\n| Command | Result | Evidence |\n|---|---|---|\n\n## Unresolved\n\n## Next Actions\n\n## Context for Next Session\n",
+        "---\nsession_id: \"{}\"\nstatus: \"active\"\nstarted_at: \"{}\"\n---\n\n# Session Summary\n\n## Goal\n\n{}\n\n## Completed\n\n## Files Changed\n\n## Decisions\n\n## Validation\n\n| Command | Result | Evidence |\n|---|---|---|\n\n## Unresolved\n\n## Next Actions\n\n## Task Links\n\n## Context for Next Session\n",
         summary.id,
         iso_or_epoch(summary.started_at),
         heading_value(&summary.goal),
@@ -337,6 +365,7 @@ fn parse_summary(file_name: &str, content: &str) -> SessionSummary {
         started_at,
         finished_at,
         next_actions: extract_section_list(content, "Next Actions"),
+        task_ids: extract_section_list(content, "Task Links"),
         file_name: file_name.to_string(),
     }
 }
@@ -430,6 +459,43 @@ fn now_ms() -> i64 {
         .unwrap_or(0)
 }
 
+/// Trims, drops empties, and dedupes task IDs while keeping first-seen order.
+fn normalize_task_ids(ids: &[String]) -> Vec<String> {
+    let mut seen = std::collections::HashSet::new();
+    ids.iter()
+        .map(|id| id.trim())
+        .filter(|id| !id.is_empty())
+        .filter(|id| seen.insert(id.to_string()))
+        .map(|id| id.to_string())
+        .collect()
+}
+
+/// Reads the current state of linked tasks from the project root's `TODO.md`.
+/// Best effort by design: a missing or unreadable TODO.md yields `found: false`
+/// entries instead of an error — a session must resume outside the happy path.
+fn resolve_linked_tasks(project_root: &Path, task_ids: &[String]) -> Vec<LinkedTask> {
+    let document = crate::parse::parse_file(project_root.join("TODO.md")).ok();
+    task_ids
+        .iter()
+        .map(|id| match document.as_ref().and_then(|document| document.task(id)) {
+            Some(task) => LinkedTask {
+                id: id.clone(),
+                found: true,
+                completed: task.completed,
+                column: task.column.clone(),
+                body: task.body.clone(),
+            },
+            None => LinkedTask {
+                id: id.clone(),
+                found: false,
+                completed: false,
+                column: None,
+                body: String::new(),
+            },
+        })
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -493,6 +559,7 @@ mod tests {
             &SessionFinishInput {
                 completed: vec!["注册表落库".into()],
                 decisions: vec!["Session 存 Markdown".into()],
+                task_ids: vec!["1pevv2".into()],
                 validation: vec![ValidationEntry {
                     command: "make check-quick".into(),
                     result: "绿".into(),
@@ -585,6 +652,54 @@ mod tests {
         assert_eq!(summaries[0].status, "active");
         assert_eq!(summaries[1].status, "completed");
         assert!(summaries[0].started_at >= summaries[1].started_at);
+    }
+
+    #[test]
+    fn finish_records_task_links_and_resume_resolves_them() {
+        let root = project();
+        fs::write(
+            root.path().join("TODO.md"),
+            "---\ntodo-spec: 1\ncolumns:\n  - {id: todo, name: Todo}\n  - {id: done, name: Done, type: done}\n---\n\n# Tasks\n\n## Todo\n\n- [ ] 接入 watcher 增量 <!--t:abc123-->\n",
+        )
+        .unwrap();
+        begin_active(root.path(), "Phase M1");
+        finish(
+            root.path(),
+            &SessionFinishInput {
+                task_ids: vec!["abc123".into(), "   ".into(), "abc123".into(), "nope999".into()],
+                next_actions: vec!["继续".into()],
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        let resumed = resume(root.path()).unwrap();
+        // Empty and duplicate IDs are dropped, order preserved.
+        assert_eq!(resumed.latest.unwrap().task_ids, vec!["abc123", "nope999"]);
+        assert_eq!(resumed.linked_tasks.len(), 2);
+        let found = &resumed.linked_tasks[0];
+        assert!(found.found);
+        assert!(!found.completed);
+        assert_eq!(found.column.as_deref(), Some("todo"));
+        assert!(found.body.contains("接入 watcher 增量"));
+        assert!(!resumed.linked_tasks[1].found);
+    }
+
+    #[test]
+    fn resume_resolves_missing_todo_md_as_not_found() {
+        let root = project();
+        begin_active(root.path(), "无 TODO.md 的项目");
+        finish(
+            root.path(),
+            &SessionFinishInput {
+                task_ids: vec!["abc123".into()],
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        let resumed = resume(root.path()).unwrap();
+        assert_eq!(resumed.linked_tasks.len(), 1);
+        assert!(!resumed.linked_tasks[0].found);
+        assert_eq!(resumed.linked_tasks[0].id, "abc123");
     }
 }
 

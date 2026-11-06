@@ -2109,6 +2109,9 @@
 .ws-session__form { display: grid; gap: 8px; }
 .ws-field-row--three { grid-template-columns: 2fr 1fr 1fr; }
 .ws-session__actions { display: flex; gap: 8px; }
+.ws-session__links { flex-basis: 100%; margin: 0; padding: 0; list-style: none; display: grid; gap: 4px; }
+.ws-session__links li { display: flex; align-items: baseline; gap: 6px; font-size: 12.5px; }
+.ws-session__links code { font-family: var(--mono, monospace); font-size: 11.5px; background: var(--panel-2, #f7f9fc); border: 1px solid var(--hairline, #e1e6ee); border-radius: 4px; padding: 0 4px; }
 
 /* 阅读上下文（Phase 6）. */
 .rctx { display: grid; gap: 0; margin: 0 0 14px; border: 1px solid var(--hairline, #e1e6ee); border-radius: 10px; background: var(--panel-2, #f7f9fc); overflow: hidden; }

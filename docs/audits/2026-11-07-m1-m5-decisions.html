@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>M1–M5 决策记录（代决策 · 待复核）· Virgo · 2026-11-07</title>
+<style>
+  :root { --paper:#faf9f7; --panel:#fff; --ink:#26221d; --ink-soft:#6b6258; --line:#e6e0d6;
+    --accent:#b45309; --accent-soft:#fdf3e7; --ok:#15803d; --ok-soft:#ecfdf3; --info:#1d4ed8; --info-soft:#eef4fb; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--paper); color:var(--ink);
+    font:15px/1.75 -apple-system,BlinkMacSystemFont,"PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif; }
+  .page { max-width:1000px; margin:0 auto; padding:48px 28px 80px; }
+  header { border-bottom:3px double var(--line); padding-bottom:24px; margin-bottom:32px; }
+  .kicker { font-size:12px; letter-spacing:.18em; color:var(--accent); font-weight:700; text-transform:uppercase; }
+  h1 { font-size:29px; line-height:1.3; margin:8px 0 6px; font-weight:800; }
+  .subtitle { color:var(--ink-soft); margin:0 0 18px; }
+  .chips { display:flex; flex-wrap:wrap; gap:8px; }
+  .chip { background:var(--panel); border:1px solid var(--line); border-radius:999px; padding:3px 12px; font-size:12.5px; color:var(--ink-soft); }
+  .chip b { color:var(--ink); }
+  .note-banner { display:flex; gap:14px; background:var(--accent-soft); border:1px solid #f2d9b8; border-left:5px solid var(--accent);
+    border-radius:10px; padding:14px 18px; margin-bottom:36px; }
+  .note-banner .mark { font-size:22px; }
+  section { margin-bottom:44px; }
+  h2 { font-size:19px; margin:0 0 14px; padding-left:12px; font-weight:800; border-left:4px solid var(--accent); }
+  h2 .no { color:var(--accent); margin-right:6px; }
+  h3 { font-size:15px; margin:0 0 4px; }
+  p { margin:8px 0; }
+  .card { background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:16px 20px; margin-bottom:14px; overflow-x:auto; }
+  table { width:100%; border-collapse:collapse; background:var(--panel); font-size:13.5px; }
+  th,td { border:1px solid var(--line); padding:8px 12px; text-align:left; vertical-align:top; }
+  th { background:#f5f1ea; white-space:nowrap; }
+  tbody tr:nth-child(even) td { background:#fcfbf9; }
+  code { font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:12.5px; background:#f3efe8;
+    border-radius:4px; padding:1px 5px; color:#43331f; word-break:break-all; }
+  .badge { display:inline-block; border-radius:6px; padding:1px 9px; font-size:12px; font-weight:700; white-space:nowrap; }
+  .badge.decided { background:var(--ok-soft); color:var(--ok); border:1px solid #bbe7c9; }
+  .badge.deferred { background:var(--accent-soft); color:var(--accent); border:1px solid #f2d9b8; }
+  .badge.pending { background:var(--info-soft); color:var(--info); border:1px solid #c7d8f5; }
+  .d-id { font-family:ui-monospace,Menlo,monospace; font-size:12px; color:var(--accent); font-weight:700; }
+  .kv { margin:4px 0; }
+  .kv b.k { color:var(--ink-soft); font-weight:600; margin-right:6px; }
+  ul { margin:6px 0; padding-left:22px; } li { margin:3px 0; }
+  .toc { display:flex; flex-wrap:wrap; gap:8px; margin-bottom:30px; }
+  .toc a { text-decoration:none; color:var(--ink); background:var(--panel); border:1px solid var(--line);
+    border-radius:8px; padding:4px 12px; font-size:13px; }
+  .toc a:hover { border-color:var(--accent); color:var(--accent); }
+  .foot { border-top:3px double var(--line); margin-top:48px; padding-top:18px; color:var(--ink-soft); font-size:13px; }
+  @media print { body{background:#fff} .page{padding:0;max-width:none} .toc{display:none} section{break-inside:avoid-page} }
+</style>
+</head>
+<body>
+<div class="page">
+
+<header>
+  <div class="kicker">Sumery · Virgo · 代决策记录</div>
+  <h1>M1–M5 决策记录（代决策 · 待复核）</h1>
+  <p class="subtitle">授权方式：执行期间由 ZCode 代为决策并逐条记录在此；你验收时逐条复核，任何一条都可推翻——每条都写明「如何修改」与影响面</p>
+  <div class="chips">
+    <span class="chip">文档唯一性 <b>本文件是 M1–M5 全部决策项的唯一汇总</b></span>
+    <span class="chip">状态图例 <span class="badge decided">已代决策</span> <span class="badge deferred">搁置/待外部条件</span></span>
+  </div>
+</header>
+
+<div class="note-banner">
+  <span class="mark">👁</span>
+  <div>
+    <b>复核指引：</b>每条决策按 <b>问题 → 选项 → 决定 → 理由 → 代码锚点 → 如何修改</b> 六段记录。你想改哪条，就按「如何修改」指到具体函数/常量改；多数决策的修改成本都控制在单模块内（高内聚、低耦合是本轮的硬约束）。改完决策后跑 <code>make check-quick</code> 即可回归。
+  </div>
+</div>
+
+<nav class="toc">
+  <a href="#s1">§1 M0 遗留</a>
+  <a href="#s2">§2 M1 Session–Task</a>
+  <a href="#s3">§3 M2 审批确认对象</a>
+  <a href="#s4">§4 M3 验证器</a>
+  <a href="#s5">§5 M4 Knowledge</a>
+  <a href="#s6">§6 M5 投影</a>
+  <a href="#s7">§7 汇总表</a>
+</nav>
+
+<section id="s1">
+  <h2><span class="no">§1</span>M0 遗留决策（3 条，已代决策）</h2>
+
+  <div class="card">
+    <h3><span class="d-id">D-M0-1</span> 是否把 fix 提交 <code>f5f3ed3</code> 折叠进 C1（重写历史）</h3>
+    <div class="kv"><b class="k">选项</b> A 折叠（rebase/reset，需解禁）｜B 保留修复提交</div>
+    <div class="kv"><b class="k">决定</b> <span class="badge decided">B：保留</span> 不重写历史。</div>
+    <div class="kv"><b class="k">理由</b> <code>git reset</code>/rebase 在你的禁令清单里；<code>f5f3ed3</code> 的提交信息已自带解释与折叠方案，历史的诚实痕迹比完美二分更有价值。</div>
+    <div class="kv"><b class="k">锚点</b> 提交 <code>f5f3ed3</code>（<code>crates/todo-core/src/reading.rs</code>）</div>
+    <div class="kv"><b class="k">如何修改</b> 若你想要可二分历史：push 前批准我执行 <code>git rebase -i 77cf6ab^</code> 把 <code>f5f3ed3</code> fixup 进 <code>77cf6ab</code>；仅影响未推送的本地提交。</div>
+  </div>
+
+  <div class="card">
+    <h3><span class="d-id">D-M0-2</span> 与 origin/main 合并 + push 的时机</h3>
+    <div class="kv"><b class="k">选项</b> A 本轮合并并 push｜B 推迟到验收后</div>
+    <div class="kv"><b class="k">决定</b> <span class="badge deferred">B：推迟</span> 全程不 push、不合并远端。</div>
+    <div class="kv"><b class="k">理由</b> push 是对外发布动作，你此前的授权明确要求单独批准；「继续执行直至实现完成」指 M1–M5 的实现，不视为对 push 的解禁。</div>
+    <div class="kv"><b class="k">锚点</b> 本地 <code>main</code>（7 ahead / 1 behind <code>3613d96</code>，零文件交集）</div>
+    <div class="kv"><b class="k">如何修改</b> 验收时说「push」即可：顺序为 <code>git merge origin/main</code>（预期零冲突）→ <code>make check-quick</code> → <code>git push</code>。</div>
+  </div>
+
+  <div class="card">
+    <h3><span class="d-id">D-M0-3</span> <code>tauri.conf.json</code> 的 <code>csp: null</code></h3>
+    <div class="kv"><b class="k">选项</b> A 本轮收窄 CSP｜B 挂到发布前检查单</div>
+    <div class="kv"><b class="k">决定</b> <span class="badge deferred">B：挂起</span> 现状保留。</div>
+    <div class="kv"><b class="k">理由</b> 缓解措施已存在（ammonia 消毒、asset scope 收窄、dsh-session 窗口零 IPC）；本轮窗口应全部投入 M1–M5 功能项，CSP 属发布工程，改动会牵动 asset 协议与图片加载回归。</div>
+    <div class="kv"><b class="k">锚点</b> <code>apps/desktop/src-tauri/tauri.conf.json</code></div>
+    <div class="kv"><b class="k">如何修改</b> 发布检查单（M0 报告 §6）里执行：设 <code>csp</code> 为允许 <code>asset:</code> 与 <code>ipc:</code> 的策略，回归 <code>e2e/reading.spec.ts</code> 图片用例。</div>
+  </div>
+</section>
+
+<section id="s2">
+  <h2><span class="no">§2</span>M1 · Session–Task 关联闭环 <span class="badge decided">已实现并验证</span></h2>
+
+  <div class="card">
+    <h3><span class="d-id">D-M1-1</span> 关联关系存哪里</h3>
+    <div class="kv"><b class="k">选项</b> A session Markdown 加一节｜B 独立 JSON/SQLite 映射表</div>
+    <div class="kv"><b class="k">决定</b> <span class="badge decided">A</span>：<code>## Task Links</code> 节，每行一个 <code>- &lt;id&gt;</code>；Markdown 仍是唯一事实源，无 schema 迁移。</div>
+    <div class="kv"><b class="k">理由</b> 会话文件即事实源是既有架构（<code>session.rs:1-8</code>）；加一节保持「文件可手读、Git 可追史」，与现有 <code>extract_section_list</code> 解析器零成本复用。</div>
+    <div class="kv"><b class="k">锚点</b> <code>session.rs</code> <code>finish()</code>（写入）、<code>parse_summary()</code>（读回）、<code>render_active()</code>（空模板占位）</div>
+    <div class="kv"><b class="k">如何修改</b> 改节名只需同时改这三处 + <code>resume()</code> 的解析；不涉及任何数据库。</div>
+  </div>
+
+  <div class="card">
+    <h3><span class="d-id">D-M1-2</span> resume 解析任务状态的来源范围</h3>
+    <div class="kv"><b class="k">选项</b> A 仅项目根 <code>TODO.md</code>｜B 走 <code>project.rs</code> 多来源发现</div>
+    <div class="kv"><b class="k">决定</b> <span class="badge decided">A（v1）</span>：只解析根 <code>TODO.md</code>；找不到的 ID 显示「未在根 TODO.md 找到」，不报错。</div>
+    <div class="kv"><b class="k">理由</b> <code>resume</code> 必须在任何项目形态下工作（含非 git、无模板）；B 会把 session 模块耦合进 discover 机制（低耦合约束）。多来源项目里其他 Task Source 的任务暂显示未找到——功能可用，只是信息不全。</div>
+    <div class="kv"><b class="k">锚点</b> <code>session.rs::resolve_linked_tasks()</code></div>
+    <div class="kv"><b class="k">如何修改</b> 升级到 B 时只改这一个函数（换成 <code>ProjectBackend</code> 发现 + 逐源查找），返回类型不变。</div>
+  </div>
+
+  <div class="card">
+    <h3><span class="d-id">D-M1-3</span> 关联发生的时机</h3>
+    <div class="kv"><b class="k">选项</b> A begin 时声明｜B finish 时记录｜C 两者都允许</div>
+    <div class="kv"><b class="k">决定</b> <span class="badge decided">B</span>：仅 <code>finish --task &lt;id&gt;</code>（可多次）记录；begin 不带任务。</div>
+    <div class="kv"><b class="k">理由</b> 关联的语义是「本次会话实际做过什么」，事后记录比事前声明准确；避免「声明了没做」的空链接。</div>
+    <div class="kv"><b class="k">锚点</b> CLI <code>main.rs</code> <code>SessionCommand::Finish</code> 的 <code>--task</code> 参数；Tauri <code>session_finish</code> 经 <code>SessionFinishInput.task_ids</code>（serde default）自动透传，无壳层改动</div>
+    <div class="kv"><b class="k">如何修改</b> 若要 begin 也声明：给 <code>begin()</code> 加可选参数并在 <code>render_active()</code> 预填节内容即可。</div>
+  </div>
+
+  <div class="card">
+    <h3><span class="d-id">D-M1-4</span> 桌面端 UI 形态</h3>
+    <div class="kv"><b class="k">选项</b> A 表单文本框（逗号分隔）+ resume 列表｜B 任务选择器（拖拽/搜索）</div>
+    <div class="kv"><b class="k">决定</b> <span class="badge decided">A</span>：finish 表单末尾一个「关联任务 ID」输入框（插在第 4 个 input 位，e2e 定位已同步）；resume 卡片渲染 <code>○ 未完成 · 列 · 正文</code> / 「未在根 TODO.md 找到」。</div>
+    <div class="kv"><b class="k">理由</b> Agent 与高级用户以 ID 为工作语言，文本框最直接；选择器需要跨视图状态，收益低。</div>
+    <div class="kv"><b class="k">锚点</b> <code>ProjectDetailPanel.tsx</code>（finish 表单 + <code>.ws-session__links</code>）、<code>lib/session.ts</code>（mock 任务索引 <code>mockTaskIndex</code>）</div>
+    <div class="kv"><b class="k">如何修改</b> 换选择器只动 <code>ProjectDetailPanel.tsx</code> 一处；mock 索引仅服务 e2e/浏览器演示。</div>
+  </div>
+</section>
+
+<section id="s3">
+  <h2><span class="no">§3</span>M2 · 审批确认对象（Outbox-lite）</h2>
+  <p class="filelist">（待实施）</p>
+</section>
+
+<section id="s4">
+  <h2><span class="no">§4</span>M3 · 确定性验证器</h2>
+  <p class="filelist">（待实施）</p>
+</section>
+
+<section id="s5">
+  <h2><span class="no">§5</span>M4 · Knowledge 全文搜索与增量扫描</h2>
+  <p class="filelist">（待实施）</p>
+</section>
+
+<section id="s6">
+  <h2><span class="no">§6</span>M5 · SQLite 投影接入决策</h2>
+  <p class="filelist">（待实施）</p>
+</section>
+
+<section id="s7">
+  <h2><span class="no">§7</span>决策汇总表（复核清单）</h2>
+  <div class="card">
+    <table>
+      <thead><tr><th>ID</th><th>一句话决定</th><th>影响面</th><th>修改成本</th></tr></thead>
+      <tbody>
+        <tr><td class="d-id">D-M0-1</td><td>保留 fix 提交，不重写历史</td><td>仅本地未推送历史</td><td>低（一条 rebase 命令）</td></tr>
+        <tr><td class="d-id">D-M0-2</td><td>push/合并推迟到验收后</td><td>发布流程</td><td>低</td></tr>
+        <tr><td class="d-id">D-M0-3</td><td>CSP 挂起到发布前</td><td>发布工程</td><td>中（需图片回归）</td></tr>
+        <tr><td class="d-id">D-M1-1</td><td>关联存 session Markdown 的 Task Links 节</td><td>session.rs 三处</td><td>低</td></tr>
+        <tr><td class="d-id">D-M1-2</td><td>resume 仅解析根 TODO.md（v1）</td><td>resolve_linked_tasks()</td><td>低（单函数可升级）</td></tr>
+        <tr><td class="d-id">D-M1-3</td><td>仅 finish 记录关联（--task）</td><td>CLI/Tauri/前端</td><td>低</td></tr>
+        <tr><td class="d-id">D-M1-4</td><td>UI 用文本框 + 状态列表</td><td>ProjectDetailPanel</td><td>低</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<div class="foot">
+  <p>配套证据：<code>docs/verification-log.md</code>（各里程碑条目）· 各里程碑提交记录 · <code>make check</code> 终验。</p>
+</div>
+
+</div>
+</body>
+</html>

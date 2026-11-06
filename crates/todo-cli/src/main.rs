@@ -316,8 +316,11 @@ enum SessionCommand {
         #[arg(long = "unresolved")]
         unresolved: Vec<String>,
         /// Explicit next steps, one per occurrence.
-        #[arg(long = "next")]
+        #[arg(long)]
         next: Vec<String>,
+        /// Task stable IDs this session worked on, one per occurrence.
+        #[arg(long = "task")]
+        task_ids: Vec<String>,
         /// Context the next session should load first.
         #[arg(long)]
         context: Option<String>,
@@ -694,6 +697,7 @@ fn run(cli: &Cli) -> Result<u8, Error> {
                 validation,
                 unresolved,
                 next,
+                task_ids,
                 context,
             } => session_finish_cmd(
                 cli,
@@ -703,6 +707,7 @@ fn run(cli: &Cli) -> Result<u8, Error> {
                 validation,
                 unresolved,
                 next,
+                task_ids,
                 context.as_deref(),
             ),
             SessionCommand::Interrupt { root } => session_interrupt_cmd(cli, root.as_deref()),
@@ -2561,6 +2566,7 @@ fn session_finish_cmd(
     validation: &[String],
     unresolved: &[String],
     next: &[String],
+    task_ids: &[String],
     context: Option<&str>,
 ) -> Result<u8, Error> {
     let input = todo_core::SessionFinishInput {
@@ -2569,6 +2575,7 @@ fn session_finish_cmd(
         validation: parse_validation(validation)?,
         unresolved: unresolved.to_vec(),
         next_actions: next.to_vec(),
+        task_ids: task_ids.to_vec(),
         context_for_next: context.unwrap_or_default().to_string(),
     };
     let summary = todo_core::session_finish(root.unwrap_or_else(|| Path::new(".")), &input)?;
@@ -2608,6 +2615,21 @@ fn session_resume_cmd(cli: &Cli, root: Option<&Path>) -> Result<u8, Error> {
         print!("{}", resumed.summary_markdown);
         if !resumed.outstanding.is_empty() {
             println!("\n待续：{}", resumed.outstanding.join("；"));
+        }
+        if !resumed.linked_tasks.is_empty() {
+            println!("\n关联任务：");
+            for task in &resumed.linked_tasks {
+                if task.found {
+                    println!(
+                        "- {} {}（{}）",
+                        task.id,
+                        if task.completed { "✓ 已完成" } else { "○ 未完成" },
+                        task.column.as_deref().unwrap_or("-")
+                    );
+                } else {
+                    println!("- {}（未在根 TODO.md 找到）", task.id);
+                }
+            }
         }
         return Ok(0);
     }

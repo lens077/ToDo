@@ -49,6 +49,7 @@ export function ProjectDetailPanel({ projectId, projectName }: ProjectDetailPane
     validation_evidence: '',
     unresolved: '',
     next_actions: '',
+    task_ids: '',
     context_for_next: '',
   });
 
@@ -205,13 +206,14 @@ export function ProjectDetailPanel({ projectId, projectName }: ProjectDetailPane
           : [],
         unresolved: lines(finishDraft.unresolved),
         next_actions: lines(finishDraft.next_actions),
+        task_ids: finishDraft.task_ids.split(/[,\s，、]+/).map((id) => id.trim()).filter(Boolean),
         context_for_next: finishDraft.context_for_next,
       });
       await refreshSessions();
       setStatus('会话总结已写入 .virgo/sessions/');
       setFinishDraft({
         completed: '', decisions: '', validation_command: '', validation_result: '',
-        validation_evidence: '', unresolved: '', next_actions: '', context_for_next: '',
+        validation_evidence: '', unresolved: '', next_actions: '', task_ids: '', context_for_next: '',
       });
       setError(null);
     } catch (cause) {
@@ -397,6 +399,23 @@ export function ProjectDetailPanel({ projectId, projectName }: ProjectDetailPane
             {sessionResume.outstanding.length > 0 && (
               <span className="ws-project__meta">待续：{sessionResume.outstanding.join('；')}</span>
             )}
+            {sessionResume.linked_tasks.length > 0 && (
+              <ul className="ws-session__links">
+                {sessionResume.linked_tasks.map((task) => (
+                  <li key={task.id}>
+                    <code>{task.id}</code>
+                    {task.found ? (
+                      <span>
+                        {task.completed ? '✓ 已完成' : '○ 未完成'}
+                        {task.column ? ` · ${task.column}` : ''} · {task.body}
+                      </span>
+                    ) : (
+                      <span className="ws-project__meta">未在根 TODO.md 找到</span>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            )}
           </div>
         )}
         {sessions && sessions.length > 0 && (
@@ -455,6 +474,14 @@ export function ProjectDetailPanel({ projectId, projectName }: ProjectDetailPane
             <label className="ws-field">
               <span>给下次会话的上下文</span>
               <textarea rows={2} value={finishDraft.context_for_next} onChange={(event) => setFinishDraft({ ...finishDraft, context_for_next: event.target.value })} />
+            </label>
+            <label className="ws-field">
+              <span>关联任务 ID（逗号分隔，resume 时解析当前状态）</span>
+              <input
+                value={finishDraft.task_ids}
+                placeholder="如 1pevv2, h4m9zc"
+                onChange={(event) => setFinishDraft({ ...finishDraft, task_ids: event.target.value })}
+              />
             </label>
             <div className="ws-session__actions">
               <button type="button" className="button-primary" disabled={busy !== null} onClick={() => void finishSession()}>
