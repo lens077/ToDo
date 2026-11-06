@@ -743,9 +743,11 @@ async fn ai_ack(
             .ok()
             .and_then(|input| input.confirm_digest)
     };
-    Ok(Json(
-        state.ai_store()?.ack(&source, &id, confirm_digest.as_deref())?,
-    ))
+    Ok(Json(state.ai_store()?.ack(
+        &source,
+        &id,
+        confirm_digest.as_deref(),
+    )?))
 }
 async fn ai_remove(
     State(state): State<Arc<ServeState>>,

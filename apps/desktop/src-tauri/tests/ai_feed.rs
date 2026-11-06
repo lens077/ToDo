@@ -50,6 +50,8 @@ fn record(
         changed_file_count: None,
         open_url: Some(format!("http://127.0.0.1:3080/?session={session}")),
         event_at: Some(event_at),
+        action: None,
+        params: None,
     }
 }
 
@@ -112,13 +114,13 @@ fn ack_and_link_leave_local_marks_and_keep_the_host_state() {
     fx.store
         .upsert(record("s_a", root, AiState::Unread, None, 1))
         .unwrap();
-    let acked = fx.ops.ai_ack("dsh", "s_a").unwrap();
+    let acked = fx.ops.ai_ack("dsh", "s_a", None).unwrap();
     assert!(acked.acked_at.is_some());
     assert_eq!(acked.state, AiState::Unread);
     let linked = fx.ops.ai_link("dsh", "s_a", "aaa111").unwrap();
     assert_eq!(linked.task_id.as_deref(), Some("aaa111"));
     assert!(fx.ops.ai_link("dsh", "s_a", " ").is_err());
-    assert!(fx.ops.ai_ack("dsh", "missing").is_err());
+    assert!(fx.ops.ai_ack("dsh", "missing", None).is_err());
 }
 
 #[test]

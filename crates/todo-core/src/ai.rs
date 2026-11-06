@@ -344,11 +344,19 @@ impl AiStore {
     /// Marks a record read. A confirmation object (one carrying
     /// `params_digest`) refuses the ack unless `confirm_digest` matches the
     /// stored digest — re-published params always invalidate stale approvals.
-    pub fn ack(&self, source: &str, session_id: &str, confirm_digest: Option<&str>) -> Result<AiRecord> {
+    pub fn ack(
+        &self,
+        source: &str,
+        session_id: &str,
+        confirm_digest: Option<&str>,
+    ) -> Result<AiRecord> {
         let now = self.now_ms();
         self.modify(source, session_id, |record| {
             if let Some(expected) = &record.params_digest {
-                match confirm_digest.map(str::trim).filter(|digest| !digest.is_empty()) {
+                match confirm_digest
+                    .map(str::trim)
+                    .filter(|digest| !digest.is_empty())
+                {
                     None => return Err(Error::AiConfirmationRequired),
                     Some(provided) if !provided.eq_ignore_ascii_case(expected) => {
                         return Err(Error::AiParamsChanged(expected.clone()))
@@ -525,9 +533,7 @@ fn normalize(input: AiUpsert, now: i64) -> Result<AiRecord> {
             )));
         }
         if input.state != AiState::Waiting {
-            return Err(Error::InvalidAiFeed(
-                "action requires state=waiting".into(),
-            ));
+            return Err(Error::InvalidAiFeed("action requires state=waiting".into()));
         }
     }
     let params = input
@@ -550,9 +556,7 @@ fn normalize(input: AiUpsert, now: i64) -> Result<AiRecord> {
             let value: serde_json::Value = serde_json::from_str(params)
                 .map_err(|_| Error::InvalidAiFeed("params must be valid JSON".into()))?;
             if !value.is_object() {
-                return Err(Error::InvalidAiFeed(
-                    "params must be a JSON object".into(),
-                ));
+                return Err(Error::InvalidAiFeed("params must be a JSON object".into()));
             }
             Some(canonical_params_digest(&value))
         }
@@ -785,7 +789,10 @@ mod tests {
                 150,
             ))
             .unwrap();
-        assert_eq!(republished.record.params_digest.as_deref(), Some(digest.as_str()));
+        assert_eq!(
+            republished.record.params_digest.as_deref(),
+            Some(digest.as_str())
+        );
 
         // A blind ack is refused; a wrong digest is refused; the right one acks.
         assert!(matches!(
@@ -808,7 +815,10 @@ mod tests {
                 200,
             ))
             .unwrap();
-        assert_ne!(changed.record.params_digest.as_deref(), Some(digest.as_str()));
+        assert_ne!(
+            changed.record.params_digest.as_deref(),
+            Some(digest.as_str())
+        );
         assert!(changed.record.acked_at.is_none());
         assert!(matches!(
             store.ack("dsh", "s-confirm", Some(&digest)),

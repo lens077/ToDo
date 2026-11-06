@@ -251,7 +251,12 @@ pub fn resume(project_root: &Path) -> Result<SessionResume> {
     let summaries = list(project_root)?;
     let latest = summaries.first().cloned();
     let (summary_markdown, changed_files, outstanding, linked_tasks) = match &latest {
-        None => ("（项目还没有会话记录）".into(), Vec::new(), Vec::new(), Vec::new()),
+        None => (
+            "（项目还没有会话记录）".into(),
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+        ),
         Some(summary) => {
             let path = sessions.join(&summary.file_name);
             let markdown =
@@ -437,7 +442,8 @@ fn iso_or_epoch(ms: i64) -> String {
 /// Deterministic git evidence: `git status --porcelain` paths. Any failure
 /// (not a repo, git missing) yields an empty list, never an error — sessions
 /// must work outside git too.
-fn collect_git_changed_files(project_root: &Path) -> Vec<String> {    let output = Command::new("git")
+fn collect_git_changed_files(project_root: &Path) -> Vec<String> {
+    let output = Command::new("git")
         .arg("-C")
         .arg(project_root)
         .args(["status", "--porcelain"])
@@ -545,22 +551,24 @@ fn resolve_linked_tasks(project_root: &Path, task_ids: &[String]) -> Vec<LinkedT
     let document = crate::parse::parse_file(project_root.join("TODO.md")).ok();
     task_ids
         .iter()
-        .map(|id| match document.as_ref().and_then(|document| document.task(id)) {
-            Some(task) => LinkedTask {
-                id: id.clone(),
-                found: true,
-                completed: task.completed,
-                column: task.column.clone(),
-                body: task.body.clone(),
+        .map(
+            |id| match document.as_ref().and_then(|document| document.task(id)) {
+                Some(task) => LinkedTask {
+                    id: id.clone(),
+                    found: true,
+                    completed: task.completed,
+                    column: task.column.clone(),
+                    body: task.body.clone(),
+                },
+                None => LinkedTask {
+                    id: id.clone(),
+                    found: false,
+                    completed: false,
+                    column: None,
+                    body: String::new(),
+                },
             },
-            None => LinkedTask {
-                id: id.clone(),
-                found: false,
-                completed: false,
-                column: None,
-                body: String::new(),
-            },
-        })
+        )
         .collect()
 }
 
@@ -734,7 +742,12 @@ mod tests {
         finish(
             root.path(),
             &SessionFinishInput {
-                task_ids: vec!["abc123".into(), "   ".into(), "abc123".into(), "nope999".into()],
+                task_ids: vec![
+                    "abc123".into(),
+                    "   ".into(),
+                    "abc123".into(),
+                    "nope999".into(),
+                ],
                 next_actions: vec!["继续".into()],
                 ..Default::default()
             },
@@ -794,12 +807,20 @@ mod tests {
         .unwrap();
         let content =
             fs::read_to_string(root.path().join(SESSIONS_DIR).join(&summary.file_name)).unwrap();
-        assert!(content.contains("| todo lint | 1 个重复稳定 ID |"), "{content}");
-        assert!(content.contains("| todo reconcile（结构层） |"), "{content}");
+        assert!(
+            content.contains("| todo lint | 1 个重复稳定 ID |"),
+            "{content}"
+        );
+        assert!(
+            content.contains("| todo reconcile（结构层） |"),
+            "{content}"
+        );
         assert!(content.contains("| todo docs validate |"), "{content}");
         assert!(content.contains("virgo 自动（确定性检查，非 agent 自报）"));
         // Agent-supplied rows come first; virgo rows are appended after.
-        let agent = content.find("| make check-quick | 绿 |").expect("agent row");
+        let agent = content
+            .find("| make check-quick | 绿 |")
+            .expect("agent row");
         let lint = content.find("| todo lint |").expect("lint row");
         assert!(agent < lint);
     }
@@ -813,7 +834,10 @@ mod tests {
             fs::read_to_string(root.path().join(SESSIONS_DIR).join(&summary.file_name)).unwrap();
         // No TODO.md → lint is skipped, never an error. The project has one
         // finished session (this one), so docs validate reports ok.
-        assert!(content.contains("| todo lint | 跳过（根目录无 TODO.md） |"), "{content}");
+        assert!(
+            content.contains("| todo lint | 跳过（根目录无 TODO.md） |"),
+            "{content}"
+        );
         assert!(content.contains("| todo docs validate | ok |"), "{content}");
     }
 }

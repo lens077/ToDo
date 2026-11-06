@@ -2644,7 +2644,11 @@ fn session_resume_cmd(cli: &Cli, root: Option<&Path>) -> Result<u8, Error> {
                     println!(
                         "- {} {}（{}）",
                         task.id,
-                        if task.completed { "✓ 已完成" } else { "○ 未完成" },
+                        if task.completed {
+                            "✓ 已完成"
+                        } else {
+                            "○ 未完成"
+                        },
                         task.column.as_deref().unwrap_or("-")
                     );
                 } else {

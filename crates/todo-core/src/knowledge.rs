@@ -152,10 +152,7 @@ impl WorkspaceStore {
                 params![id],
                 |row| row.get(0),
             )?;
-            connection.execute(
-                "DELETE FROM knowledge_fts WHERE doc_id = ?1",
-                params![id],
-            )?;
+            connection.execute("DELETE FROM knowledge_fts WHERE doc_id = ?1", params![id])?;
             connection.execute(
                 "INSERT INTO knowledge_fts (doc_id, title, body) VALUES (?1, ?2, ?3)",
                 params![id, cjk_spaced(&stored_title), cjk_spaced(&file.content)],
@@ -279,7 +276,11 @@ impl WorkspaceStore {
     /// ranked by FTS5 relevance with a highlighted body snippet. Deleted
     /// (tombstoned) documents are excluded, and an index that has not been
     /// refreshed by a scan simply returns fewer hits — never stale rows.
-    pub fn knowledge_search(&self, project_id: &str, query: &str) -> Result<Vec<KnowledgeSearchHit>> {
+    pub fn knowledge_search(
+        &self,
+        project_id: &str,
+        query: &str,
+    ) -> Result<Vec<KnowledgeSearchHit>> {
         let query = query.trim();
         if query.is_empty() {
             return Ok(Vec::new());
@@ -697,7 +698,10 @@ mod tests {
     #[test]
     fn scan_indexes_full_text_and_search_finds_body_terms() {
         let (store_dir, project_dir, store, project) = project_with(&[
-            ("README.md", "# 部署手册\n\nArgo 回滚使用 `argocd app rollback`，先查历史。\n"),
+            (
+                "README.md",
+                "# 部署手册\n\nArgo 回滚使用 `argocd app rollback`，先查历史。\n",
+            ),
             ("docs/notes.md", "# 随手记\n\n午餐吃什么。\n"),
         ]);
         let _ = store_dir;
@@ -720,9 +724,8 @@ mod tests {
 
     #[test]
     fn search_quotes_user_input_instead_of_erroring() {
-        let (store_dir, _project_dir, store, project) = project_with(&[
-            ("README.md", "# 手册\n\n普通正文。\n"),
-        ]);
+        let (store_dir, _project_dir, store, project) =
+            project_with(&[("README.md", "# 手册\n\n普通正文。\n")]);
         let _ = store_dir;
         store.knowledge_scan(&project).unwrap();
         // FTS5 syntax characters must be treated as literals, not operators.
@@ -732,11 +735,6 @@ mod tests {
                 "query {query} must not error"
             );
         }
-        assert!(store
-            .knowledge_search(&project, "普通")
-            .unwrap()
-            .len()
-            == 1);
+        assert!(store.knowledge_search(&project, "普通").unwrap().len() == 1);
     }
-
 }

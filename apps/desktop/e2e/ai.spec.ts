@@ -7,23 +7,23 @@ import { expect, test } from '@playwright/test';
  * (`waiting`, `failed`, `running`, an `unread` one in a subdirectory, and a
  * `seen` one with 32 absolute paths and a 300-character token), one `unread`
  * in another workspace, one `seen`, one `handled`. Attention is
- * `waiting + failed + unread`, so the project badge reads 3 and the
- * all-workspaces badge reads 4.
+ * `waiting + failed + unread`, so the project badge reads 4 (the demo adds a
+ * waiting confirmation object) and the all-workspaces badge reads 5.
  */
 const nav = (page: import('@playwright/test').Page) => page.getByRole('navigation', { name: '主要视图' }).getByRole('button', { name: 'AI' });
 
 test.describe('AI view', () => {
   test('sidebar badge counts attention for the current scope and follows the toggle', async ({ page }) => {
     await page.goto('/');
-    await expect(nav(page)).toContainText('3');
+    await expect(nav(page)).toContainText('4');
     await nav(page).click();
     await expect(page.getByRole('heading', { name: 'AI', level: 1 })).toBeVisible();
     const scope = page.getByRole('group', { name: '会话范围' });
     await scope.getByRole('button', { name: '所有工作区' }).click();
-    await expect(nav(page)).toContainText('4');
+    await expect(nav(page)).toContainText('5');
     await expect(page.getByTestId('ai-card').filter({ hasText: '把博客构建脚本迁到 pnpm' })).toBeVisible();
     await scope.getByRole('button', { name: '当前项目' }).click();
-    await expect(nav(page)).toContainText('3');
+    await expect(nav(page)).toContainText('4');
     await expect(page.getByTestId('ai-card').filter({ hasText: '把博客构建脚本迁到 pnpm' })).toHaveCount(0);
   });
 
@@ -75,7 +75,7 @@ test.describe('AI view', () => {
     await card.getByRole('button', { name: '标记已读' }).click();
     await expect(page.getByRole('region', { name: '已读' })).toContainText('补齐 evidence diff 摘要');
     await expect(page.getByRole('region', { name: '完成未读' })).toHaveCount(0);
-    await expect(nav(page)).toContainText('2');
+    await expect(nav(page)).toContainText('3');
     await expect(card.getByRole('button', { name: '标记已读' })).toHaveCount(0);
   });
 
@@ -85,8 +85,9 @@ test.describe('AI view', () => {
     const card = page.getByTestId('ai-card').filter({ hasText: '为 CLI 增加 release 构建说明' });
     await card.getByRole('button', { name: /^移除会话/ }).click();
     await expect(card).toHaveCount(0);
-    await expect(page.getByRole('region', { name: '等你回复' })).toHaveCount(0);
-    await expect(nav(page)).toContainText('2');
+    // The confirmation object (清理 target 目录) stays in 等你回复.
+    await expect(page.getByTestId('ai-card').filter({ hasText: '清理 target 目录' })).toBeVisible();
+    await expect(nav(page)).toContainText('3');
   });
 
   test('转为任务 creates a linked Project Task with a session note', async ({ page }) => {
@@ -243,7 +244,7 @@ test.describe('AI view', () => {
     await page.goto('/?mock=no-project');
     await nav(page).click();
     await expect(page.getByRole('group', { name: '会话范围' })).toHaveCount(0);
-    await expect(nav(page)).toContainText('4');
+    await expect(nav(page)).toContainText('5');
     const card = page.getByTestId('ai-card').filter({ hasText: '为 CLI 增加 release 构建说明' });
     await expect(card.getByRole('button', { name: '转为任务' })).toBeDisabled();
   });

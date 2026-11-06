@@ -1106,7 +1106,15 @@ fn ai_confirmation_object_requires_matching_digest_to_ack() {
     assert_eq!(wrong.status.code(), Some(1));
     assert!(String::from_utf8_lossy(&wrong.stdout).contains("参数摘要不匹配"));
 
-    let ok = run(&["--json", "ai", "ack", "dsh", "s-1", "--confirm-digest", &digest]);
+    let ok = run(&[
+        "--json",
+        "ai",
+        "ack",
+        "dsh",
+        "s-1",
+        "--confirm-digest",
+        &digest,
+    ]);
     assert!(
         ok.status.success(),
         "{}",
@@ -1202,7 +1210,10 @@ fn session_begin_finish_resume_round_trip_over_json() {
     );
     assert!(resume_json.contains("补 Session E2E"), "{resume_json}");
     // Task links round-trip: the planted task resolves, the bogus ID does not.
-    assert!(resume_json.contains("\"task_ids\":[\"abc123\",\"nope999\"]"), "{resume_json}");
+    assert!(
+        resume_json.contains("\"task_ids\":[\"abc123\",\"nope999\"]"),
+        "{resume_json}"
+    );
     assert!(resume_json.contains("\"id\":\"abc123\""), "{resume_json}");
     assert!(resume_json.contains("\"found\":true"), "{resume_json}");
     assert!(resume_json.contains("\"found\":false"), "{resume_json}");

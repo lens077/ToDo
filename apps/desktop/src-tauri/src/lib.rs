@@ -365,7 +365,9 @@ fn ai_ack(
     session: String,
     confirm_digest: Option<String>,
 ) -> Result<AiRecord, String> {
-    state.ops.ai_ack(&source, &session, confirm_digest.as_deref())
+    state
+        .ops
+        .ai_ack(&source, &session, confirm_digest.as_deref())
 }
 
 #[tauri::command]
