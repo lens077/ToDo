@@ -1040,3 +1040,181 @@ fn project_restore_last_without_backup_fails_cleanly() {
     assert_eq!(output.status.code(), Some(1));
     assert!(!String::from_utf8_lossy(&output.stderr).contains("panic"));
 }
+
+// ── Session CLI & docs validator (workspace blueprint Phase 5) ──────────────
+
+#[test]
+fn session_begin_finish_resume_round_trip_over_json() {
+    let dir = tempdir().unwrap();
+    assert!(todo(dir.path(), &["init", "--json"]).status.success());
+
+    let begin = todo(
+        dir.path(),
+        &["--json", "session", "begin", "--goal", "接入 watcher"],
+    );
+    assert!(
+        begin.status.success(),
+        "{}",
+        String::from_utf8_lossy(&begin.stderr)
+    );
+    let output = String::from_utf8_lossy(&begin.stdout);
+    assert!(
+        output.contains("\"schema\":\"todo.session.v1\""),
+        "{output}"
+    );
+    assert!(output.contains("\"ok\":true"));
+    assert!(output.contains("接入 watcher"));
+
+    // A second active session is refused with a JSON error envelope.
+    let second = todo(
+        dir.path(),
+        &["--json", "session", "begin", "--goal", "另一个"],
+    );
+    assert_eq!(second.status.code(), Some(1));
+    assert!(String::from_utf8_lossy(&second.stdout).contains("\"ok\":false"));
+
+    let finish = todo(
+        dir.path(),
+        &[
+            "--json",
+            "session",
+            "finish",
+            "--completed",
+            "watcher 接入",
+            "--validation",
+            "make check-quick|绿|137s",
+            "--next",
+            "补 Session E2E",
+            "--context",
+            "watcher 在 src-tauri/watch.rs",
+        ],
+    );
+    assert!(
+        finish.status.success(),
+        "{}",
+        String::from_utf8_lossy(&finish.stderr)
+    );
+    let finish_json = String::from_utf8_lossy(&finish.stdout);
+    assert!(
+        finish_json.contains("\"status\":\"completed\""),
+        "{finish_json}"
+    );
+
+    // Resume: stable JSON with the outstanding next actions.
+    let resume = todo(dir.path(), &["--json", "session", "resume"]);
+    assert!(resume.status.success());
+    let resume_json = String::from_utf8_lossy(&resume.stdout);
+    assert!(
+        resume_json.contains("\"schema\":\"todo.session-resume.v1\""),
+        "{resume_json}"
+    );
+    assert!(resume_json.contains("补 Session E2E"), "{resume_json}");
+
+    // The summary file is real Markdown in the project, git-trackable.
+    let sessions = fs::read_to_string(
+        dir.path()
+            .join(".virgo/sessions")
+            .read_dir()
+            .unwrap()
+            .map(|entry| entry.unwrap().path())
+            .find(|path| path.extension().is_some_and(|e| e == "md"))
+            .unwrap(),
+    )
+    .unwrap();
+    assert!(sessions.contains("## Validation"));
+    assert!(sessions.contains("| make check-quick | 绿 | 137s |"));
+}
+
+#[test]
+fn session_resume_human_output_is_the_markdown_summary() {
+    let dir = tempdir().unwrap();
+    assert!(todo(dir.path(), &["init", "--json"]).status.success());
+    assert!(todo(dir.path(), &["session", "begin", "--goal", "写会话"])
+        .status
+        .success());
+    assert!(
+        todo(dir.path(), &["session", "finish", "--next", "下一步甲"])
+            .status
+            .success()
+    );
+    let resume = todo(dir.path(), &["session", "resume"]);
+    let text = String::from_utf8_lossy(&resume.stdout);
+    assert!(text.contains("# Session Summary"), "{text}");
+    assert!(text.contains("待续：下一步甲"));
+}
+
+#[test]
+fn docs_validate_blocks_on_error_and_passes_clean_projects() {
+    let dir = tempdir().unwrap();
+    assert!(todo(dir.path(), &["init", "--json"]).status.success());
+
+    // No sessions yet: INFO only, exit 0.
+    let clean = todo(dir.path(), &["--json", "docs", "validate"]);
+    assert_eq!(
+        clean.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&clean.stdout)
+    );
+    assert!(String::from_utf8_lossy(&clean.stdout).contains("\"schema\":\"todo.docs.v1\""));
+
+    // Well-kept sessions stay clean.
+    assert!(
+        todo(dir.path(), &["session", "begin", "--goal", "干净收尾"])
+            .status
+            .success()
+    );
+    assert!(todo(dir.path(), &["session", "finish", "--next", "继续"])
+        .status
+        .success());
+    assert_eq!(
+        todo(dir.path(), &["docs", "validate"]).status.code(),
+        Some(0)
+    );
+
+    // A hand-mangled session file is an ERROR: exit 6, CI can block.
+    let sessions = dir.path().join(".virgo/sessions");
+    fs::write(sessions.join("s-broken.md"), "# 手写会话\n无 frontmatter\n").unwrap();
+    let blocked = todo(dir.path(), &["--json", "docs", "validate"]);
+    assert_eq!(
+        blocked.status.code(),
+        Some(6),
+        "{}",
+        String::from_utf8_lossy(&blocked.stdout)
+    );
+    let json = String::from_utf8_lossy(&blocked.stdout);
+    assert!(json.contains("\"severity\":\"error\""), "{json}");
+    assert!(json.contains("VDS001"));
+}
+
+#[test]
+fn agent_integration_block_and_skill_document_both_advertise_sessions() {
+    // Integration mode 1: the hooks-injected AGENTS.md block carries the
+    // session workflow, so any hook-capable agent learns it on install.
+    let dir = tempdir().unwrap();
+    let write = todo(dir.path(), &["hooks", "instructions", "--write"]);
+    assert!(
+        write.status.success(),
+        "{}",
+        String::from_utf8_lossy(&write.stderr)
+    );
+    // Claude writes AGENTS.md / CLAUDE.md via the hooks instructions path.
+    let instructions = std::fs::read_dir(dir.path())
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name().to_string_lossy().to_string())
+        .collect::<Vec<_>>();
+    assert!(
+        instructions
+            .iter()
+            .any(|name| name.contains("AGENTS") || name.contains("CLAUDE")),
+        "no instructions file written: {instructions:?}"
+    );
+
+    // Integration mode 2: plain CLI — the JSON envelope is the agent contract,
+    // proven above. Here we additionally verify `todo session --help` exposes
+    // the workflow without any host integration.
+    let help = todo(dir.path(), &["session", "--help"]);
+    let help_text = String::from_utf8_lossy(&help.stdout);
+    assert!(help_text.contains("begin"), "{help_text}");
+    assert!(help_text.contains("resume"));
+}

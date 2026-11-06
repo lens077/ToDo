@@ -246,6 +246,16 @@ enum Command {
         #[command(subcommand)]
         command: ContractCommand,
     },
+    /// Development sessions: the cross-day context recovery records.
+    Session {
+        #[command(subcommand)]
+        command: SessionCommand,
+    },
+    /// Validate session/document hygiene (offline, deterministic).
+    Docs {
+        #[command(subcommand)]
+        command: DocsCommand,
+    },
     /// Serve the HTTP API, and optionally the Web UI, for this project.
     Serve {
         #[arg(long, default_value_t = 3017)]
@@ -276,6 +286,66 @@ impl From<PolicyValue> for CompletionPolicy {
             PolicyValue::Strict => Self::Strict,
         }
     }
+}
+
+#[derive(Subcommand)]
+enum SessionCommand {
+    /// Begin a session. Refused while another session is active.
+    Begin {
+        /// Project root. Defaults to the current directory.
+        #[arg(long)]
+        root: Option<PathBuf>,
+        /// What this session is trying to accomplish.
+        #[arg(long)]
+        goal: String,
+    },
+    /// Complete the active session and write the summary.
+    Finish {
+        #[arg(long)]
+        root: Option<PathBuf>,
+        /// Finished work, one item per flag occurrence.
+        #[arg(long = "completed")]
+        completed: Vec<String>,
+        /// Architecture/behavior decisions taken, one per occurrence.
+        #[arg(long = "decision")]
+        decisions: Vec<String>,
+        /// Validation evidence as `command|result|evidence`.
+        #[arg(long = "validation")]
+        validation: Vec<String>,
+        /// Open problems left behind, one per occurrence.
+        #[arg(long = "unresolved")]
+        unresolved: Vec<String>,
+        /// Explicit next steps, one per occurrence.
+        #[arg(long = "next")]
+        next: Vec<String>,
+        /// Context the next session should load first.
+        #[arg(long)]
+        context: Option<String>,
+    },
+    /// Mark the active session interrupted so a new one can begin.
+    Interrupt {
+        #[arg(long)]
+        root: Option<PathBuf>,
+    },
+    /// List sessions, newest first.
+    List {
+        #[arg(long)]
+        root: Option<PathBuf>,
+    },
+    /// What the next session needs: latest summary and outstanding work.
+    Resume {
+        #[arg(long)]
+        root: Option<PathBuf>,
+    },
+}
+
+#[derive(Subcommand)]
+enum DocsCommand {
+    /// Validate `.virgo/sessions/` hygiene. Errors exit 6 (CI can block).
+    Validate {
+        #[arg(long)]
+        root: Option<PathBuf>,
+    },
 }
 
 #[derive(Subcommand)]
@@ -612,6 +682,35 @@ fn run(cli: &Cli) -> Result<u8, Error> {
             ContractCommand::Uninstall { root, yes } => {
                 contract_install(cli, root.as_deref(), *yes, true)
             }
+        },
+        Command::Session { command } => match command {
+            SessionCommand::Begin { root, goal } => {
+                session_begin_cmd(cli, root.as_deref(), goal.as_str())
+            }
+            SessionCommand::Finish {
+                root,
+                completed,
+                decisions,
+                validation,
+                unresolved,
+                next,
+                context,
+            } => session_finish_cmd(
+                cli,
+                root.as_deref(),
+                completed,
+                decisions,
+                validation,
+                unresolved,
+                next,
+                context.as_deref(),
+            ),
+            SessionCommand::Interrupt { root } => session_interrupt_cmd(cli, root.as_deref()),
+            SessionCommand::List { root } => session_list_cmd(cli, root.as_deref()),
+            SessionCommand::Resume { root } => session_resume_cmd(cli, root.as_deref()),
+        },
+        Command::Docs { command } => match command {
+            DocsCommand::Validate { root } => docs_validate_cmd(cli, root.as_deref()),
         },
         Command::Project { command } => match command {
             ProjectCommand::Adopt {
@@ -2425,8 +2524,122 @@ fn project_restore_last(cli: &Cli, root: &Path) -> Result<u8, Error> {
     Ok(0)
 }
 
-/// `todo contract check`: runs the deterministic Project Contract validator and
-/// reuses the house gate semantics — blocking findings exit 6, like lint.
+// ── Session & docs commands ─────────────────────────────────────────────────
+
+fn parse_validation(raw: &[String]) -> Result<Vec<todo_core::ValidationEntry>, Error> {
+    raw.iter()
+        .map(|entry| {
+            let parts: Vec<&str> = entry.splitn(3, '|').collect();
+            if parts.len() != 3 {
+                return Err(Error::InvalidAlignment(format!(
+                    "validation 项必须是 `command|result|evidence`：{entry}"
+                )));
+            }
+            Ok(todo_core::ValidationEntry {
+                command: parts[0].trim().to_string(),
+                result: parts[1].trim().to_string(),
+                evidence: parts[2].trim().to_string(),
+            })
+        })
+        .collect()
+}
+
+fn session_begin_cmd(cli: &Cli, root: Option<&Path>, goal: &str) -> Result<u8, Error> {
+    let summary = todo_core::session_begin(root.unwrap_or_else(|| Path::new(".")), goal)?;
+    emit(cli, "todo.session.v1", &summary, |summary| {
+        format!("会话 {} 已开始：{}", summary.id, summary.goal)
+    });
+    Ok(0)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn session_finish_cmd(
+    cli: &Cli,
+    root: Option<&Path>,
+    completed: &[String],
+    decisions: &[String],
+    validation: &[String],
+    unresolved: &[String],
+    next: &[String],
+    context: Option<&str>,
+) -> Result<u8, Error> {
+    let input = todo_core::SessionFinishInput {
+        completed: completed.to_vec(),
+        decisions: decisions.to_vec(),
+        validation: parse_validation(validation)?,
+        unresolved: unresolved.to_vec(),
+        next_actions: next.to_vec(),
+        context_for_next: context.unwrap_or_default().to_string(),
+    };
+    let summary = todo_core::session_finish(root.unwrap_or_else(|| Path::new(".")), &input)?;
+    emit(cli, "todo.session.v1", &summary, |summary| {
+        format!(
+            "会话 {} 已完成；下一步：{}",
+            summary.id,
+            summary.next_actions.join("；")
+        )
+    });
+    Ok(0)
+}
+
+fn session_interrupt_cmd(cli: &Cli, root: Option<&Path>) -> Result<u8, Error> {
+    let summary = todo_core::session_interrupt(root.unwrap_or_else(|| Path::new(".")))?;
+    emit(cli, "todo.session.v1", &summary, |summary| {
+        format!("会话 {} 已标记为 {}", summary.id, summary.status)
+    });
+    Ok(0)
+}
+
+fn session_list_cmd(cli: &Cli, root: Option<&Path>) -> Result<u8, Error> {
+    let summaries = todo_core::session_list(root.unwrap_or_else(|| Path::new(".")))?;
+    emit(cli, "todo.session-list.v1", &summaries, |summaries| {
+        summaries
+            .iter()
+            .map(|summary| format!("{}  {}  {}", summary.id, summary.status, summary.goal))
+            .collect::<Vec<_>>()
+            .join("\n")
+    });
+    Ok(0)
+}
+
+fn session_resume_cmd(cli: &Cli, root: Option<&Path>) -> Result<u8, Error> {
+    let resumed = todo_core::session_resume(root.unwrap_or_else(|| Path::new(".")))?;
+    if !cli.json {
+        print!("{}", resumed.summary_markdown);
+        if !resumed.outstanding.is_empty() {
+            println!("\n待续：{}", resumed.outstanding.join("；"));
+        }
+        return Ok(0);
+    }
+    emit(cli, "todo.session-resume.v1", &resumed, |_| String::new());
+    Ok(0)
+}
+
+fn docs_validate_cmd(cli: &Cli, root: Option<&Path>) -> Result<u8, Error> {
+    let findings = todo_core::docs_validate(root.unwrap_or_else(|| Path::new(".")))?;
+    let data: Vec<&todo_core::DocsFinding> = findings.iter().collect();
+    emit(cli, "todo.docs.v1", &data, |findings| {
+        findings
+            .iter()
+            .map(|finding| {
+                format!(
+                    "{:?} {}: {}{}",
+                    finding.severity,
+                    finding.rule,
+                    finding.message,
+                    finding
+                        .file
+                        .as_deref()
+                        .map(|file| format!("（{file}）"))
+                        .unwrap_or_default()
+                )
+            })
+            .collect::<Vec<_>>()
+            .join("\n")
+    });
+    Ok(u8::from(todo_core::docs_validate_blocking(&findings)) * 6)
+}
+
 fn contract_check(cli: &Cli, root: Option<&Path>) -> Result<u8, Error> {
     let root = root.unwrap_or_else(|| Path::new("."));
     let loaded = match todo_core::load_contract(root) {
