@@ -214,8 +214,31 @@
 </section>
 
 <section id="s5">
-  <h2><span class="no">§5</span>M4 · Knowledge 全文搜索与增量扫描</h2>
-  <p class="filelist">（待实施）</p>
+  <h2><span class="no">§5</span>M4 · Knowledge 全文搜索与增量扫描 <span class="badge decided">已实现并验证</span></h2>
+
+  <div class="card">
+    <h3><span class="d-id">D-M4-1</span> 搜索引擎与分词</h3>
+    <div class="kv"><b class="k">选项</b> A FTS5 默认分词器｜B FTS5 trigram｜C FTS5 + CJK 字间插空格（短语查询）</div>
+    <div class="kv"><b class="k">决定</b> <span class="badge decided">C</span>：默认分词器把连续中文当作一个 token（「普通」搜不到「普通正文」），trigram 又要求查询 ≥3 字；采用经典 CJK 方案——<b>索引与查询两侧都在 CJK 字符间插入空格</b>，查询加引号成短语匹配，两字中文查询可命中；snippet 展示时反向去空格。用户输入逐词加引号，不可能注入 FTS5 语法（有专项测试）。</div>
+    <div class="kv"><b class="k">锚点</b> <code>knowledge.rs</code>：<code>is_cjk/cjk_spaced/cjk_despace</code>、<code>knowledge_search()</code>；FTS 表 <code>knowledge_fts(doc_id UNINDEXED, title, body)</code></div>
+    <div class="kv"><b class="k">如何修改</b> 换分词器只改 <code>workspace.rs</code> 迁移里的一行 DDL + 这三个辅助函数；索引由下次扫描自动重建，无需迁移数据。</div>
+  </div>
+
+  <div class="card">
+    <h3><span class="d-id">D-M4-2</span> 索引时机与 schema 演进</h3>
+    <div class="kv"><b class="k">决定</b> <span class="badge decided">随扫描重建</span>：<code>knowledge_scan</code> 每次全量重读文件（≤2000 个、≤512KB，本来就全读），FTS 行 delete+insert——永远是「便宜且正确」的路径，不做部分增量数据结构；tombstone 同步从 FTS 删除。schema v3→v4（fail-loud 迁移框架内），存量索引行由下一次扫描自然补齐，无数据迁移。</div>
+    <div class="kv"><b class="k">理由</b> 真正的增量（hash 对账跳过重解析）在 <code>knowledge_documents</code> 层已存在（content_hash）；FTS 层全量重建的成本远低于维护两套一致性逻辑。</div>
+    <div class="kv"><b class="k">锚点</b> <code>workspace.rs::migrate()</code>（<code>SCHEMA_VERSION=4</code>）、<code>knowledge_scan()</code> 的 FTS upsert 与 tombstone 清理</div>
+  </div>
+
+  <div class="card">
+    <h3><span class="d-id">D-M4-3</span> 文件变更的自动重建（watcher）</h3>
+    <div class="kv"><b class="k">选项</b> A Rust 侧新 watcher 管道｜B 前端订阅既有事件 + 去抖</div>
+    <div class="kv"><b class="k">决定</b> <span class="badge decided">B</span>：ProjectDetailPanel 订阅既有的 <code>desktop://snapshot-changed</code>（打开项目的 watcher 已在发），<b>5 秒去抖</b>后重建索引；仅当用户本会话扫描过（documents 已加载）才触发，失败静默保留旧索引。mock/浏览器无事件，天然跳过。</div>
+    <div class="kv"><b class="k">理由</b> 低耦合：不新建 Rust watcher 生命周期（Phase 0 审计 R4 的「事件风暴」用去抖+hash 跳过化解）；项目打开期间才有意义，面板正是「已打开项目」的自然作用域。</div>
+    <div class="kv"><b class="k">锚点</b> <code>ProjectDetailPanel.tsx</code> 的 rescan <code>useEffect</code>（监听 + 5s 去抖 + cancelled 守卫）</div>
+    <div class="kv"><b class="k">如何修改</b> 想改去抖时长/搬去 Rust：改这个 effect 或替换成 Tauri 命令调用，其他层不动。</div>
+  </div>
 </section>
 
 <section id="s6">
@@ -243,6 +266,9 @@
         <tr><td class="d-id">D-M3-1</td><td>白名单三项检查，不执行项目测试</td><td>run_virgo_checks()</td><td>低（单函数）</td></tr>
         <tr><td class="d-id">D-M3-2</td><td>检查失败记录不阻断</td><td>run_virgo_checks()</td><td>低</td></tr>
         <tr><td class="d-id">D-M3-3</td><td>agent 行在前，virgo 行标注来源</td><td>finish() 组装</td><td>低</td></tr>
+        <tr><td class="d-id">D-M4-1</td><td>FTS5 + CJK 字间空格短语查询</td><td>knowledge.rs 三辅助函数</td><td>低</td></tr>
+        <tr><td class="d-id">D-M4-2</td><td>索引随扫描全量重建，schema v4</td><td>workspace.rs migrate</td><td>低</td></tr>
+        <tr><td class="d-id">D-M4-3</td><td>前端订阅既有事件 5s 去抖重建</td><td>ProjectDetailPanel effect</td><td>低</td></tr>
       </tbody>
     </table>
   </div>

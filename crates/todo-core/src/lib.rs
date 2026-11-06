@@ -51,7 +51,7 @@ pub use history::{
 pub use id::{generate_task_id, DEFAULT_ID_LENGTH};
 pub use knowledge::{
     render_markdown, KnowledgeDocument, KnowledgeDocumentContent, KnowledgeScanReport,
-    LOGICAL_TYPES,
+    KnowledgeSearchHit, LOGICAL_TYPES,
 };
 pub use llm::{LlmConfig, LlmProvider, LlmSemanticReconciler};
 pub use lock::{FileLockGuard, LockedWriter};

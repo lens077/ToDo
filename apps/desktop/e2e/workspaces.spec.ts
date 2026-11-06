@@ -126,6 +126,22 @@ test.describe('知识文档', () => {
     await docs.filter({ hasText: 'README.md' }).locator('.ws-doc__open').click();
     const reader = page.getByTestId('knowledge-reader');
     await expect(reader).toBeVisible();
+
+    // Full-text search (M4): the mock matches title/body substrings and marks
+    // the term; an empty query clears the hits.
+    const search = page.getByTestId('knowledge-search');
+    await search.getByRole('textbox').fill('SQLite');
+    await search.getByRole('button', { name: '搜索' }).click();
+    const hits = page.getByTestId('knowledge-search-hits').locator('.ws-doc');
+    await expect(hits).toHaveCount(1);
+    await expect(hits.first()).toContainText('0003-storage.md');
+    await expect(hits.first()).toContainText('【SQLite】');
+    // A whitespace-only query clears the hits (button is disabled; Enter runs
+    // the same handler). The panel shows the empty-state text again.
+    await search.getByRole('textbox').fill('  ');
+    await search.getByRole('textbox').press('Enter');
+    await expect(page.getByTestId('knowledge-search-hits')).toHaveCount(0);
+    await expect(page.getByText('没有匹配的文档。')).toBeVisible();
     await expect(reader.locator('h3')).toHaveText('演示项目');
     await expect(page.getByText('HTML 由 Markdown 重建，不落盘')).toBeVisible();
   });

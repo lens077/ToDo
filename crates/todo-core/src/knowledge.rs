@@ -76,6 +76,14 @@ pub struct KnowledgeScanReport {
     pub documents: Vec<KnowledgeDocument>,
 }
 
+/// One full-text search hit: the document plus a highlighted body snippet.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct KnowledgeSearchHit {
+    pub document: KnowledgeDocument,
+    /// Body fragment around the match; terms wrapped in 【】.
+    pub snippet: String,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct KnowledgeDocumentContent {
     #[serde(flatten)]
@@ -135,6 +143,23 @@ impl WorkspaceStore {
                    classification_source = knowledge_documents.classification_source",
                 params![id, project_id, file.relative_path, suggested.0, suggested.1, hash, file.modified_at, now],
             )?;
+            // Keep the full-text index in step with the row. The stored title
+            // wins (a confirmed classification may have renamed it); the body
+            // is the file content read moments ago. Rescans re-read every
+            // file anyway, so re-indexing is the cheap and always-correct path.
+            let stored_title: String = connection.query_row(
+                "SELECT title FROM knowledge_documents WHERE id = ?1",
+                params![id],
+                |row| row.get(0),
+            )?;
+            connection.execute(
+                "DELETE FROM knowledge_fts WHERE doc_id = ?1",
+                params![id],
+            )?;
+            connection.execute(
+                "INSERT INTO knowledge_fts (doc_id, title, body) VALUES (?1, ?2, ?3)",
+                params![id, cjk_spaced(&stored_title), cjk_spaced(&file.content)],
+            )?;
         }
         // Tombstone rows whose path no longer exists on disk.
         let live_paths: Vec<String> = found.iter().map(|f| f.relative_path.clone()).collect();
@@ -149,6 +174,11 @@ impl WorkspaceStore {
                 if !live_paths.contains(&path) {
                     connection.execute(
                         "UPDATE knowledge_documents SET tombstone = 1 WHERE project_id = ?1 AND relative_path = ?2",
+                        params![project_id, path],
+                    )?;
+                    connection.execute(
+                        "DELETE FROM knowledge_fts WHERE doc_id IN
+                           (SELECT id FROM knowledge_documents WHERE project_id = ?1 AND relative_path = ?2)",
                         params![project_id, path],
                     )?;
                     tombstoned += 1;
@@ -244,6 +274,45 @@ impl WorkspaceStore {
         })
     }
 
+    /// Full-text search over a project's knowledge documents (M4). User input
+    /// is quoted term by term so it can never inject FTS5 syntax; hits are
+    /// ranked by FTS5 relevance with a highlighted body snippet. Deleted
+    /// (tombstoned) documents are excluded, and an index that has not been
+    /// refreshed by a scan simply returns fewer hits — never stale rows.
+    pub fn knowledge_search(&self, project_id: &str, query: &str) -> Result<Vec<KnowledgeSearchHit>> {
+        let query = query.trim();
+        if query.is_empty() {
+            return Ok(Vec::new());
+        }
+        let connection = self.connect()?;
+        self.project(&connection, project_id)?;
+        let terms: Vec<String> = query
+            .split_whitespace()
+            .map(|term| format!("\"{}\"", cjk_spaced(term).replace('"', "\"\"")))
+            .collect();
+        if terms.is_empty() {
+            return Ok(Vec::new());
+        }
+        let mut statement = connection.prepare(
+            "SELECT d.id, d.project_id, d.relative_path, d.logical_type, d.title, d.classification_source,
+                    d.modified_at, d.indexed_at, d.tombstone,
+                    snippet(knowledge_fts, 2, '【', '】', '…', 12)
+             FROM knowledge_fts
+             JOIN knowledge_documents d ON d.id = knowledge_fts.doc_id
+             WHERE knowledge_fts MATCH ?1 AND d.project_id = ?2 AND d.tombstone = 0
+             ORDER BY rank
+             LIMIT 20",
+        )?;
+        let rows = statement.query_map(params![terms.join(" "), project_id], |row| {
+            Ok(KnowledgeSearchHit {
+                document: document_from_row(row)?,
+                snippet: cjk_despace(&row.get::<_, String>(9)?),
+            })
+        })?;
+        rows.collect::<std::result::Result<Vec<_>, _>>()
+            .map_err(Error::from)
+    }
+
     fn project_root(
         &self,
         connection: &rusqlite::Connection,
@@ -315,6 +384,55 @@ fn walk_markdown(root: &Path) -> Result<Vec<MarkdownFile>> {
     }
     files.sort_by(|a, b| a.relative_path.cmp(&b.relative_path));
     Ok(files)
+}
+
+/// Whether `ch` is CJK ideograph/kana/hangul/fullwidth punctuation. The FTS5
+/// default tokenizer never splits CJK runs, so "普通正文" would be one token
+/// and a two-character query would never match; indexing with single spaces
+/// between CJK chars turns every char into a token and quoted queries into
+/// phrase queries, which is the standard CJK workaround.
+fn is_cjk(ch: char) -> bool {
+    matches!(ch as u32,
+        0x3040..=0x30FF // kana
+        | 0x3400..=0x4DBF // CJK ext A
+        | 0x4E00..=0x9FFF // CJK unified
+        | 0xF900..=0xFAFF // compatibility ideographs
+        | 0xAC00..=0xD7AF // hangul
+        | 0x3000..=0x303F // CJK punctuation
+    )
+}
+
+fn cjk_spaced(text: &str) -> String {
+    let mut out = String::with_capacity(text.len() + 16);
+    let mut previous_cjk = false;
+    for ch in text.chars() {
+        let cjk = is_cjk(ch);
+        if cjk && previous_cjk {
+            out.push(' ');
+        }
+        out.push(ch);
+        previous_cjk = cjk;
+    }
+    out
+}
+
+/// Inverse of [`cjk_spaced`] for display: removes a space only when both
+/// neighbours are CJK, leaving latin spacing untouched.
+fn cjk_despace(text: &str) -> String {
+    let chars: Vec<char> = text.chars().collect();
+    let mut out = String::with_capacity(text.len());
+    for (index, &ch) in chars.iter().enumerate() {
+        if ch == ' '
+            && index > 0
+            && index + 1 < chars.len()
+            && is_cjk(chars[index - 1])
+            && is_cjk(chars[index + 1])
+        {
+            continue;
+        }
+        out.push(ch);
+    }
+    out
 }
 
 /// Rule-based suggestion from file/dir names and content shape. Returns
@@ -576,4 +694,49 @@ mod tests {
         assert!(html.contains("<h1>A</h1>"));
         assert!(!html.contains("onerror"));
     }
+    #[test]
+    fn scan_indexes_full_text_and_search_finds_body_terms() {
+        let (store_dir, project_dir, store, project) = project_with(&[
+            ("README.md", "# 部署手册\n\nArgo 回滚使用 `argocd app rollback`，先查历史。\n"),
+            ("docs/notes.md", "# 随手记\n\n午餐吃什么。\n"),
+        ]);
+        let _ = store_dir;
+        store.knowledge_scan(&project).unwrap();
+        let hits = store.knowledge_search(&project, "Argo").unwrap();
+        assert_eq!(hits.len(), 1);
+        assert_eq!(hits[0].document.relative_path, "README.md");
+        assert!(hits[0].snippet.contains("Argo"), "{}", hits[0].snippet);
+        assert!(hits[0].snippet.contains("【"));
+        // Unrelated term finds nothing; empty query returns nothing.
+        assert!(store.knowledge_search(&project, "午餐").is_ok());
+        assert!(store.knowledge_search(&project, "  ").unwrap().is_empty());
+
+        // Deleting the file tombstones the row and removes it from search.
+        std::fs::remove_file(project_dir.path().join("README.md")).unwrap();
+        let report = store.knowledge_scan(&project).unwrap();
+        assert_eq!(report.tombstoned, 1);
+        assert!(store.knowledge_search(&project, "Argo").unwrap().is_empty());
+    }
+
+    #[test]
+    fn search_quotes_user_input_instead_of_erroring() {
+        let (store_dir, _project_dir, store, project) = project_with(&[
+            ("README.md", "# 手册\n\n普通正文。\n"),
+        ]);
+        let _ = store_dir;
+        store.knowledge_scan(&project).unwrap();
+        // FTS5 syntax characters must be treated as literals, not operators.
+        for query in ["\"quoted\"", "AND OR NOT", "a*b", "NEAR(", "\'"] {
+            assert!(
+                store.knowledge_search(&project, query).is_ok(),
+                "query {query} must not error"
+            );
+        }
+        assert!(store
+            .knowledge_search(&project, "普通")
+            .unwrap()
+            .len()
+            == 1);
+    }
+
 }

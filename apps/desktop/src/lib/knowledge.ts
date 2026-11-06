@@ -61,6 +61,11 @@ export interface KnowledgeDocumentContent extends KnowledgeDocument {
   content_html: string;
 }
 
+export interface KnowledgeSearchHit {
+  document: KnowledgeDocument;
+  snippet: string;
+}
+
 async function call<T>(command: string, args?: Record<string, unknown>): Promise<T> {
   return invoke<T>(command, args);
 }
@@ -155,6 +160,25 @@ export function resetKnowledgeMock(): void {
 }
 
 export const knowledge = {
+  async search(projectId: string, query: string): Promise<KnowledgeSearchHit[]> {
+    if (isTauriRuntime()) return call<KnowledgeSearchHit[]>('knowledge_search', { projectId, query });
+    const trimmed = query.trim();
+    if (!trimmed) return [];
+    const files = mockFilesByProject[projectId] ?? [];
+    return files
+      .filter((file) => file.markdown.includes(trimmed) || file.relative_path.includes(trimmed))
+      .slice(0, 20)
+      .map((file) => {
+        const index = file.markdown.indexOf(trimmed);
+        const start = Math.max(0, index - 24);
+        const fragment = file.markdown.slice(start, index + trimmed.length + 24).replace(/\s+/g, ' ').trim();
+        return {
+          document: mockDocument(projectId, file),
+          snippet: fragment.replace(trimmed, `【${trimmed}】`),
+        };
+      });
+  },
+
   async scan(projectId: string): Promise<KnowledgeScanReport> {
     if (isTauriRuntime()) return call<KnowledgeScanReport>('knowledge_scan', { projectId });
     // Browser mock: seed a small demo corpus so the E2E can drive the flow

@@ -11,14 +11,17 @@ import {
   LOGICAL_TYPE_LABELS,
   type KnowledgeDocument,
   type KnowledgeDocumentContent,
+  type KnowledgeSearchHit,
   type LogicalType,
 } from '../lib/knowledge';
+import { isTauriRuntime } from '../lib/workspace';
 import {
   workspace,
   type EnvironmentProfile,
   type ProjectProfile,
 } from '../lib/workspace';
 import { session, type SessionResume, type SessionSummary } from '../lib/session';
+import { listen } from '@tauri-apps/api/event';
 import { Icon } from './Icon';
 
 const LIFECYCLE_OPTIONS = ['active', 'paused', 'maintenance', 'completed', 'archived'];
@@ -38,6 +41,8 @@ export function ProjectDetailPanel({ projectId, projectName }: ProjectDetailPane
   const [declaredDraft, setDeclaredDraft] = React.useState('');
   const [documents, setDocuments] = React.useState<KnowledgeDocument[] | null>(null);
   const [openDocument, setOpenDocument] = React.useState<KnowledgeDocumentContent | null>(null);
+  const [knowledgeQuery, setKnowledgeQuery] = React.useState('');
+  const [knowledgeHits, setKnowledgeHits] = React.useState<KnowledgeSearchHit[] | null>(null);
   const [sessions, setSessions] = React.useState<SessionSummary[] | null>(null);
   const [sessionResume, setSessionResume] = React.useState<SessionResume | null>(null);
   const [sessionGoal, setSessionGoal] = React.useState('');
@@ -154,6 +159,50 @@ export function ProjectDetailPanel({ projectId, projectName }: ProjectDetailPane
       setBusy(null);
     }
   }, []);
+
+  const searchDocuments = React.useCallback(async () => {
+    const trimmed = knowledgeQuery.trim();
+    if (!trimmed) {
+      // An explicit cleared state ([]) rather than null, so the panel shows
+      // the empty result line instead of silently hiding the section.
+      setKnowledgeHits([]);
+      return;
+    }
+    try {
+      setKnowledgeHits(await knowledge.search(projectId, trimmed));
+      setError(null);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    }
+  }, [knowledgeQuery, projectId]);
+
+  // Incremental rescan (M4): the Tauri file watcher already fires
+  // desktop://snapshot-changed for the open project; debounce 5s so an edit
+  // burst settles, then refresh the knowledge index once. Mock/browser builds
+  // never receive the event. Only rescans after the user scanned at least
+  // once, so a project that was never indexed stays untouched.
+  React.useEffect(() => {
+    if (!isTauriRuntime() || documents === null) return;
+    let timer: number | undefined;
+    let cancelled = false;
+    const unlisten = listen('desktop://snapshot-changed', () => {
+      window.clearTimeout(timer);
+      timer = window.setTimeout(() => {
+        if (cancelled) return;
+        void knowledge.scan(projectId).then((report) => {
+          if (!cancelled) setDocuments(report.documents);
+        }).catch(() => {
+          // A failed background rescan keeps the previous index; the next
+          // event or manual 扫描文档 retries.
+        });
+      }, 5_000);
+    });
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+      void unlisten.then((off) => off());
+    };
+  }, [documents === null, projectId]);
 
   const confirmType = React.useCallback(async (documentId: string, logicalType: LogicalType) => {
     setBusy(`confirm:${documentId}`);
@@ -348,8 +397,42 @@ export function ProjectDetailPanel({ projectId, projectName }: ProjectDetailPane
           <button type="button" className="ws-tool" disabled={busy !== null} onClick={() => void scanDocuments()}>
             <Icon name="folder" /> 扫描文档
           </button>
-          <span className="ws-project__meta">Markdown 原文件始终保留，索引只读。</span>
+          <span className="ws-project__meta">Markdown 原文件始终保留，索引只读。文件变更后 5 秒自动重建索引。</span>
         </div>
+        <div className="ws-ksearch" data-testid="knowledge-search">
+          <input
+            value={knowledgeQuery}
+            placeholder="全文搜索（标题与正文）"
+            aria-label="搜索知识文档"
+            onChange={(event) => setKnowledgeQuery(event.target.value)}
+            onKeyDown={(event) => { if (event.key === 'Enter') void searchDocuments(); }}
+          />
+          <button type="button" className="ws-tool" disabled={busy !== null || !knowledgeQuery.trim()} onClick={() => void searchDocuments()}>
+            <Icon name="folder" /> 搜索
+          </button>
+        </div>
+        {knowledgeHits !== null && (
+          knowledgeHits.length === 0 ? (
+            <p className="ai-empty">没有匹配的文档。</p>
+          ) : (
+            <ul className="ws-docs" data-testid="knowledge-search-hits">
+              {knowledgeHits.map((hit) => (
+                <li key={hit.document.id} className="ws-doc">
+                  <button type="button" className="ws-doc__open" disabled={busy !== null} onClick={() => void openDoc(hit.document.id)}>
+                    <strong>{hit.document.title}</strong>
+                    <span className="ws-project__meta">{hit.document.relative_path}</span>
+                    <span
+                      className="ws-ksearch__snippet"
+                      // Snippets are generated from the sanitized index; the
+                      // Rust side wraps terms in 【】 and never emits raw HTML.
+                      dangerouslySetInnerHTML={{ __html: hit.snippet }}
+                    />
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )
+        )}
         {documents && documents.length > 0 && (
           <ul className="ws-docs" data-testid="knowledge-docs">
             {documents.map((doc) => (

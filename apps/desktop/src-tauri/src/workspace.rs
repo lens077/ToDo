@@ -238,6 +238,18 @@ pub fn knowledge_read(
         .map_err(|error| error.to_string())
 }
 
+#[tauri::command]
+pub fn knowledge_search(
+    state: State<'_, WorkspaceState>,
+    project_id: String,
+    query: String,
+) -> Result<Vec<todo_core::KnowledgeSearchHit>, String> {
+    state
+        .store()?
+        .knowledge_search(&project_id, &query)
+        .map_err(|error| error.to_string())
+}
+
 // ── Sessions (Phase 4) ───────────────────────────────────────────────────────
 
 /// Resolves the registered root for a project ID, shared by session commands.

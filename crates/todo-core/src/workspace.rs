@@ -19,7 +19,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{Error, Result};
 
-const SCHEMA_VERSION: i64 = 3;
+const SCHEMA_VERSION: i64 = 4;
 
 /// Serializable views for the desktop commands.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -536,7 +536,11 @@ fn migrate(connection: &Connection) -> Result<()> {
            indexed_at INTEGER NOT NULL DEFAULT 0,
            tombstone INTEGER NOT NULL DEFAULT 0,
            UNIQUE (project_id, relative_path)
-         );",
+         );
+         -- v4: full-text search over knowledge documents. Standalone FTS5
+         -- table (doc_id UNINDEXED) rebuilt by every knowledge_scan; rows
+         -- vanish from search when their document is tombstoned.
+         CREATE VIRTUAL TABLE IF NOT EXISTS knowledge_fts USING fts5(doc_id UNINDEXED, title, body);",
     )?;
     let version: Option<i64> = connection
         .query_row(

@@ -744,6 +744,7 @@ pub fn run() {
             workspace::knowledge_list,
             workspace::knowledge_confirm,
             workspace::knowledge_read,
+            workspace::knowledge_search,
             workspace::session_begin,
             workspace::session_finish,
             workspace::session_interrupt,
