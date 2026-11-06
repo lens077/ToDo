@@ -521,3 +521,251 @@ TODO next: [gl7ocv] a task     (exit 0)
 - 三条 `#manual` 验收（原生文件选择器、看板写回、外部编辑刷新）仍未由真人执行；WebKit 原生窗口与 macOS 菜单栏未在本次复核。
 - Windows 进程树终止只通过编译分支审查，未在 Windows 实机运行。
 - 阅读库的网页抓取依赖真实网络；自动化测试覆盖解析与交互层，不覆盖特定站点的反爬变化。
+
+## 2026-10-31 Workspace / Project Registry（Phase 1）
+
+依据 `docs/workspace-project-knowledge-spec.html` 与 Phase 0 审计（`docs/workspace-knowledge-phase0-audit.md`）。实现多项目虚拟工作空间的数据层、Tauri 命令与工作空间视图。未触碰 TODO.md、reading.sqlite、inbox.md；`~/.todo/workspace/workspace.sqlite` 为独立新文件，删即回滚。
+
+### 修改文件
+
+- 新增 `crates/todo-core/src/workspace.rs`：Workspace/Project/成员关系注册表；`meta.schema_version` 显式迁移（旧库拒绝打开并报错，新库静默建表）；canonical path 去重；稳定项目 ID 与重关联；10 个单测。
+- 新增错误变体（`error.rs`）与模块导出（`lib.rs`）。
+- 新增 `apps/desktop/src-tauri/src/workspace.rs`：9 个命令薄封装；`lib.rs` 注册 + `workspace_open_project`（按 ID 打开，缺路径时拒绝并提示重关联）。
+- 前端：新增 `lib/workspace.ts`（API + 内存 mock）、`components/WorkspaceView.tsx`；`Sidebar.tsx` 增加"工作空间"导航（阅读仍第一）；`App.tsx` 接入视图；`useDesktop.ts` 增加 `openRegisteredProject`（按 ID 换项目快照）；`desktop.ts` 增加 `openRegisteredProject`；`style.css` 增加 ws-* 样式。
+- 新增 E2E `e2e/workspaces.spec.ts`（3 用例）。
+
+### 验证
+
+| 门禁 | 结果 |
+|---|---|
+| `cargo test -p todo-core --locked --lib workspace` | ✅ 10 passed |
+| `cargo test --workspace --locked`（verify-quick 内） | ✅ 0 failed |
+| `cargo fmt/clippy -D warnings` | ✅ clean |
+| `tsc --noEmit` | ✅ pass |
+| `playwright test`（全部） | ✅ 146 passed（含 3 个新增工作空间用例） |
+| `make check-quick` | ✅ 绿（24s） |
+
+### 已知边界 / 未完成
+
+- 旧"选择目录"入口（CommandBar）仍独立存在，尚未合并为"添加项目到工作空间"；`desktop.json` 的 `last_project` 保持原语义（双读兼容，未迁移写入注册表）。
+- 打开多项目后 `DesktopOps` 仍是单活动项目（backend 池化未做）；工作空间内"打开"通过切换活动项目实现，不并行持有多个 watcher。
+- Phase 2（Project Profile / Environment）及之后的 Knowledge、Session、Reading 融合未开始。
+- `todo contract check` 子命令仍不存在（AGENTS.md 与 CLI 不一致，遗留环境问题）。
+
+## 2026-10-31 Project Profile 与 Environment（Phase 2）
+
+依据同一蓝图。实现项目档案（用户确认字段）与 Declared/Observed 环境分离；扫描为只读、秘密不落库。schema v1→v2 增量迁移。
+
+### 修改文件
+
+- 新增 `crates/todo-core/src/profile.rs`：`scan_environment`（package.json/Makefile/compose/锁文件/`.env.example`，只记录环境变量名，绝不读 `.env` 或密钥文件）+ `ProjectProfile`/`EnvironmentProfile` 持久化；10 个单测。
+- `workspace.rs`：schema_version 升至 2，新增 `project_profiles`、`environment_profiles` 表（声明与观测分列，扫描结构上不可能覆盖声明）；v1→v2 前向迁移测试。
+- `apps/desktop/src-tauri/src/workspace.rs`：+5 命令（profile_get/set、environment_get/scan/set_declared）；`lib.rs` 注册。
+- 前端：新增 `components/ProjectDetailPanel.tsx`（档案编辑 + 声明/观测双栏）；`WorkspaceView` 卡片增加"档案"展开；`lib/workspace.ts` 增加 API 与 mock；样式追加。
+- E2E：`e2e/workspaces.spec.ts` +2 用例（档案保存、扫描保留声明）。
+
+### 验证
+
+| 门禁 | 结果 |
+|---|---|
+| `cargo test -p todo-core --locked --lib` | ✅ 73 passed（含 10 个 profile、11 个 workspace、v1→v2 迁移） |
+| `playwright test`（全部） | ✅ 149 passed, 16 skipped（新增 2 用例：扫描后声明 JSON 保持 `{"node":"22"}` 不变） |
+| `make check-quick`（fmt/clippy/test/build/契约） | ✅ 绿（127s） |
+
+### 秘密保护证据
+
+- `scan_records_env_names_but_never_values_or_dotenv`：`.env` 中 `SECRET_TOKEN=supersecret` 不出现在扫描输出序列化结果中；`source_files` 不含 `.env`。
+- 扫描文件名单为硬编码白名单；无 glob 读取。
+
+### 已知边界 / 未完成
+
+- 观测扫描未覆盖：运行时版本号（未执行版本命令）、部署文件（Helm/K8s）、服务依赖的深度识别。
+- Declared 目前是自由 JSON，无结构校验；Mismatch（声明 vs 观测差异）对比视图未做。
+- Phase 3（Knowledge 文档发现与阅读器）未开始。
+
+## 2026-10-31 Knowledge 文档发现与阅读器（Phase 3）
+
+实现项目内 Markdown 的只读索引：规则建议逻辑类型 → 用户确认（确认结果在重扫描和内容变更后保留）→ 消毒 HTML 阅读视图（每次从磁盘重建，不落盘）。schema v2→v3。
+
+### 修改文件
+
+- 新增 `crates/todo-core/src/knowledge.rs`：WalkBuilder 扫描（跳过 .git/node_modules/target/dist/.todo/.virgo/.venv，≤2000 文件、512KiB/文件）、文件名/目录规则建议 11 种逻辑类型、content_hash 增量（未变跳过）、删除文件墓碑化、`render_markdown`（pulldown-cmark + ammonia，复用 reading 的 sanitize）。9 个单测。
+- `workspace.rs` schema v3：`knowledge_documents` 表（UNIQUE(project_id, relative_path)，FK 级联）。
+- Tauri：+4 命令（knowledge_scan/list/confirm/read）。
+- 前端：新增 `lib/knowledge.ts`（API + mock，mock 渲染器做转义）；`ProjectDetailPanel` 增加"知识文档"区（扫描、类型下拉确认、建议/已确认徽章、阅读视图）。
+- E2E：+1 用例（建议→确认覆盖→阅读渲染、断言无脚本执行）。
+
+### 验证
+
+| 门禁 | 结果 |
+|---|---|
+| `cargo test -p todo-core --locked --lib` | ✅ 82 passed（含 XSS 不通过、外部修改即读即得、墓碑保留、确认跨重扫描） |
+| `playwright test`（全部） | ✅ 150 passed, 16 skipped |
+| `make check-quick` | ✅ 绿（148s） |
+
+### 边界与门禁对应
+
+- 「现有文档不搬迁、不覆盖」：扫描只读，无任何写回文件的代码路径（单测断言扫描后文件原样、阅读即时反映外部编辑）。
+- 「HTML 可由 Markdown 重建」：HTML 不持久化，`knowledge_read` 每次从磁盘渲染。
+- 「恶意 Markdown」：`render_markdown_is_standalone_and_safe` 断言 `onerror` 属性被剥离。
+
+### 已知边界 / 未完成
+
+- notify watcher 增量扫描未接：目前是手动触发全量扫描（hash 对账后增量入库），自动触发留待后续。
+- 无全文搜索（Phase 5 范围）；阅读器无目录大纲/锚点。
+- Phase 4（Session 与上下文恢复）未开始。
+
+## 2026-10-31 Session 与上下文恢复（Phase 4）
+
+Session 存为项目内 Markdown（`<project>/.virgo/sessions/s-<ts>.md`），文件是事实源、Git 管历史；应用只渲染/校验。无数据库表——跨天恢复 = 读文件。
+
+### 修改文件
+
+- 新增 `crates/todo-core/src/session.rs`：begin（单活动会话约束）/ finish（写入 Goal/Completed/Files Changed/Decisions/Validation 表格/Unresolved/Next Actions/Context；**确定性收集** `git status --porcelain` 文件清单，非 git 或失败为空不报错；测试命令与结果由调用方提供，应用绝不运行测试）/ interrupt / list / resume（最新会话 + outstanding：active 取目标、completed 取下一步）。9 个单测。
+- Tauri：+5 命令（session_begin/finish/interrupt/list/resume，按注册项目 ID 解析根目录）。
+- 前端：新增 `lib/session.ts`（API + mock，同生命周期契约）；`ProjectDetailPanel` 增加"开发会话"区（恢复摘要、历史列表、开始/完成/中断表单）。
+- E2E：+1 用例（begin→finish→resume，切视图后历史与待续保留；断言拒绝第二个活动会话）。
+
+### 验证
+
+| 门禁 | 结果 |
+|---|---|
+| `cargo test -p todo-core --locked --lib` | ✅ 91 passed（含 git 收集用临时仓库实证、finish 后 resume 取 Next Actions、interrupt 解锁） |
+| `playwright test`（全部） | ✅ 151 passed, 16 skipped |
+| `make check-quick` | ✅ 绿（137s） |
+
+### Gate 对应
+
+- 「应用重启后能恢复最近 Session、未完成事项和下一步动作」：Session 落盘项目内 Markdown，resume 输出最新摘要 + outstanding；桌面端档案面板载入时自动调 session_resume。
+- 「确定性收集」：git 变更文件来自 `git status --porcelain`（单测用临时 git 仓库验证）；验证证据表格由用户/Agent 填写，无任何自动执行。
+
+### 已知边界 / 未完成
+
+- Session 与 Task 的关联（task_ids）未做 UI（模板字段已预留于规范，实现待 Phase 5/6 一并接入任务引用）。
+- 会话文件时间戳为 epoch 毫秒（可排序），未格式化为 ISO-8601 字符串。
+- Phase 5（Agent Contract/Skill/CLI/Validator）未开始。
+
+## 2026-10-31 Agent Contract、CLI 与 Validator（Phase 5）
+
+在既有 contract/hooks 基建上扩展：Session CLI（稳定 JSON 信封）、docs 验证器（ERROR 阻断）、Agent 接入文档与 CI 模板。未新造框架。
+
+### 修改文件
+
+- `crates/todo-core/src/session.rs`：+`docs_validate`（VDS001/002 ERROR、VDS003 WARNING、VDS004 INFO）+ `docs_validate_blocking`；5 个单测。
+- `crates/todo-cli/src/main.rs`：+`todo session {begin,finish,interrupt,list,resume}`（JSON 信封 `todo.session.v1` / `todo.session-list.v1` / `todo.session-resume.v1`；validation 参数 `command|result|evidence`）、+`todo docs validate`（ERROR → exit 6）。
+- `crates/todo-cli/src/hooks.rs`：托管 instructions 块增加会话工作流 3 行（begin/finish/resume/docs validate）。
+- 新增 `docs/workspace-agent-integration.md`：CLI 契约表、验证规则表、CI 模板（GitHub Actions，ERROR 阻断）、两种接入方式。
+- `crates/todo-cli/tests/cli.rs`：+3 集成测试。
+
+### 验证
+
+| 门禁 | 结果 |
+|---|---|
+| `cargo test --workspace --locked` | ✅ 409 passed, 0 failed（含 5 个验证器单测、3 个 CLI 集成测试） |
+| `make check-quick` | ✅ 绿（136s） |
+
+### Gate 对应
+
+- 「CI 能阻断 ERROR」：`docs_validate_blocks_on_error_and_passes_clean_projects` 实测 exit 6；CI 模板见 docs/workspace-agent-integration.md。
+- 「至少两种 Agent 接入方式」：① hooks 注入（instructions 块含会话工作流，测试验证落盘）；② 纯 CLI JSON 契约（begin/finish/resume 全链路 JSON 信封测试）。
+
+### 已知边界 / 未完成
+
+- CI 模板为文档形式，本仓库无 GitHub Actions 环境可实测（本地 `todo docs validate` 已实测 exit 6）。
+- `todo serve` HTTP 未暴露 session/docs 端点（桌面端 Tauri 命令已覆盖）。
+- Phase 6（Reading Context 融合，即早前审计的方案归位）与 Phase 7（Overview 汇总面板）未开始。
+
+## 2026-10-31 Reading Context 融合（Phase 6）
+
+阅读库升级为上下文阅读收件箱：收藏原因/关注问题/复访条件/个人笔记 + 项目任务多对多关联 + Markdown 引用导出。X/微信/网页解析器零改动。schema 以 `ensure_columns`（PRAGMA table_info 探测 + ALTER）原地升级，旧库无损。
+
+### 修改文件
+
+- `crates/todo-core/src/reading.rs`：articles 加 6 列（saved_reason/focus_questions/revisit_condition/personal_notes/revisit_type/parse_status）；新表 article_project_links、article_task_links（FK 级联、幂等）；`update_context`（这些字段的**唯一写路径**）、`add_failed`（解析失败仍保存 URL，parse_status=failed，可立即编辑上下文）、`refetch`/`replace_content`（只更新来源列——结构上不可能覆盖上下文）、link/unlink、`export_reference` 引用卡片、`export_project_index` 项目索引（按已读分组）。7 个单测。
+- Tauri：+8 命令（update_context/refetch/link×4/export×2）。
+- 前端：`lib/reading.ts` 类型与 API+mock；新增 `components/ReadingContextPanel.tsx`（阅读器内嵌面板：四字段、关联 chips、导出剪贴板、重新解析）；`useReading` 暴露 `applyDetail`。
+- E2E：reading.spec.ts +1 用例。
+
+### 验证
+
+| 门禁 | 结果 |
+|---|---|
+| `cargo test -p todo-core --locked --lib` | ✅ 103 passed（含 legacy 库原地升级无损、refetch 后上下文/进度逐字段断言、失败收藏去重、关联级联清理） |
+| `playwright test`（全部） | ✅ 152 passed, 16 skipped（含重解析后上下文/关联逐项断言、导出剪贴板内容断言） |
+| `make check-quick` | ✅ 绿（144s） |
+
+### Gate 对应
+
+- 「解析失败仍能保存」：`add_failed` 落库 failed 记录 + E2E/单测覆盖 URL 保留与上下文编辑。
+- 「重新解析不会覆盖个人上下文」：`replace_content` 的 UPDATE 语句不提及上下文列（结构性保证）；单测逐字段断言 + E2E 断言。
+- 「不写入项目文件」（ADR-0003）：关联只存 reading 侧引用（注册项目 ID / 任务 ID），导出为剪贴板 Markdown，无任何项目文件写路径。
+
+### 已知边界 / 未完成
+
+- 导出为复制到剪贴板；写入项目 `docs/references/` 的文件写入流（预览+确认）延后（需 Phase 3 文档写入基建）。
+- 复访条件仅存储（revisit_type），日期/任务完成触发属 Phase 6 原规范的"重新激活"，蓝图未列入必做。
+- Phase 7（Overview 汇总面板与 UX 收敛）未开始。
+
+## 2026-10-31 Overview 汇总面板（Phase 7，蓝图最后阶段）
+
+跨项目汇总面板：每个项目的状态、里程碑、下一步/待续、阻塞、文档分类提示，一屏可答。纯只读聚合，不新增写路径。
+
+### 修改文件
+
+- 新增 `crates/todo-core/src/overview.rs`：`WorkspaceStore::overview()` 聚合注册表 + Profile + `.virgo/sessions/`（active→目标、completed→下一步）+ knowledge 未分类计数；缺失占位符显式区分"无"与"未记录"。4 个单测。
+- Tauri：+1 命令 `overview_summary`。
+- 前端：新增 `lib/overview.ts`（mock 复用 workspace/session/knowledge fixtures）与 `components/OverviewView.tsx`（汇总行、状态筛选、项目卡片）；Sidebar 增加"总览"（第一项），落点视图保持"目标"不变。
+- E2E：新增 `e2e/overview.spec.ts`（2 用例：汇总行+卡片+筛选、空态指引）；reading.spec 首项断言更新为 总览→阅读。
+
+### 验证
+
+| 门禁 | 结果 |
+|---|---|
+| `cargo test -p todo-core --locked --lib` | ✅ 107 passed（含 finished 会话取 Next Actions、缺失路径计数、未分类文档计数） |
+| `playwright test`（全部） | ✅ 154 passed, 16 skipped |
+| `make check-quick` | ✅ 绿（178s） |
+
+### Gate 对应
+
+- 「用户可以从汇总面板判断每个项目的状态和下一步」：卡片展示 路径状态/生命周期/会话徽章/里程碑/下一步（优先 outstanding）/阻塞/文档分类提示；E2E 断言占位符显式（"—"）而非空白。
+
+### 已知边界 / 未完成
+
+- 落点视图保持"目标"（改为总览会破坏既有键盘/看板交互假设，留待 UX 收敛专项）。
+- 键盘导航仅沿用既有全局行为，未为总览新增快捷键；"上下文过期（stale）提示"需要 Profile 的 confirmed_at 时间策略，未实现。
+- 蓝图 Phase 0–7 全部交付；Reading Context 规范（原始文档）与蓝图 Phase 6 融合完成。
+
+## 2026-11-06 M0-A 收口与门禁恢复（2026-11-03 审计 P0-1/P0-4/P0-5）
+
+按 `docs/audits/2026-11-03-audit.md` 的 P0 项执行收口第一阶段（M0-A）：修复完整门禁红、消除文档阶段矛盾、忽略本地目录。本轮未执行任何 git commit / push（等用户批准 M0-B 提交计划）。
+
+### 修改文件
+
+- `apps/desktop/e2e/mobile.spec.ts`：导航断言由固定 `toHaveCount(6)` 改为断言 `Sidebar.tsx` navItems 的 9 个标签集合与顺序（按钮有显式 `aria-label`，徽标计数不干扰可访问名），数量由集合长度派生；新增/删除视图时测试会明确指出差异而非报莫名的数字差。
+- `docs/workspace-knowledge-phase0-audit.md`：结尾"Phase 0 完毕，等待批准"加删除线并附 2026-11-06 更正——Phase 1–7 已全部交付（逐阶段证据见本日志 2026-10-31 各节），消除该文档与实际实现状态的矛盾。
+- `CONTEXT.md`：新增 Progress 节，使 `.virgo/project.yaml` 的 `progress: CONTEXT.md` 映射指向真实进度内容（摘要 + 指向 `TODO.md` 与本日志）。
+- `.gitignore`：忽略 `/x-downloader/`（17MB）与 `/.trae-html-share-packages/`（3.9MB）本地研究/工具导出，不再污染 `git status`。
+
+### 验证
+
+| 门禁 | 结果 |
+|---|---|
+| `cargo test --workspace --locked` | ✅ 420 passed / 0 failed（退出码 0） |
+| `make check`（verify.sh 全量） | ✅ 退出码 0；mock E2E **155 passed / 16 skipped**（mobile 修复后由 154 passed + 1 failed 转绿），真实后端 web E2E **15 passed**（21.2s） |
+| `make check-quick` | ✅ 绿（128s，退出码 0） |
+| `todo contract check --root .` | ✅ `contract ok: ./.virgo/project.yaml (guided)`（退出码 0） |
+| `todo lint` | ✅ `no issues`（退出码 0） |
+| `playwright test mobile.spec.ts`（单 spec 复核） | ✅ 5 passed（2.3s） |
+
+### Gate 对应
+
+- 「mobile.spec.ts 不再依赖过时的固定导航数量」：`expectedNavLabels` 标签集合断言 + 数量派生，9 项与 `Sidebar.tsx:27-37` 的 navItems 一致。
+- 「Phase 0 审计文档与实际实现状态一致」：文末更正块指向 Phase 1–7 的交付证据。
+- 「CONTEXT.md 的进度映射指向真实进度内容」：Progress 节落地，`contract check` 复验通过。
+- 「.gitignore 排除指定生成目录」：两目录已从 `git status` 消失（工作区条目 49→50：−2 已忽略目录，+3 本轮修改文件）。
+- 「原有用户修改全部保留」：本轮仅新增 4 处修改（上列文件），26 处既有已修改文件与 19 处既有未跟踪文件逐字节未动（`git diff` 仅含本轮 4 文件）。
+
+### 已知边界 / 未完成
+
+- Phase 1–7 成果仍未提交 Git（等用户批准 M0-B 提交计划后执行）；本地 `main` 仍落后 `origin/main` 1 个提交（`3613d96`，只改 `web/deploy/chart/virgo/values-prod.yaml`，与本轮全部改动无文件交集）。
+- `make check-quick` 128s 仍超脚本 2 分钟目标（沿用 2026-11-03 审计 P3 项，本轮未处理）。

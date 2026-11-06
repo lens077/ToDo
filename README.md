@@ -2,7 +2,7 @@
 
 **Sumery Virgo**（室女座）——给 AI 协作开发者的本地任务对账器，Markdown 是唯一事实源。
 
-**Sumery** 是品牌，**Virgo** 是桌面产品名（`Sumery Virgo` / 菜单栏 `Virgo` / `com.sumery.virgo`）；仓库 `ToDo`、CLI `todo`、`TODO.md` 格式是工程名，不改。规则见 Sumery 品牌系统（Libra 仓库 `docs/brand/DESIGN.md`），`apps/desktop/src/identity.test.ts` 把字段钉死。
+**Sumery** 是品牌，**Virgo** 是桌面产品名（`Sumery Virgo` / 菜单栏 `Virgo` / `com.sumery.virgo`）；仓库 `ToDo`、CLI `todo`、`TODO.md` 格式是工程名，不改。规则见 Sumery 品牌系统（Libra 仓库 `docs/brand/DESIGN.md`），`apps/desktop/identity.test.mjs` 把字段钉死。
 
 给 AI 协作开发者的本地任务对账器。任务状态与代码现实发生漂移时，人和 agent 可能被过期任务误导，重复已经完成的工作。
 
@@ -20,14 +20,15 @@ ToDo 把每个仓库的 Project Task 保存在该仓库的 `TODO.md` 中，以�
 
 ## 免费与赞助
 
-当前是实验性 MVP，尚未发布。**产品目前免费**：下载免费、使用免费，功能不做阉割，没有付费墙、没有版本差异、没有试用期限制。
+当前是实验性 MVP，桌面端尚未发布。**个人使用目前免费**：下载免费、使用免费，功能不做阉割，没有付费墙、没有版本差异、没有试用期限制。**公司内部使用需要商业授权**（见下）。
 
 - **「目前免费」不等于永久免费。** 如果将来改变收费方式，**已经免费给你的能力不会收回**；已发布的版本继续可用，任务数据始终是你仓库里的纯文本，随时可以迁出。
-- **不收订阅，不卖授权，不设试用。** 桌面端不需要账号、不需要 license key、不做联网校验。CLI 同样不需要登录，也不需要网络。
-- **可以赞助。** 赞助不构成购买，不换取任何功能，也不影响任何功能。档位 ¥1 / ¥6 / ¥18 / ¥30 / ¥68 / ¥88，另可自定义金额。
-- **赞助渠道**：国内走支付宝与爱发电；国际的 Ko-fi 与 GitHub Sponsors 已列入计划，**目前未开通**。
+- **个人使用：不收订阅，不卖授权，不设试用。** 桌面端不需要账号、不需要 license key、不做联网校验。CLI 同样不需要登录，也不需要网络。
+- **公司使用：¥299 / 公司 / 年，荣誉制。** 判定口径是「以公司名义、或为公司工作而使用」——包括员工装在工位上，不设人数阈值。**不做技术限制**：不校验、不锁功能、不联网；我们之间是合同关系，交付授权凭证与发票。企业条款、发票流程与续期写在企业页（另行撰写）。
+- **可以赞助。** 赞助不构成购买，不换取任何功能，也不影响任何功能。档位 ¥1 / ¥6 / ¥18 / ¥30 / ¥68 / ¥88，另可自定义金额。**赞助入口现已上线**；桌面端尚未发布，所以赞助是支持开发，不是购买。
+- **赞助与商业授权的收款主体**：个体工商户（上思希曼科技工作室）。赞助渠道国内走支付宝与爱发电；国际的 Ko-fi 与 GitHub Sponsors 已列入计划，**目前未开通**。
 - **赞助款用在哪**：Apple Developer 年费与公证、域名与对象存储、CI 时间。页面会如实列出，不做模糊表述。
-- **致谢**：赞助者自愿留名，可匿名，列进页面致谢区。不显示金额，不排序。
+- **致谢**：赞助者自愿留名，可匿名，列进页面致谢区与 README；不显示金额，不排序；不换取优先支持。
 
 明确不做：**付费墙**、**lifetime deal 促销**、**任何形式的数据扣押**、**为促成赞助而制造功能焦虑**。
 
@@ -38,8 +39,8 @@ ToDo 把每个仓库的 Project Task 保存在该仓库的 `TODO.md` 中，以�
 | 工具 | 版本 | 说明 |
 |---|---|---|
 | Rust | 开发工具链 1.98.1；MSRV 1.88 | `rust-toolchain.toml` 固定开发、Clippy 和发布工具链；独立 MSRV job 从 `Cargo.toml` 的 `rust-version` 读取下限，显式选用该版本运行锁定依赖测试 |
-| Node.js | 26.8.1 | `.node-version` 固定本地与 CI 版本；`package.json` 要求 Node 26.x |
-| pnpm | 12.0.0 | 见 `package.json` 的 `packageManager` |
+| Node.js | 26.12.1 | `.node-version` 固定本地与 CI 版本；`package.json` 要求 Node 26.x |
+| pnpm | 12.15.0 | 见 `package.json` 的 `packageManager` |
 
 `.node-version` 是版本声明，不会自行切换全局 Node；运行 pnpm 命令前，先用本地 Node 版本管理器选择该版本。rustup 会自动读取 `rust-toolchain.toml`；手动复验 MSRV 可运行 `cargo +1.88.0 test --workspace --locked`，不修改全局默认工具链。
 
@@ -52,7 +53,7 @@ crates/todo-core      解析、保真回写、文件锁、SQLite 投影、对账
 crates/todo-cli       canonical CLI，二进制名为 todo
 apps/desktop          React 前端
 apps/desktop/src-tauri Tauri 2 host，直接调用 todo-core
-docs/                 格式规范、桌面 MVP 规格、ADR、验证日志
+docs/                 格式规范、Project Contract、工作空间/知识库规格、ADR、验证日志
 research/             选型调研与决策依据
 ```
 
@@ -91,12 +92,12 @@ make dev
 `core.hooksPath=.githooks`。之后每次 `git push` 前会自动跑：
 
 ```bash
-make check-quick   # Rust fmt/clippy/test + 桌面端/静态站构建，热缓存约 58 秒
+make check-quick   # Rust fmt/clippy/test + 桌面端/静态站构建，热缓存约 2–3 分钟（2026-11-03 实测 145 秒）
 ```
 
 完整门禁仍可手动 `make check`（含 Playwright 与真实服务 E2E），不再占用 GitHub Actions。
 
-`make help` 列出完整命令。`make bundle-macos` 只生成 `Todo.app`；`make package-macos` 生成本地验收用的 CLI、应用压缩包和 `SHA256SUMS`。本地验收包未经 Developer ID 签名和 Apple 公证，不得分发。
+`make help` 列出完整命令。`make bundle-macos` 只生成 `Sumery Virgo.app`；`make package-macos` 生成本地验收用的 CLI、应用压缩包和 `SHA256SUMS`。本地验收包未经 Developer ID 签名和 Apple 公证，不得分发。
 
 已有普通 GFM 清单时，用 `todo init --adopt` 接管现有文件并补齐稳定 ID。不带 `--adopt` 时遇到已存在的文件会拒绝写入。
 
@@ -105,7 +106,13 @@ make check-quick   # Rust fmt/clippy/test + 桌面端/静态站构建，热缓�
 | 命令 | 用途 |
 |---|---|
 | `todo init [--adopt]` | 创建 `TODO.md`，或接管已有清单 |
+| `todo policy [normal\|strict]` | 查看或修改完成策略 |
 | `todo list [--column <id>] [--all]` | 列出任务；`--all` 包含已完成与游离任务 |
+| `todo priority <id> <1-4> [--clear] [--subtree]` | 设置优先级；`--subtree` 同时作用于整个子树 |
+| `todo project adopt [--root <目录>] [--yes\|--restore-last]` | 接管已有项目：生成 `.virgo/project.yaml` 与 agent 规则；不带 `--yes` 只预览 |
+| `todo contract check\|install\|uninstall [--root <目录>] [--yes]` | 校验 Project Contract，或安装/卸载托管 agent 规则 |
+| `todo session begin\|finish\|interrupt\|list\|resume` | 开发会话：开始、收尾、中断、列表与跨天恢复 |
+| `todo docs validate` | 校验会话与文档卫生；有 ERROR 时退出码为 6 |
 | `todo add <正文> [--column <id>] [--tag <值>] [--due <日期>] [--priority <1-4>]` | 新增任务 |
 | `todo done <id> [--note <文本>] [--evidence]` / `todo undone <id>` | 切换完成状态；`--evidence` 附带建议的 Git 区间，严格模式下 `done` 必须提供说明 |
 | `todo archive` | 把已完成的顶层任务子树移入 `TODO.archive.md` |
@@ -303,6 +310,12 @@ ToDo 通过 `integrations/dsh-todo-bridge/` 连接 DSH。桥接插件订阅 DSH 
 
    更完整的配置字段、状态映射、限制和独立测试方法见 `integrations/dsh-todo-bridge/README.md`。
 
+## Project Contract 与开发会话
+
+`todo contract check` 对 `.virgo/project.yaml` 做离线、确定性校验，退出码 `6` 表示有阻断性发现；`todo contract install|uninstall` 安装或移除托管的 agent 规则块。规格见 `docs/project-contract-spec.md`。
+
+`todo session begin|finish|resume` 把开发会话写成项目内 `.virgo/sessions/*.md`（Markdown 是事实源）；`todo docs validate` 校验会话卫生，ERROR 时退出码 `6`。CLI 契约、验证规则与 CI 模板见 `docs/workspace-agent-integration.md`。多项目注册表、项目档案、知识文档索引与汇总面板见 `docs/workspace-project-knowledge-spec.html`，实现状态记录在 `docs/verification-log.md`。
+
 ## 版本历史
 
 每次写入前自动把改动前的文件存为还原点，放在 `TODO.md` 同级的 `.todo/history/`。该目录用自带的 `.gitignore` 自我屏蔽，不进用户的 git 历史。
@@ -357,13 +370,13 @@ pnpm build
 pnpm --filter @todo/desktop tauri build --debug
 ```
 
-产物为 `target/debug/bundle/macos/Todo.app`。本地构建没有 Developer ID 签名或 Apple 公证，只适合本机验收，不得作为正式发布产物。
+产物为 `target/debug/bundle/macos/Sumery Virgo.app`。本地构建没有 Developer ID 签名或 Apple 公证，只适合本机验收，不得作为正式发布产物。
 
 正式发布由 `.github/workflows/release.yml` 构建、签名、公证并上传 release 产物。证书配置、失败条件与下载后验证步骤见 `docs/macos-release.md`。
 
 桌面端首页是**目标视图**，把推进中、待办、已完成放在同一个工作区：推进中的列在最前，默认只展开 1 项、最多同时展开 5 项，卡片内容完整可见，其余排队并可「提到最前」；待办列在其下；已完成栏在右侧纵贯整个工作区。已完成栏和待办区都可以像 VS Code 侧栏一样收起成细条，让推进中占满；展开数与收起状态记在本机。顶部的「逾期 / 今天 / 7 天内」筛选沿用今日视图的派生规则，只筛选、不复制任务。推进中的列按列 `id`/名称匹配 `doing`、`正在`、`进行` 等词，匹配不到时取第二个活动列。
 
-部分完成与失败直接在卡片里记录：点 ◐ 或 ⚠ 展开进度条与一行说明，回车写入，`Esc` 取消，不弹对话框。勾选完成默认先弹一步确认（回车完成、`Esc` 取消），防止误点直接写盘；可在左下角「设置」里关闭。拖放或右键菜单移动任务时不使用这层安全确认；任务始终进入目标列顶部，移出完成列会恢复为未完成。严格模式以及带 `◐`/`⚠` 的任务进入完成列时仍填写结局说明。随记、扫描与历史各占一个一级视图，行为与边界见 `docs/desktop-mvp-spec.md`。
+部分完成与失败直接在卡片里记录：点 ◐ 或 ⚠ 展开进度条与一行说明，回车写入，`Esc` 取消，不弹对话框。勾选完成默认先弹一步确认（回车完成、`Esc` 取消），防止误点直接写盘；可在左下角「设置」里关闭。拖放或右键菜单移动任务时不使用这层安全确认；任务始终进入目标列顶部，移出完成列会恢复为未完成。严格模式以及带 `◐`/`⚠` 的任务进入完成列时仍填写结局说明。侧边栏共九个一级视图：总览、阅读、工作空间、目标、象限、随记、AI、扫描与历史、规范；行为与边界见 `docs/desktop-mvp-spec.md`、`docs/workspace-project-knowledge-spec.html` 与 `docs/project-contract-spec.md`。
 
 普通 Markdown 接管后不一定有任务列。此时「移动到…」禁用，菜单内提供 **「配置任务列…」**：可创建「待办 / 进行中 / 已完成」空列，或勾选文件内已有的唯一二级标题。先检查完整左右 diff，再确认写入；取消不改文件，外部修改会使旧预览失效。默认仅新增声明和空标题，**不会移动现有任务或改写领域分类**。已有列定义不通过此入口覆盖。适用于 ecommerce 这类按领域和优先级组织的长任务文件，详见 `docs/task-columns-spec.md`。
 
@@ -373,7 +386,7 @@ pnpm --filter @todo/desktop tauri build --debug
 
 任何整文件改写（扫描导入、版本恢复）都必须先看左右两栏 diff 再确认：预览会锁定它所基于的文件指纹，文件在此期间被改动则拒绝写入，避免「确认的是一份 diff、写进去的是另一份」。
 
-桌面端提供目标视图和随记账本，行为与边界见 `docs/desktop-mvp-spec.md`。全局速记快捷键在 macOS 上是 `Cmd+Shift+Space`，其他平台是 `Ctrl+Shift+Space`；速记窗口中 `Cmd/Ctrl+Enter` 保存，`Esc` 隐藏。
+桌面端提供总览、阅读、工作空间、目标、象限、随记、AI、扫描与历史、规范九个一级视图，行为与边界见 `docs/desktop-mvp-spec.md`。全局速记快捷键在 macOS 上是 `Cmd+Shift+Space`，其他平台是 `Ctrl+Shift+Space`；速记窗口中 `Cmd/Ctrl+Enter` 保存，`Esc` 隐藏。
 
 Capture 是个人收件箱，存放在 `~/.todo/inbox.md`，不属于任何项目，也没有完成状态。分拣后才会成为当前项目的 Project Task。该文件不进入项目 Git，也不受项目 `.todo/history/` 还原点保护，需要单独备份。
 
@@ -404,6 +417,6 @@ cargo run --release -p todo-core --example benchmark_projection
 - 稳定 ID 使用随机 base36，写在 HTML 注释中，不影响渲染。
 - 写入走文件锁与原子替换；检测到外部修改时放弃本次写入并要求重试。
 - 桌面端直接复用 `todo-core`，不启动 CLI 子进程。
-- v1 不包含 MCP、云同步和团队空间。不做密码账号：桌面端以授权 key（试用为邮箱激活）作为身份，仅用于授权校验。
+- v1 不包含 MCP、云同步和团队空间。不做账号、授权校验或试用（2026-10-26 决策④）；CLI 与桌面端都不登录、不联网校验。
 
 决策记录见 `DECISIONS.md` 与 `docs/adr/`。

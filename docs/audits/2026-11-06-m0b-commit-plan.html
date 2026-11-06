@@ -1,0 +1,323 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>M0-B 提交计划 · Virgo 收口 · 2026-11-06</title>
+<style>
+  :root {
+    --paper: #faf9f7; --panel: #ffffff; --ink: #26221d; --ink-soft: #6b6258;
+    --line: #e6e0d6; --accent: #b45309; --accent-soft: #fdf3e7;
+    --ok: #15803d; --ok-soft: #ecfdf3; --info: #1d4ed8; --info-soft: #eef4fb;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--paper); color: var(--ink);
+    font: 15px/1.75 -apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif; }
+  .page { max-width: 1000px; margin: 0 auto; padding: 48px 28px 80px; }
+  header.report-head { border-bottom: 3px double var(--line); padding-bottom: 24px; margin-bottom: 32px; }
+  .kicker { font-size: 12px; letter-spacing: .18em; color: var(--accent); font-weight: 700; text-transform: uppercase; }
+  h1 { font-size: 30px; line-height: 1.3; margin: 8px 0 6px; font-weight: 800; }
+  .subtitle { color: var(--ink-soft); margin: 0 0 18px; }
+  .meta-chips { display: flex; flex-wrap: wrap; gap: 8px; }
+  .chip { background: var(--panel); border: 1px solid var(--line); border-radius: 999px;
+    padding: 3px 12px; font-size: 12.5px; color: var(--ink-soft); }
+  .chip b { color: var(--ink); font-weight: 600; }
+  .chip code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11.5px; color: var(--ink); }
+  .verdict { display: flex; align-items: center; gap: 14px; background: var(--accent-soft);
+    border: 1px solid #f2d9b8; border-left: 5px solid var(--accent); border-radius: 10px; padding: 14px 18px; margin: 0 0 36px; }
+  .verdict .mark { font-size: 22px; }
+  .verdict .note { color: var(--ink-soft); font-size: 13.5px; }
+  section { margin-bottom: 40px; }
+  h2 { font-size: 19px; margin: 0 0 14px; padding-left: 12px; font-weight: 800;
+    border-left: 4px solid var(--accent); line-height: 1.4; }
+  h2 .sec-no { color: var(--accent); margin-right: 6px; }
+  h3 { font-size: 15px; margin: 18px 0 8px; font-weight: 700; }
+  p { margin: 8px 0; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px;
+    padding: 18px 20px; margin-bottom: 16px; overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; background: var(--panel); font-size: 13.5px; }
+  th, td { border: 1px solid var(--line); padding: 8px 12px; text-align: left; vertical-align: top; }
+  th { background: #f5f1ea; font-weight: 700; white-space: nowrap; }
+  tbody tr:nth-child(even) td { background: #fcfbf9; }
+  td code, p code, li code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 12.5px; background: #f3efe8; border-radius: 4px; padding: 1px 5px; color: #43331f; word-break: break-all; }
+  .badge { display: inline-block; border-radius: 6px; padding: 1px 9px; font-size: 12px; font-weight: 700; white-space: nowrap; }
+  .badge.ok { background: var(--ok-soft); color: var(--ok); border: 1px solid #bbe7c9; }
+  .badge.info { background: var(--info-soft); color: var(--info); border: 1px solid #c7d8f5; }
+  .badge.warn { background: var(--accent-soft); color: var(--accent); border: 1px solid #f2d9b8; }
+  .badge.neutral { background: #f1ede6; color: var(--ink-soft); border: 1px solid var(--line); }
+  ul, ol { margin: 8px 0; padding-left: 22px; } li { margin: 4px 0; }
+  .toc { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 30px; }
+  .toc a { text-decoration: none; color: var(--ink); background: var(--panel);
+    border: 1px solid var(--line); border-radius: 8px; padding: 4px 12px; font-size: 13px; }
+  .toc a:hover { border-color: var(--accent); color: var(--accent); }
+  .msg { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12.5px; line-height: 1.7;
+    background: #fbfaf8; border: 1px solid var(--line); border-radius: 8px; padding: 10px 14px; white-space: pre-wrap; margin: 8px 0; }
+  .msg .t { color: var(--accent); font-weight: 700; }
+  .depflow { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px;
+    background: #fbfaf8; border: 1px solid var(--line); border-radius: 8px; padding: 12px 16px; overflow-x: auto; white-space: pre; }
+  .foot { border-top: 3px double var(--line); margin-top: 48px; padding-top: 18px; color: var(--ink-soft); font-size: 13px; }
+  .filelist { font-size: 12.5px; color: var(--ink-soft); }
+  @media print { body { background: #fff; } .page { padding: 0; max-width: none; } .toc { display: none; } section { break-inside: avoid-page; } }
+</style>
+</head>
+<body>
+<div class="page">
+
+<header class="report-head">
+  <div class="kicker">Sumery · Virgo · 工程收口</div>
+  <h1>M0-B 提交计划（待批准）</h1>
+  <p class="subtitle">把 M0-A 已验收的 51 个文件拆成 6 个职责明确的提交 —— 本计划不含任何 git 写操作</p>
+  <div class="meta-chips">
+    <span class="chip">日期 <b>2026-11-06</b></span>
+    <span class="chip">基线 <code>main @ 2d0379e</code></span>
+    <span class="chip">覆盖 <b>51 个文件</b>（50 条 status + docs/audits/ 内第 2 个文件）</span>
+    <span class="chip">提交数 <b>6</b></span>
+  </div>
+</header>
+
+<div class="verdict">
+  <span class="mark">⏸</span>
+  <div>
+    <b>本计划输出后即停止。<code>git commit</code> 需要你对本计划的单独批准；<code>git push</code> 是另一项独立授权。</b>
+    <div class="note">批准时请一并指定执行方式：由我逐个执行（每个提交前复核暂存清单，提交后跑对应验证），或你按本计划自行执行。</div>
+  </div>
+</div>
+
+<nav class="toc">
+  <a href="#s1">1 提交总览</a>
+  <a href="#s2">2 各提交详情</a>
+  <a href="#s3">3 依赖与构建安全</a>
+  <a href="#s4">4 无关修改核查</a>
+  <a href="#s5">5 提交后验证方案</a>
+  <a href="#s6">6 待批准项</a>
+</nav>
+
+<section id="s1">
+  <h2><span class="sec-no">1</span>提交总览（按依赖排序，线性序列）</h2>
+  <div class="card">
+    <table>
+      <thead><tr><th style="width:60px">序</th><th>提交（草案 message 首行）</th><th style="width:80px">文件</th><th style="width:110px">规模</th><th style="width:140px">依赖</th></tr></thead>
+      <tbody>
+        <tr><td><b>C1</b></td><td><code>feat(core): workspace registry, project profile, knowledge index, dev sessions, overview</code></td><td class="num">7</td><td class="num">约 +3,060</td><td>—（首个）</td></tr>
+        <tr><td><b>C2</b></td><td><code>feat(cli): session/docs commands and session-aware agent instructions</code></td><td class="num">3</td><td class="num">约 +402</td><td>C1</td></tr>
+        <tr><td><b>C3</b></td><td><code>feat(desktop): nine-view shell with workspace/overview/profile/knowledge/session UI</code></td><td class="num">16</td><td class="num">约 +2,330</td><td>C1</td></tr>
+        <tr><td><b>C4</b></td><td><code>feat(reading): reading context fields, project/task links and reference export</code></td><td class="num">7</td><td class="num">约 +1,324</td><td>C1 + C3</td></tr>
+        <tr><td><b>C5</b></td><td><code>chore(deps): pin Tauri client plugins to 2.11/2.7/2.3 line</code></td><td class="num">2</td><td class="num">±40</td><td>独立</td></tr>
+        <tr><td><b>C6</b></td><td><code>docs: align stage docs with delivered Phases 1–7, record M0-A gate recovery</code></td><td class="num">16</td><td class="num">约 +700</td><td>逻辑上最后</td></tr>
+      </tbody>
+    </table>
+    <p class="filelist">拆分原则：领域层 → 消费层（CLI → 桌面端）→ 横切（依赖、文档）；<b>每个文件整体归属唯一提交，不做 <code>git add -p</code> 文件内拆分</b>（唯一跨提交内容是 <code>style.css</code> 与 <code>verification-log.md</code>，处理方式见 §3 注①②）。</p>
+  </div>
+</section>
+
+<section id="s2">
+  <h2><span class="sec-no">2</span>各提交详情</h2>
+
+  <div class="card">
+    <h3>C1 · todo-core 领域层（蓝图 Phase 1–5+7 核心）</h3>
+    <div class="msg"><span class="t">feat(core): workspace registry, project profile, knowledge index, dev sessions, overview</span>
+
+New modules behind WorkspaceStore (~/.todo/workspace/workspace.sqlite, schema v3,
+fail-loud migrations): stable project UUIDs with canonical-path dedup and
+re-linking, declared-vs-observed environment profiles (secrets never stored),
+knowledge document index with tombstones, Markdown dev sessions under
+.virgo/sessions/ with docs_validate (VDS001-004), read-only cross-project
+overview. 45 unit tests.</div>
+    <table>
+      <thead><tr><th style="width:70px">类型</th><th>文件</th><th>diff 摘要</th></tr></thead>
+      <tbody>
+        <tr><td><span class="badge info">新增</span></td><td><code>crates/todo-core/src/workspace.rs</code></td><td class="num">787 行；WorkspaceStore 三表 + v1→v3 迁移；9 单测</td></tr>
+        <tr><td><span class="badge info">新增</span></td><td><code>crates/todo-core/src/profile.rs</code></td><td class="num">655 行；ProjectProfile + scan_environment（declared/observed 分列，秘密只记变量名）；10 单测</td></tr>
+        <tr><td><span class="badge info">新增</span></td><td><code>crates/todo-core/src/knowledge.rs</code></td><td class="num">579 行；knowledge_scan/list/confirm/read，11 种逻辑类型 + tombstone；9 单测</td></tr>
+        <tr><td><span class="badge info">新增</span></td><td><code>crates/todo-core/src/session.rs</code></td><td class="num">774 行；begin/finish/interrupt/list/resume + docs_validate + git 物证收集；13 单测</td></tr>
+        <tr><td><span class="badge info">新增</span></td><td><code>crates/todo-core/src/overview.rs</code></td><td class="num">238 行；OverviewReport 只读聚合；4 单测</td></tr>
+        <tr><td><span class="badge neutral">修改</span></td><td><code>crates/todo-core/src/lib.rs</code></td><td class="num">+22：5 个 <code>mod</code> 声明与 <code>pub use</code> 再导出</td></tr>
+        <tr><td><span class="badge neutral">修改</span></td><td><code>crates/todo-core/src/error.rs</code></td><td class="num">+8：<code>WorkspaceNotFound</code>/<code>WorkspaceInvalid</code>/<code>WorkspacePathAlreadyRegistered</code> 等错误变体</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="card">
+    <h3>C2 · CLI 会话命令与 agent 指引</h3>
+    <div class="msg"><span class="t">feat(cli): session/docs commands and session-aware agent instructions</span>
+
+`todo session begin/finish/interrupt/list/resume` and `todo docs validate`
+with the stable JSON envelope (exit 6 on blocking findings). The managed
+agent instruction block gains the three session-workflow rules. Depends on
+the todo-core session layer (C1).</div>
+    <table>
+      <thead><tr><th style="width:70px">类型</th><th>文件</th><th>diff 摘要</th></tr></thead>
+      <tbody>
+        <tr><td><span class="badge neutral">修改</span></td><td><code>crates/todo-cli/src/main.rs</code></td><td class="num">+217：<code>Session</code>/<code>Docs</code> 子命令树（begin/finish/interrupt/list/resume/validate，<code>main.rs:250-258</code>）与 JSON 信封输出</td></tr>
+        <tr><td><span class="badge neutral">修改</span></td><td><code>crates/todo-cli/src/hooks.rs</code></td><td class="num">+7：<code>instruction_block()</code> 增加会话工作流三条指引（begin/finish/resume、resume 先读、docs validate 退出码 6）</td></tr>
+        <tr><td><span class="badge neutral">修改</span></td><td><code>crates/todo-cli/tests/cli.rs</code></td><td class="num">+178：<code>session_begin_finish_resume_round_trip_over_json</code>、<code>docs_validate_blocks_on_error_and_passes_clean_projects</code>、instructions 广告会话工作流</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="card">
+    <h3>C3 · 桌面端九视图与 Tauri 工作空间命令</h3>
+    <div class="msg"><span class="t">feat(desktop): nine-view shell with workspace/overview/profile/knowledge/session UI</span>
+
+23 Tauri commands over WorkspaceStore/session (workspace_*, project_profile_*,
+environment_*, knowledge_*, session_*, overview_summary) and
+workspace_open_project wired to watcher + preferences. Frontend: sidebar grows
+总览/工作空间 (nine views), WorkspaceView + ProjectDetailPanel + OverviewView,
+lib/workspace|session|knowledge|overview with contract-matched mocks, e2e
+workspaces/overview specs. style.css also carries the .rctx styles used by C4
+(see plan §3 note ①).</div>
+    <table>
+      <thead><tr><th style="width:70px">类型</th><th>文件</th><th>diff 摘要</th></tr></thead>
+      <tbody>
+        <tr><td><span class="badge info">新增</span></td><td><code>apps/desktop/src-tauri/src/workspace.rs</code></td><td class="num">308 行；23 个 <code>#[tauri::command]</code> 薄封装（含 <code>TODO_WORKSPACE_STORE</code> 测试重定向）</td></tr>
+        <tr><td><span class="badge info">新增</span></td><td><code>apps/desktop/src/components/WorkspaceView.tsx</code> / <code>ProjectDetailPanel.tsx</code> / <code>OverviewView.tsx</code></td><td class="num">266 / 490 / 142 行；注册表管理、档案四区块、只读汇总</td></tr>
+        <tr><td><span class="badge info">新增</span></td><td><code>apps/desktop/src/lib/workspace.ts</code> / <code>session.ts</code> / <code>knowledge.ts</code> / <code>overview.ts</code></td><td class="num">346 / 142 / 205 / 82 行；Tauri 命令映射 + 浏览器 mock（契约与 Rust 一致）</td></tr>
+        <tr><td><span class="badge info">新增</span></td><td><code>apps/desktop/e2e/workspaces.spec.ts</code> / <code>overview.spec.ts</code></td><td class="num">172 / 51 行；注册表/档案/环境/知识/会话全流程 + 汇总面板</td></tr>
+        <tr><td><span class="badge neutral">修改</span></td><td><code>apps/desktop/src-tauri/src/lib.rs</code></td><td class="num">+71：<code>workspace_open_project</code>（查注册表 → 校验 reachable → 开 watcher）+ 模块注册</td></tr>
+        <tr><td><span class="badge neutral">修改</span></td><td><code>apps/desktop/src/App.tsx</code> / <code>Sidebar.tsx</code></td><td class="num">+11 / +4：<code>MainView</code> 九视图与渲染分支、navItems 前插 总览/工作空间</td></tr>
+        <tr><td><span class="badge neutral">修改</span></td><td><code>apps/desktop/src/hooks/useDesktop.ts</code> / <code>src/lib/desktop.ts</code></td><td class="num">+29 / +6：<code>openRegisteredProject</code>（Tauri → <code>workspace_open_project</code>）</td></tr>
+        <tr><td><span class="badge neutral">修改</span></td><td><code>apps/desktop/src/style.css</code></td><td class="num">+105：文件末尾单 hunk，<code>ov-*</code>/<code>ws-*</code> 与 <code>rctx</code>（C4 阅读上下文样式先行，纯 CSS 无构建依赖）</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="card">
+    <h3>C4 · 阅读上下文（蓝图 Phase 6）</h3>
+    <div class="msg"><span class="t">feat(reading): reading context fields, project/task links and reference export</span>
+
+Personal reading context (saved reason / focus questions / revisit condition /
+notes), project & task links (registry ID kept opaque on the reading side),
+reference export to Markdown. New ReadingContextPanel wired into ReaderView;
+core store gains context columns and link/export helpers with UPDATE paths
+that never touch the context fields. Depends on C1/C3.</div>
+    <table>
+      <thead><tr><th style="width:70px">类型</th><th>文件</th><th>diff 摘要</th></tr></thead>
+      <tbody>
+        <tr><td><span class="badge info">新增</span></td><td><code>apps/desktop/src/components/ReadingContextPanel.tsx</code></td><td class="num">240 行；四字段 blur 保存 + 关联 chip + 导出引用</td></tr>
+        <tr><td><span class="badge neutral">修改</span></td><td><code>crates/todo-core/src/reading.rs</code></td><td class="num">+820：上下文字段、<code>reading_link_project/link_task</code>、<code>reading_export_reference/export_project_index</code>（UPDATE 不触碰上下文列）</td></tr>
+        <tr><td><span class="badge neutral">修改</span></td><td><code>apps/desktop/src-tauri/src/reading.rs</code></td><td class="num">+104：6 个新命令；<code>use crate::workspace::WorkspaceState</code>（依赖 C3）</td></tr>
+        <tr><td><span class="badge neutral">修改</span></td><td><code>apps/desktop/src/lib/reading.ts</code> / <code>hooks/useReading.ts</code> / <code>components/ReaderView.tsx</code></td><td class="num">+106 / +4 / +2：API 层与面板挂载</td></tr>
+        <tr><td><span class="badge neutral">修改</span></td><td><code>apps/desktop/e2e/reading.spec.ts</code></td><td class="num">+48：「阅读上下文」用例组（保存/关联/重新解析保留/导出）</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="card">
+    <h3>C5 · 依赖固定（用户自主变更，独立成提交）</h3>
+    <div class="msg"><span class="t">chore(deps): pin Tauri client plugins to 2.11/2.7/2.3 line</span>
+
+User-directed downgrade pin: @tauri-apps/api 2.12.4→2.11.1, plugin-dialog
+2.8.3→2.7.2, plugin-global-shortcut 2.4.1→2.3.2, lockfile regenerated.</div>
+    <table>
+      <thead><tr><th style="width:70px">类型</th><th>文件</th><th>diff 摘要</th></tr></thead>
+      <tbody>
+        <tr><td><span class="badge warn">用户修改</span></td><td><code>apps/desktop/package.json</code></td><td class="num">±6：三个 Tauri 客户端包版本降级固定</td></tr>
+        <tr><td><span class="badge warn">用户修改</span></td><td><code>pnpm-lock.yaml</code></td><td class="num">±34：与上配套</td></tr>
+      </tbody>
+    </table>
+    <p class="filelist">单独成提交的原因：作者是用户（非本轮收口工作），降级原因只有用户知道；独立可回滚，且不会被误认为 Phase 1–7 的一部分。若你知道降级动机，建议补充到提交信息第二段。</p>
+  </div>
+
+  <div class="card">
+    <h3>C6 · 文档对齐、交付记录与收口杂项</h3>
+    <div class="msg"><span class="t">docs: align stage docs with delivered Phases 1–7, record M0-A gate recovery</span>
+
+Blueprint & audit docs for workspace/knowledge/reading-context, the 2026-11-03
+audit and M0-A acceptance report, Phase 1-7 delivery records in the
+verification log plus the M0-A entry, stage-status correction on the Phase 0
+audit, CONTEXT.md progress section, decision-④ product docs, README/PRODUCT
+reality alignment, mobile.spec nav fix (asserts the nine-view sidebar from C3),
+and .gitignore for local tool exports.</div>
+    <table>
+      <thead><tr><th style="width:70px">类型</th><th>文件</th><th>diff 摘要</th></tr></thead>
+      <tbody>
+        <tr><td><span class="badge info">新增</span></td><td><code>docs/workspace-agent-integration.md</code> / <code>workspace-knowledge-phase0-audit.md</code> / <code>workspace-project-knowledge-spec.html</code> / <code>reading-context-audit.md</code></td><td>蓝图与两轮审计（Phase 0 审计含 2026-11-06 更正块）</td></tr>
+        <tr><td><span class="badge info">新增</span></td><td><code>docs/audits/2026-11-03-audit.md</code> / <code>2026-11-06-m0a-acceptance.html</code> / <code>2026-11-06-m0b-commit-plan.html</code>（本文件）</td><td>审计与验收报告（HTML 为统一报告格式）</td></tr>
+        <tr><td><span class="badge neutral">修改</span></td><td><code>docs/verification-log.md</code></td><td class="num">+248：用户 Phase 1–7 交付记录（213 行）+ M0-A 条目（35 行）——同文件不可拆，整体归此提交</td></tr>
+        <tr><td><span class="badge neutral">修改</span></td><td><code>CONTEXT.md</code> / <code>.gitignore</code> / <code>e2e/mobile.spec.ts</code></td><td class="num">+8 / +2 / +8−1：Progress 节、忽略两个本地目录、导航断言修复（断言 C3 的九视图）</td></tr>
+        <tr><td><span class="badge warn">用户修改</span></td><td><code>DECISIONS.md</code> / <code>PRODUCT.md</code> / <code>README.md</code> / <code>docs/desktop-mvp-spec.md</code> / <code>docs/manual-acceptance.md</code> / <code>docs/site-copy.md</code></td><td class="num">+23 / +13 / +43 / +21 / +2 / +10：决策④商业授权条款与 2026-11-03 审计的文档-代码对齐修正</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section id="s3">
+  <h2><span class="sec-no">3</span>依赖关系与逐步构建安全</h2>
+  <div class="card">
+    <div class="depflow">C1 core ──┬──► C2 cli        （CLI 调 todo_core::session_*）
+            ├──► C3 desktop    （Tauri/前端用 WorkspaceStore + session_*）
+            │        └──► C4 reading  （src-tauri/reading.rs:6 use crate::workspace::WorkspaceState）
+C5 deps（独立，可与任意位置互换）
+C6 docs+chore（最后；mobile 断言九视图 = C3 之后的事实）</div>
+    <h3>每个提交点可构建的核查</h3>
+    <ul>
+      <li><b>C1 后</b>：<code>lib.rs</code> 声明的 5 个模块全部就位；HEAD 版 <code>main.rs</code> 不引用新 API，CLI 不受影响 → <code>cargo test -p todo-core</code> 绿。</li>
+      <li><b>C2 后</b>：CLI 引用的 <code>session_*</code>/<code>docs_validate</code> 均已在 C1 → <code>cargo test -p todo-cli</code> 绿。</li>
+      <li><b>C3 后</b>：App.tsx 引用的 WorkspaceView/OverviewView/lib 全部同提交；此时 <code>ReaderView.tsx</code> 与 <code>lib/reading.ts</code> 仍是 HEAD 兼容对 → <code>pnpm typecheck && pnpm build</code> 绿。</li>
+      <li><b>C4 后</b>：ReaderView(+2) 与 lib/reading.ts(+106) 同步升级，ReadingContextPanel 就位 → typecheck/build 绿。</li>
+      <li><b>C5 后</b>：package.json 与 lockfile 同提交变更，<code>pnpm install --frozen-lockfile</code> 一致。</li>
+      <li><b>C6 后</b>：纯文档 + 已验证过的 mobile 修复 → 全仓 <code>make check</code> 终门禁。</li>
+    </ul>
+    <h3>两处跨提交内容的处理（注）</h3>
+    <ul>
+      <li><b>① <code>style.css</code></b>：文件末尾<b>单个 hunk</b> 同时含 C3（<code>ov-*/ws-*</code>）与 C4（<code>.rctx</code>）样式；hunk 内拆分需 <code>add -p</code> 编辑模式，易错且无收益（纯 CSS，先到不破坏 C3 构建）→ 整体归 C3，C4 复用。</li>
+      <li><b>② <code>docs/verification-log.md</code></b>：用户 Phase 1–7 记录（+213）与 M0-A 条目（+35）在同一文件；同理不拆 → 整体归 C6，提交信息已注明两部分来源。</li>
+    </ul>
+  </div>
+</section>
+
+<section id="s4">
+  <h2><span class="sec-no">4</span>无关修改核查（指令第 5 项）</h2>
+  <div class="card">
+    <table>
+      <thead><tr><th>核查项</th><th style="width:110px">结果</th><th>说明</th></tr></thead>
+      <tbody>
+        <tr><td>调试残留（console.log / dbg! / println!）</td><td><span class="badge ok">✅ 无</span></td><td>唯一新增 <code>println!</code> 是 <code>session resume</code> 的合法 CLI 输出（「待续：…」）</td></tr>
+        <tr><td>密钥/凭据（api_key= / secret= / PRIVATE KEY）</td><td><span class="badge ok">✅ 无</span></td><td>全量 diff 扫描零命中；环境扫描模块只记录变量<b>名</b>不记值</td></tr>
+        <tr><td>用户事实源被触碰</td><td><span class="badge ok">✅ 无</span></td><td><code>TODO.md</code>、<code>AGENTS.md</code> 不在变更列表，逐字节未动</td></tr>
+        <tr><td>散落/未归类文件</td><td><span class="badge ok">✅ 无</span></td><td>51 个文件全部归属 6 个提交（C1:7 / C2:3 / C3:16 / C4:7 / C5:2 / C6:16）；<code>x-downloader/</code>、<code>.trae-html-share-packages/</code> 已忽略，不入库</td></tr>
+        <tr><td>用户自主内容混入我的提交</td><td><span class="badge warn">⚠️ 有两处，已隔离</span></td><td>① 依赖固定 → 独立 C5；② 决策④文档（DECISIONS/site-copy）在 C6 内已逐文件标注「用户修改」；如需更细粒度只能 <code>add -p</code> 拆文件，<b>不推荐</b></td></tr>
+        <tr><td>本地 main 落后 origin/main 1 提交</td><td><span class="badge info">ℹ️ 已知</span></td><td><code>3613d96</code> 只改 <code>web/deploy/chart/virgo/values-prod.yaml</code>，与本计划零交集；<b>合并发生在 push 前，届时单独请示</b></td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section id="s5">
+  <h2><span class="sec-no">5</span>提交执行与验证方案（批准后执行）</h2>
+  <div class="card">
+    <table>
+      <thead><tr><th style="width:80px">时点</th><th>动作</th></tr></thead>
+      <tbody>
+        <tr><td>每个提交前</td><td><code>git status --porcelain</code> 复核暂存清单与本计划一致（文件级，不逐 hunk）</td></tr>
+        <tr><td>C1 后</td><td><code>cargo test -p todo-core --locked</code>（预期 45 个新单测随全量通过）</td></tr>
+        <tr><td>C2 后</td><td><code>cargo test -p todo-cli --locked</code></td></tr>
+        <tr><td>C3、C4 后</td><td><code>pnpm typecheck && pnpm --filter @todo/desktop build</code></td></tr>
+        <tr><td>C5 后</td><td><code>pnpm install --frozen-lockfile</code> 校验一致性</td></tr>
+        <tr><td>C6 后（最终）</td><td><code>make check</code> 全量门禁（验收基线：mock E2E 155 passed / web E2E 15 passed / cargo 420 passed）</td></tr>
+        <tr><td>收尾</td><td><code>git status</code> 应干净（仅剩有意忽略项）；<code>git log --oneline -7</code> 复核序列；结果记入 <code>docs/verification-log.md</code>（作为 C6 内容之一，故该记录在提交后以独立小补提交或随 push 前检一并处理，见 §6-Q3）</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section id="s6">
+  <h2><span class="sec-no">6</span>待批准项（停止点）</h2>
+  <div class="card">
+    <ol>
+      <li><b>Q1 · 批准本 6 提交计划？</b>批准后我按 C1→C6 逐个执行 <code>git add（按清单）+ git commit</code>；每个提交前复核暂存清单，偏离即停。</li>
+      <li><b>Q2 · 执行方式</b>：由我执行（推荐，过程可复核）还是你按计划自行执行？</li>
+      <li><b>Q3 · verification-log 的提交后记录</b>：提交执行结果本身要再记进 verification-log.md，但它已在 C6 里——推荐做法：6 个提交完成后补一个 <code>docs: record M0-B commit execution</code> 小提交（第 7 个，纯一行记录）；或接受记录只存在于工作区直到下次。请选。</li>
+      <li><b>Q4 · push 与远端合并</b>：完全独立的授权。届时需要先合并 <code>origin/main</code> 的 <code>3613d96</code>（零冲突预期）。本轮不做。</li>
+    </ol>
+  </div>
+</section>
+
+<div class="foot">
+  <p><b>停止声明：</b>本计划输出后立即停止，未执行任何 git add / commit / push。M0-A 的验收结论与门禁证据见 <code>docs/audits/2026-11-06-m0a-acceptance.html</code>；门禁记录已入 <code>docs/verification-log.md</code>（2026-11-06 条目）。</p>
+</div>
+
+</div>
+</body>
+</html>

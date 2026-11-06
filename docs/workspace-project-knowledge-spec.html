@@ -1,0 +1,707 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Workspace / Project / Knowledge — 完整产品与 Agent 实施方案</title>
+<style>
+:root{--bg:#f4f6f9;--paper:#fff;--ink:#202735;--muted:#687386;--line:#e1e6ee;--blue:#355cf5;--soft:#eef2ff;--green:#16734a;--amber:#946200;--red:#b42318;--nav:#182235}
+*{box-sizing:border-box}html{scroll-behavior:smooth}body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.72 -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif}
+.layout{display:grid;grid-template-columns:270px minmax(0,1fr);max-width:1600px;margin:auto;min-height:100vh}
+aside{height:100vh;position:sticky;top:0;overflow:auto;padding:25px 17px;background:#fbfcfe;border-right:1px solid var(--line)}
+.brand{font-size:11px;font-weight:800;letter-spacing:.12em;color:#66738a}.navtitle{font-size:19px;font-weight:750;margin:9px 0 20px}nav a{display:block;padding:6px 9px;margin:2px 0;border-radius:6px;color:#4d596c;font-size:12.5px;text-decoration:none}nav a:hover{background:#edf1f8;color:#182235}
+main{width:100%;max-width:1080px;margin:0 auto;padding:42px 5vw 90px}
+.hero{background:linear-gradient(135deg,#172238,#304a78);color:white;border-radius:18px;padding:36px 38px;margin-bottom:25px}
+.eyebrow{font-size:11px;letter-spacing:.15em;color:#c2d1f0;font-weight:700}h1{font-size:34px;line-height:1.25;letter-spacing:-.03em;margin:12px 0}
+.lead{font-size:16px;color:#e0e8f7;max-width:820px}.chips{display:flex;gap:8px;flex-wrap:wrap;margin-top:22px}.chip{font-size:11px;padding:4px 9px;border-radius:99px;background:#ffffff1e;color:#f4f7ff}
+h2{font-size:24px;line-height:1.3;margin:52px 0 14px;padding-bottom:10px;border-bottom:1px solid var(--line);letter-spacing:-.02em}h3{font-size:18px;margin:27px 0 9px}h4{font-size:15px;margin:20px 0 8px}
+p{margin:8px 0 12px}ul,ol{padding-left:23px}li{margin:5px 0}
+.callout{background:#f1f4ff;border:1px solid #d9e1fb;border-radius:10px;padding:14px 17px;margin:15px 0}.callout strong{display:block;margin-bottom:4px}.warn{background:#fff8e9;border-color:#f0dcae}.ok{background:#effaf4;border-color:#c5e8d4}
+.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:13px;margin:15px 0}.card{background:var(--paper);border:1px solid var(--line);border-radius:11px;padding:16px 18px}.card h3{margin:0 0 7px}.muted{color:var(--muted);font-size:13px}
+table{border-collapse:collapse;width:100%;background:white;margin:13px 0 20px;font-size:13px}th,td{border:1px solid var(--line);padding:9px 11px;text-align:left;vertical-align:top}th{background:#f0f3f8}
+code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;background:#edf0f5;padding:2px 5px;border-radius:4px;font-size:.9em}
+pre{white-space:pre;overflow:auto;background:#111827;color:#e5e7eb;padding:17px 19px;border-radius:10px;font:12px/1.65 ui-monospace,SFMono-Regular,Menlo,monospace}pre code{background:none;padding:0;color:inherit}
+.diagram{background:#fff;border:1px solid var(--line);border-radius:12px;padding:15px;overflow:auto;margin:15px 0}.diagram svg{display:block;max-width:100%;height:auto;margin:auto}
+.phase{border-left:3px solid #c8d1df;padding:2px 0 5px 17px;margin:22px 0}.gate{font-size:11px;color:var(--green);font-weight:800}
+.smalltag{font-size:11px;padding:2px 7px;background:#edf0f5;border-radius:5px;color:#596579}
+.footer{border-top:1px solid var(--line);margin-top:55px;padding-top:18px;color:var(--muted);font-size:12px}
+@media(max-width:850px){.layout{display:block}aside{height:auto;position:relative;border-right:0;border-bottom:1px solid var(--line)}nav{columns:2}main{padding:25px 17px 60px}.hero{padding:25px 21px}h1{font-size:28px}.grid{grid-template-columns:1fr}}
+@media print{aside{display:none}.layout{display:block}main{max-width:none;padding:0}.hero{print-color-adjust:exact}}
+</style>
+</head>
+<body>
+<div class="layout">
+<aside>
+<div class="brand">PRODUCT ARCHITECTURE / DELIVERY SPEC</div><div class="navtitle">方案导航</div>
+<nav>
+<a href="#summary">0. 目标与边界</a><a href="#model">1. 产品模型</a><a href="#workspace">2. Workspace</a><a href="#project">3. Project</a><a href="#knowledge">4. Knowledge</a><a href="#session">5. Session</a><a href="#task">6. Task</a><a href="#reading">7. Reading Context</a><a href="#agent">8. Agent 协议</a><a href="#environment">9. 环境管理</a><a href="#data">10. 数据模型</a><a href="#ui">11. UI 信息架构</a><a href="#migration">12. 迁移策略</a><a href="#security">13. 安全与可靠性</a><a href="#phases">14. 实施阶段</a><a href="#tests">15. 测试与验收</a><a href="#prompt">16. Agent 执行提示词</a><a href="#decisions">17. 待确认决策</a>
+</nav></aside>
+<main>
+<section class="hero" id="summary">
+<div class="eyebrow">CORRECTED PRODUCT MODEL · IMPLEMENTATION BLUEPRINT · 2026.10</div>
+<h1>Workspace / Project / Knowledge</h1>
+<p class="lead">将当前只能选择单个目录的 ToDo 应用升级为多项目虚拟工作空间。用户可以把不同磁盘路径、不同 Git 仓库中的项目加入同一个 Workspace。应用统一展示项目状态、环境、知识文档、任务、开发会话和待读资料。</p>
+<div class="chips"><span class="chip">Local-first</span><span class="chip">Markdown-first</span><span class="chip">Multi-root Workspace</span><span class="chip">Agent-native</span><span class="chip">No LLM API</span><span class="chip">Incremental Migration</span></div>
+</section>
+<div class="callout ok"><strong>本次修正的产品结论</strong>
+Workspace 是逻辑容器，不是磁盘目录。Project 是稳定身份。Knowledge 是项目知识系统。Session 负责跨天恢复上下文。Task 是 Project 的子对象。Reading Context 是项目知识的外部资料层。
+</div>
+<p>本方案面向实施 Agent。Agent 必须先审计真实仓库，再按阶段交付。本文不假设当前仓库使用某个前端框架、数据库、ORM 或桌面容器。所有技术决策以仓库审计证据为准。</p>
+<h3>产品要解决的真实问题</h3>
+<ol>
+<li>现在应用入口只能选择一个目录。用户无法把多个真实项目目录汇总到一个面板。</li>
+<li>应用目前以 ToDo 为中心。它能读取 Markdown，却缺少稳定的项目档案。</li>
+<li>AI Agent 跨天工作时会丢失项目目标、架构决策、命令、环境和当前进度。</li>
+<li>项目文档分布在 README、TODO、设计文档、实施计划、进度记录和运行手册中。</li>
+<li>用户保存 X 和微信公众号文章时，容易忘记保存原因、关联需求和再次阅读条件。</li>
+<li>应用不应该内置模型 API。应用应该提供标准化的上下文文件、Agent Skill、CLI 和验证协议。</li>
+</ol>
+<h3>产品边界</h3>
+<ul>
+<li>应用管理多个目录的登记信息，不搬迁用户项目目录。</li>
+<li>应用扫描和索引已有 Markdown，不强制统一文档命名。</li>
+<li>Markdown 是可编辑事实源。HTML 是人类阅读视图。</li>
+<li>数据库管理对象身份、关系、索引和应用状态。</li>
+<li>Agent 负责理解和更新项目内容。应用负责提供协议、工具和确定性校验。</li>
+<li>应用不自动执行构建、部署、迁移和其他有副作用的命令。</li>
+</ul>
+
+<h2 id="model">1. 重新定义产品模型</h2>
+<div class="grid">
+<div class="card"><h3>Workspace · 虚拟工作空间</h3><p>聚合不同路径下的 Project。它提供统一入口、汇总面板、筛选和跨项目活动视图。</p><p class="muted">示例：Personal、Client Work、Open Source、Experiments。</p></div>
+<div class="card"><h3>Project · 项目档案</h3><p>代表一个长期存在的代码库或工作项目。拥有稳定 ID、实际根路径、仓库信息、目标、技术栈和生命周期。</p><p class="muted">路径可以变化。项目身份保持不变。</p></div>
+<div class="card"><h3>Knowledge · 项目知识库</h3><p>发现现有 Markdown，识别文档用途，建立索引和关联。通过统一阅读器呈现架构、进度、决策和运行资料。</p><p class="muted">不要求用户先整理成指定目录。</p></div>
+<div class="card"><h3>Session · 开发会话</h3><p>记录一次 Agent 或人工开发过程。保存目标、已完成事项、决策、验证证据、未完成工作和下一步。</p><p class="muted">Session 是恢复上下文的基本单元。</p></div>
+<div class="card"><h3>Task · 项目任务</h3><p>属于某一个 Project。任务可以跨多个 Session。全局任务视图是多个 Project Task 的聚合结果。</p><p class="muted">任务不再是应用的根对象。</p></div>
+<div class="card"><h3>Reading · 外部资料</h3><p>保存文章、帖子、仓库和文档。记录保存原因、关注问题、复访条件，并关联 Project 和 Task。</p><p class="muted">阅读资料进入项目知识关系网。</p></div>
+</div>
+<h3>1.1 对象关系</h3>
+<div class="diagram"><svg viewBox="0 0 900 410" role="img" aria-label="Workspace Project Knowledge Session Task Reading 关系">
+<defs><marker id="a" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0 0L6 3L0 6" fill="none" stroke="#667085" stroke-width="1.3"/></marker></defs>
+<g font-family="Arial,'Microsoft YaHei',sans-serif" text-anchor="middle" font-size="14">
+<rect x="340" y="15" width="220" height="52" rx="9" fill="#e9edff" stroke="#8296e8"/><text x="450" y="47" fill="#263b83" font-weight="bold">Workspace</text>
+<rect x="340" y="115" width="220" height="58" rx="9" fill="#e8f6ef" stroke="#70b58e"/><text x="450" y="150" fill="#145b37" font-weight="bold">Project</text>
+<rect x="25" y="270" width="150" height="55" rx="8" fill="#f1f3f6" stroke="#aab3c1"/><text x="100" y="303" fill="#344054">Task</text>
+<rect x="205" y="270" width="150" height="55" rx="8" fill="#f1f3f6" stroke="#aab3c1"/><text x="280" y="303" fill="#344054">Session</text>
+<rect x="385" y="270" width="150" height="55" rx="8" fill="#f1f3f6" stroke="#aab3c1"/><text x="460" y="303" fill="#344054">Knowledge Docs</text>
+<rect x="565" y="270" width="150" height="55" rx="8" fill="#f1f3f6" stroke="#aab3c1"/><text x="640" y="303" fill="#344054">Environment</text>
+<rect x="755" y="115" width="125" height="58" rx="9" fill="#fff4df" stroke="#dfb45f"/><text x="817" y="150" fill="#79520b" font-weight="bold">Reading</text>
+<rect x="755" y="270" width="125" height="55" rx="8" fill="#fff4df" stroke="#dfb45f"/><text x="817" y="303" fill="#79520b">Reading Links</text>
+<path d="M450 67V115" stroke="#667085" stroke-width="1.5" marker-end="url(#a)"/><text x="510" y="96" fill="#667085" font-size="10">N:M membership</text>
+<path d="M400 173L100 270M425 173L280 270M450 173V270M475 173L640 270" stroke="#667085" fill="none" stroke-width="1.4" marker-end="url(#a)"/>
+<path d="M560 144H755" stroke="#667085" stroke-width="1.4" marker-end="url(#a)"/><text x="655" y="132" fill="#667085" font-size="10">N:M links</text>
+<path d="M817 173V270" stroke="#667085" stroke-width="1.4" marker-end="url(#a)"/>
+</g></svg></div>
+<table><tr><th>关系</th><th>基数</th><th>规则</th></tr>
+<tr><td>Workspace ↔ Project</td><td>N:M</td><td>通过 WorkspaceProject。一个项目可以加入多个工作空间。</td></tr>
+<tr><td>Project → Task</td><td>1:N</td><td>每个 Task 必须属于一个 Project。</td></tr>
+<tr><td>Project → Session</td><td>1:N</td><td>第一版一个 Session 只属于一个 Project。</td></tr>
+<tr><td>Project → Documents / Decisions / Environment</td><td>1:N</td><td>文档和环境记录通过 Project ID 归属项目。</td></tr>
+<tr><td>Reading ↔ Project</td><td>N:M</td><td>文章可以服务多个项目。</td></tr>
+<tr><td>Reading ↔ Task</td><td>N:M</td><td>文章可以支撑多个任务。</td></tr></table>
+
+<h2 id="workspace">2. Workspace：多目录虚拟容器</h2>
+<h3>2.1 关键体验</h3>
+<p>当前“选择目录”入口应升级为“创建或打开 Workspace”。用户创建 Workspace 后，从任意磁盘位置添加项目。Workspace 只保存成员关系。它不要求项目目录位于同一个父目录。</p>
+<ul>
+<li>创建、重命名、归档和删除 Workspace。</li>
+<li>通过目录选择器添加已有 Project。</li>
+<li>一个 Workspace 可以聚合多个磁盘卷、多个父目录和多个 Git 仓库。</li>
+<li>支持把一个 Project 加入多个 Workspace。</li>
+<li>支持项目搜索、标签、状态筛选、排序和拖动排序。</li>
+<li>检测相同规范化路径、相同项目 UUID 和相同 Git remote。</li>
+<li>目录失效时显示 Missing。用户可以重新关联新路径。</li>
+<li>从 Workspace 移除项目只删除成员关系。</li>
+<li>从应用登记中删除项目需要独立确认。</li>
+</ul>
+<h3>2.2 路径与身份</h3>
+<pre><code>Workspace
+  id: UUID
+  name
+  description
+  created_at
+  updated_at
+
+WorkspaceProject
+  workspace_id
+  project_id
+  sort_order
+  added_at
+
+Project
+  id: UUID                 # 稳定身份
+  root_path                # 当前真实目录
+  canonical_path           # 规范化路径
+  repository_url
+  repository_root
+  path_status              # reachable / missing / permission_denied
+  created_at
+  updated_at</code></pre>
+<p>Project ID 与 root_path 分离。用户移动项目目录后，应用通过“重新关联目录”更新 root_path。应用保留原 Project ID、任务、Session 和文档关联。</p>
+<h3>2.3 项目去重策略</h3>
+<ol>
+<li>先比较规范化绝对路径。</li>
+<li>再读取项目登记文件中的 Project UUID。</li>
+<li>再比较 Git remote URL 和 Git root。</li>
+<li>发现可能重复时展示现有项目记录。</li>
+<li>用户确认后选择打开现有项目或创建独立项目。</li>
+</ol>
+<p>Git remote 相同不代表项目一定相同。Fork、镜像和多个工作树可能拥有相同 remote。系统不得仅凭 remote 自动合并项目。</p>
+
+<h2 id="project">3. Project：稳定项目档案与状态快照</h2>
+<h3>3.1 Project Profile 字段</h3>
+<table><tr><th>字段</th><th>含义</th><th>维护方式</th></tr>
+<tr><td>name / description</td><td>名称和项目目标</td><td>用户确认</td></tr>
+<tr><td>project_type</td><td>web、desktop、backend、library、infra、game 等</td><td>用户确认</td></tr>
+<tr><td>lifecycle_status</td><td>active、paused、maintenance、completed、archived</td><td>用户或 Agent 更新</td></tr>
+<tr><td>tech_stack</td><td>语言、框架、数据库、基础设施</td><td>文件扫描建议，用户确认</td></tr>
+<tr><td>repository_url</td><td>Git 仓库地址</td><td>读取 Git remote</td></tr>
+<tr><td>current_milestone</td><td>当前阶段和目标</td><td>Project 文档</td></tr>
+<tr><td>progress_summary</td><td>最近进展快照</td><td>Session finish 更新</td></tr>
+<tr><td>blockers</td><td>当前阻塞项</td><td>用户或 Agent 更新</td></tr>
+<tr><td>next_action</td><td>下一步明确动作</td><td>Session finish 更新</td></tr>
+<tr><td>last_activity_at</td><td>最近有效活动时间</td><td>系统计算</td></tr>
+</table>
+<h3>3.2 增加 Context Health（上下文健康度）</h3>
+<p>这是在原始创意上建议增加的能力。它不是 AI 评分。它由确定性规则计算。</p>
+<ul>
+<li>项目是否有明确目标。</li>
+<li>是否有当前进度记录。</li>
+<li>是否有可执行的下一步动作。</li>
+<li>最近 Session 是否有结束记录。</li>
+<li>运行命令是否存在。</li>
+<li>关键文档是否已分类。</li>
+<li>是否存在超过设定时间的过期状态。</li>
+<li>是否存在待处理的决策冲突。</li>
+</ul>
+<p>Dashboard 显示具体缺失项。避免只展示一个无法解释的分数。</p>
+<h3>3.3 Project Overview 应回答</h3>
+<ol><li>这个项目的目标是什么？</li><li>当前处于哪个里程碑？</li><li>上次做了什么？</li><li>当前有哪些阻塞？</li><li>项目如何运行和验证？</li><li>下一步执行什么？</li></ol>
+
+<h2 id="knowledge">4. Knowledge：兼容现有 Markdown 的项目知识系统</h2>
+<h3>4.1 先发现，再映射，再补齐</h3>
+<ol>
+<li>扫描项目内 Markdown 文件。</li>
+<li>读取文件名、目录、标题、Frontmatter 和内容特征。</li>
+<li>提出逻辑分类建议。</li>
+<li>展示分类理由和置信度。</li>
+<li>用户确认文档映射。</li>
+<li>建立索引并提供统一阅读器。</li>
+<li>只对缺少的知识类型提供模板。</li>
+<li>用户确认后创建新文件。</li>
+</ol>
+<p>例如，项目已经有 <code>docs/design/system-overview.md</code>。系统应把它映射为 Architecture 文档。系统不应再生成一份重复的 <code>docs/architecture.md</code>。</p>
+<h3>4.2 逻辑文档类型</h3>
+<table><tr><th>逻辑类型</th><th>常见文件名</th><th>内容</th></tr>
+<tr><td>Project Brief</td><td>PROJECT.md、README.md、项目介绍.md</td><td>目标、范围、用户、核心能力</td></tr>
+<tr><td>Tasks</td><td>TODO.md、TASKS.md、待办.md</td><td>待办和验收标准</td></tr>
+<tr><td>Progress</td><td>PROGRESS.md、进度.md、CHANGELOG.md</td><td>里程碑、进展、完成情况</td></tr>
+<tr><td>Architecture</td><td>architecture.md、设计方案.md</td><td>模块、数据流、边界和依赖</td></tr>
+<tr><td>Environment</td><td>ENVIRONMENT.md、开发环境.md</td><td>工具链、服务、端口、命令</td></tr>
+<tr><td>Runbook</td><td>RUNBOOK.md、部署手册.md</td><td>开发、测试、构建、部署和排障</td></tr>
+<tr><td>Agent Instructions</td><td>AGENTS.md、CLAUDE.md 等</td><td>Agent 规则和文档入口</td></tr>
+<tr><td>Decision</td><td>ADR、decisions、技术选型记录</td><td>背景、备选方案、决定和后果</td></tr>
+<tr><td>Implementation</td><td>implementation、plans、实施方案</td><td>步骤、验收、风险</td></tr>
+<tr><td>Reference</td><td>references、research、资料</td><td>外部文章和研究资料</td></tr></table>
+<h3>4.3 推荐目录仅作为模板</h3>
+<pre><code>project-root/
+├── AGENTS.md
+├── PROJECT.md
+├── TODO.md
+├── PROGRESS.md
+├── ENVIRONMENT.md
+├── RUNBOOK.md
+├── docs/
+│   ├── architecture.md
+│   ├── decisions/
+│   ├── implementation/
+│   └── references/
+└── .virgo/
+    ├── project.yaml
+    ├── sessions/
+    ├── snapshots/
+    └── agent/
+        ├── SKILL.md
+        ├── WORKFLOW.md
+        └── templates/</code></pre>
+<p>该目录不是强制标准。现有文档映射优先。模板只补齐确认缺失的知识类型。</p>
+<h3>4.4 Markdown 是事实源，HTML 是阅读视图</h3>
+<ul>
+<li>Markdown 文件可以在应用外编辑。</li>
+<li>HTML 阅读视图由 Markdown 实时或增量渲染。</li>
+<li>HTML 缓存可以随时重建。</li>
+<li>阅读器支持目录大纲、标题锚点、全文搜索、代码语言标记、复制、图片预览和相邻文档导航。</li>
+<li>页面显示源文件路径、最后修改时间、文件状态和分类类型。</li>
+<li>HTML 渲染执行 Sanitizer。禁止脚本、危险 URL scheme 和内联事件属性。</li>
+</ul>
+<h3>4.5 文档索引和冲突检测</h3>
+<pre><code>ProjectDocument
+  id
+  project_id
+  relative_path
+  logical_type
+  title
+  frontmatter_json
+  content_hash
+  file_size
+  modified_at
+  indexed_at
+  classification_source
+  classification_status
+  parse_status</code></pre>
+<ul>
+<li>内容哈希未变化时跳过解析。</li>
+<li>外部修改后重新索引，不覆盖文件。</li>
+<li>文件移动后尝试匹配内容哈希和 Git rename 信息。</li>
+<li>匹配结果不唯一时交由用户确认。</li>
+<li>文件删除后保留索引墓碑和历史引用。</li>
+<li>应用写文件前比较旧哈希，检测并发编辑。</li>
+<li>发现冲突时中止写入并展示 Diff。</li>
+</ul>
+<h3>4.6 知识快照与状态新鲜度</h3>
+<p>增加“最近确认时间”和“信息来源”。例如环境信息来自 package.json，扫描时间为某日；项目进度来自某个 Session；运行命令来自 README。用户可以判断内容是否过期。</p>
+<ul>
+<li>每个结构化字段记录 source 和 updated_at。</li>
+<li>扫描结果不能静默覆盖用户确认值。</li>
+<li>关键状态可以标记为 stale。</li>
+<li>允许用户手动确认“当前信息仍然有效”。</li>
+</ul>
+
+<h2 id="session">5. Session：让 Agent 隔天能够恢复工作</h2>
+<h3>5.1 生命周期</h3>
+<div class="diagram"><svg viewBox="0 0 850 135" role="img" aria-label="Session 生命周期">
+<g font-family="Arial,'Microsoft YaHei',sans-serif" text-anchor="middle" font-size="13">
+<rect x="8" y="32" width="145" height="66" rx="9" fill="#e9edff" stroke="#8296e8"/><text x="80" y="59" fill="#263b83" font-weight="bold">Begin</text><text x="80" y="79" fill="#46546a" font-size="11">加载上下文</text>
+<path d="M153 65H188M181 60L188 65L181 70" stroke="#667085" fill="none"/>
+<rect x="188" y="32" width="145" height="66" rx="9" fill="#e8f6ef" stroke="#70b58e"/><text x="260" y="59" fill="#145b37" font-weight="bold">Work</text><text x="260" y="79" fill="#46546a" font-size="11">执行任务与记录决策</text>
+<path d="M333 65H368M361 60L368 65L361 70" stroke="#667085" fill="none"/>
+<rect x="368" y="32" width="145" height="66" rx="9" fill="#fff4df" stroke="#dfb45f"/><text x="440" y="59" fill="#79520b" font-weight="bold">Validate</text><text x="440" y="79" fill="#46546a" font-size="11">测试和证据</text>
+<path d="M513 65H548M541 60L548 65L541 70" stroke="#667085" fill="none"/>
+<rect x="548" y="32" width="145" height="66" rx="9" fill="#f1f3f6" stroke="#aab3c1"/><text x="620" y="59" fill="#344054" font-weight="bold">Finish</text><text x="620" y="79" fill="#46546a" font-size="11">持久化总结</text>
+<path d="M693 65H728M721 60L728 65L721 70" stroke="#667085" fill="none"/>
+<rect x="728" y="32" width="112" height="66" rx="9" fill="#e9edff" stroke="#8296e8"/><text x="784" y="59" fill="#263b83" font-weight="bold">Resume</text><text x="784" y="79" fill="#46546a" font-size="11">下次恢复</text>
+</g></svg></div>
+<h3>5.2 Begin 读取顺序</h3>
+<ol>
+<li>读取 Project Brief 和 Agent Instructions。</li>
+<li>读取当前 Progress 和当前里程碑。</li>
+<li>读取未完成 Task 和验收标准。</li>
+<li>读取最近 Session 的总结和 Next Actions。</li>
+<li>读取相关 Architecture、Decision 和 Runbook。</li>
+<li>读取 Environment 声明和观测差异。</li>
+<li>读取关联 Reading Context。</li>
+<li>输出上下文摘要和本次工作边界。</li>
+</ol>
+<h3>5.3 Finish 写入内容</h3>
+<ul>
+<li>本次目标和完成结果。</li><li>修改文件和模块。</li><li>新增或变更的架构决策及原因。</li><li>执行的测试命令、结果和证据。</li><li>未解决问题和风险。</li><li>明确的下一步动作。</li><li>关联 Task 状态更新。</li><li>Project Progress 快照更新。</li>
+</ul>
+<h3>5.4 Session 模板</h3>
+<pre><code>---
+session_id: "UUID"
+project_id: "UUID"
+started_at: "ISO-8601"
+finished_at: "ISO-8601"
+status: "active | completed | interrupted"
+agent: "agent-id"
+task_ids: []
+---
+
+# Session Summary
+
+## Goal
+## Completed
+## Files Changed
+## Decisions
+## Validation
+| Command | Result | Evidence |
+|---|---|---|
+
+## Unresolved
+## Next Actions
+## Context for Next Session</code></pre>
+<p>一个 Session 可以处理多个 Task。一个 Task 可以跨多个 Session。Session 不替代 Git commit。</p>
+<h3>5.5 Session 与自动摘要</h3>
+<p>第一版使用模板和确定性信息汇总。应用可以自动收集 Git diff 文件列表、测试结果和 Task 状态。自然语言总结由 Agent 写入。应用不调用模型生成总结。</p>
+
+<h2 id="task">6. Task：降级为 Project 子对象</h2>
+<ul>
+<li>Task 必须有 project_id。</li>
+<li>保留现有标题、描述、状态、优先级、标签、截止日期和排序字段。</li>
+<li>增加 acceptance_criteria、blocked_reason、source_session_id 和 updated_at。</li>
+<li>Task 详情显示关联 Session、Decision、Reading 和文档。</li>
+<li>跨项目任务页面是聚合视图，不建立无归属的全局 Task。</li>
+<li>允许从 Reading、Decision 或 Session 创建 Task。</li>
+<li>任务完成必须有状态变化记录。关键任务可以要求验证证据。</li>
+</ul>
+<div class="callout"><strong>旧数据兼容</strong>现有 ToDo 数据迁移到默认 Workspace 下的默认 Project。原任务 ID、标题、正文、状态、时间戳和排序必须保留。</div>
+
+<h2 id="reading">7. Reading Context：阅读资料与项目知识关联</h2>
+<p>保留现有 X 和微信公众号链接解析功能。Reading 不应成为孤立的稍后阅读列表。它应支持“现在保存、未来在正确的项目阶段重新使用”。</p>
+<h3>7.1 Reading 字段</h3>
+<table><tr><th>字段</th><th>说明</th></tr>
+<tr><td>source_platform</td><td>x、wechat、web、github、other</td></tr>
+<tr><td>url</td><td>原始链接和规范化链接</td></tr>
+<tr><td>title / author / published_at</td><td>文章元数据</td></tr>
+<tr><td>content / excerpt</td><td>解析正文或摘要</td></tr>
+<tr><td>reading_status</td><td>INBOX、UNREAD、READING、READ、ARCHIVED</td></tr>
+<tr><td>is_favorite</td><td>独立收藏状态</td></tr>
+<tr><td>capture_reason</td><td>为什么保存这篇资料</td></tr>
+<tr><td>focus_questions</td><td>未来阅读时需要回答的问题</td></tr>
+<tr><td>revisit_condition</td><td>满足什么条件时重新阅读</td></tr>
+<tr><td>personal_notes</td><td>个人批注</td></tr>
+<tr><td>takeaways</td><td>阅读后得到的结论</td></tr></table>
+<h3>7.2 关联模型</h3>
+<ul>
+<li>一个 Reading Item 可以关联多个 Project。</li>
+<li>一个 Reading Item 可以关联多个 Task。</li>
+<li>Project Knowledge 页面展示相关 Reading。</li>
+<li>Task 详情展示相关资料。</li>
+<li>支持从文章创建 Task。创建前确认项目、标题和验收条件。</li>
+<li>支持把文章标记为某个里程碑的参考资料。</li>
+</ul>
+<h3>7.3 示例</h3>
+<pre><code>保存原因：
+这篇文章介绍浏览器自动化的可访问性树定位。
+当前 E2E 测试大量使用 CSS selector。
+我计划在测试框架重构时评估这种方式。
+
+关联项目：
+- Desktop App
+
+关联任务：
+- TASK-142：降低 E2E 对 DOM 结构的耦合
+
+复访条件：
+- E2E 框架重构进入 In Progress
+
+阅读问题：
+- 能否与现有 Playwright 测试兼容？
+- 对桌面 WebView 有哪些限制？
+
+阅读结论：
+- 待填写</code></pre>
+<h3>7.4 解析与导出规则</h3>
+<ul>
+<li>链接解析失败时仍然保存 URL、时间和用户输入的上下文。</li>
+<li>重新解析只更新来源元数据和正文缓存。</li>
+<li>重新解析保留保存原因、个人笔记、结论、关联和阅读状态。</li>
+<li>导出到 Project Knowledge 时生成 Markdown 引用卡片。</li>
+<li>引用卡片包含标题、作者、来源链接、保存原因、关联 Task 和笔记。</li>
+<li>导出前显示 Diff。默认新增文件或新增段落。</li>
+<li>原文缓存与用户笔记分开存储。</li>
+</ul>
+
+<h2 id="agent">8. Agent 协议：不内置模型，提供可执行契约</h2>
+<h3>8.1 设计目标</h3>
+<p>不同 AI Agent 使用同一套项目知识约定。Agent 读取仓库中的入口文件和 Skill。Agent 通过 CLI 读取上下文、更新 Session 和验证文档。</p>
+<h3>8.2 AGENTS.md 入口文件</h3>
+<pre><code># Project Agent Contract
+
+## Before Work
+1. Read the Project Brief.
+2. Read the latest Progress record.
+3. Read relevant Architecture and Decision documents.
+4. Read Environment and Runbook before running commands.
+5. Run `virgo context start` when the CLI is available.
+
+## During Work
+1. Keep Task status accurate.
+2. Record decisions that change architecture or behavior.
+3. Record commands and validation evidence.
+4. Keep user-authored notes intact.
+5. Keep credentials out of project documents.
+
+## Before Finish
+1. Run required validation commands.
+2. Record test results and evidence.
+3. Update the active Session.
+4. Update Progress and Next Actions.
+5. Run `virgo docs validate` when available.
+
+Detailed workflow:
+- .virgo/agent/SKILL.md
+- .virgo/agent/WORKFLOW.md
+- .virgo/agent/SESSION.md
+- .virgo/agent/DOCUMENTATION.md</code></pre>
+<h3>8.3 Skill 文件结构</h3>
+<pre><code>.virgo/agent/
+├── SKILL.md
+├── WORKFLOW.md
+├── SESSION.md
+├── DOCUMENTATION.md
+├── DECISIONS.md
+└── templates/
+    ├── session.md
+    ├── decision.md
+    ├── progress.md
+    └── reading-reference.md</code></pre>
+<p>Skill 定义五个流程：begin、work、validate、finish、resume。Skill 内容保持 Agent 厂商无关。具体 Agent 的配置文件可以引用同一份规范。</p>
+<h3>8.4 文档冲突优先级</h3>
+<ol>
+<li>用户当前明确指令。</li>
+<li>项目安全规则和 Agent Contract。</li>
+<li>已确认的 Architecture 和 Decision。</li>
+<li>Task 验收条件。</li>
+<li>一般开发约定。</li>
+</ol>
+<p>发现冲突时，Agent 输出冲突文件路径、相关段落和影响。Agent 等待用户决策。Agent 不自动覆盖已确认决策。</p>
+
+<h2 id="environment">9. Environment：记录项目运行环境和命令</h2>
+<h3>9.1 声明环境与观测环境分离</h3>
+<table><tr><th>类别</th><th>记录内容</th><th>采集方式</th></tr>
+<tr><td>系统</td><td>OS、架构、Shell</td><td>只读扫描</td></tr>
+<tr><td>运行时</td><td>Go、Node、Python、Rust 版本</td><td>配置文件识别；执行版本命令前授权</td></tr>
+<tr><td>包管理器</td><td>pnpm、npm、bun、cargo 等</td><td>锁文件和配置文件识别</td></tr>
+<tr><td>服务依赖</td><td>PostgreSQL、Redis、Kafka、MinIO</td><td>Compose、Helm、配置文件识别</td></tr>
+<tr><td>命令</td><td>dev、test、lint、build、migration</td><td>package.json、Makefile、Taskfile、README</td></tr>
+<tr><td>端口</td><td>开发端口和服务端口</td><td>配置文件提取</td></tr>
+<tr><td>部署</td><td>Kubernetes namespace、Helm release</td><td>声明文件解析</td></tr>
+<tr><td>环境变量</td><td>变量名称和是否配置</td><td>只记录名称，不记录值</td></tr></table>
+<h3>9.2 Environment Profile</h3>
+<pre><code>EnvironmentProfile
+  id
+  project_id
+  profile_name
+  declared_json
+  observed_json
+  source_files
+  scanned_at
+  confirmed_at
+  status</code></pre>
+<ul>
+<li>Declared 是项目要求的环境。</li>
+<li>Observed 是当前设备扫描到的环境。</li>
+<li>Mismatch 展示两者差异。</li>
+<li>扫描结果不覆盖用户确认的声明。</li>
+<li>环境配置记录来源文件和更新时间。</li>
+<li>运行命令前展示命令、工作目录和影响范围。</li>
+</ul>
+<div class="callout warn"><strong>凭证保护</strong>应用只记录环境变量名称。应用跳过密钥文件。应用不持久化 Token、Cookie、私钥和云凭证。命令执行必须由用户确认。</div>
+
+<h2 id="data">10. 数据模型与持久化边界</h2>
+<table><tr><th>实体</th><th>关键字段</th><th>用途</th></tr>
+<tr><td>Workspace</td><td>id, name, description</td><td>虚拟工作空间</td></tr>
+<tr><td>WorkspaceProject</td><td>workspace_id, project_id, sort_order</td><td>成员关系</td></tr>
+<tr><td>Project</td><td>id, root_path, repository_url, path_status</td><td>稳定项目身份</td></tr>
+<tr><td>ProjectProfile</td><td>project_id, description, stack, milestone, blockers, next_action</td><td>项目档案</td></tr>
+<tr><td>EnvironmentProfile</td><td>project_id, declared_json, observed_json</td><td>环境信息</td></tr>
+<tr><td>ProjectDocument</td><td>project_id, relative_path, logical_type, content_hash</td><td>文档索引</td></tr>
+<tr><td>Task</td><td>id, project_id, title, status, priority, acceptance_criteria</td><td>项目任务</td></tr>
+<tr><td>Session</td><td>id, project_id, status, summary_path</td><td>开发会话</td></tr>
+<tr><td>Decision</td><td>id, project_id, title, status, document_path</td><td>决策索引</td></tr>
+<tr><td>ReadingItem</td><td>id, url, platform, metadata, content, status</td><td>资料条目</td></tr>
+<tr><td>ReadingContext</td><td>reading_id, capture_reason, questions, revisit_condition, notes</td><td>阅读上下文</td></tr>
+<tr><td>ProjectReading</td><td>project_id, reading_id, relation_note</td><td>文章与项目关联</td></tr>
+<tr><td>TaskReading</td><td>task_id, reading_id, relation_note</td><td>文章与任务关联</td></tr></table>
+<h3>10.1 数据职责边界</h3>
+<ul>
+<li>数据库保存 ID、状态、关系、索引、排序和应用配置。</li>
+<li>Markdown 保存项目说明、架构、决策、Session、运行手册和用户笔记。</li>
+<li>Git 负责版本管理和协作历史。</li>
+<li>HTML 作为渲染结果和阅读体验层。</li>
+<li>Reading 原文缓存复用现有存储。避免重复保存多份正文。</li>
+</ul>
+<h3>10.2 搜索能力建议</h3>
+<p>第一版先实现文件名、标题、Frontmatter 和正文的本地全文搜索。优先复用现有数据库的 FTS 能力。暂不引入向量数据库。后续可以基于用户实际检索行为评估语义搜索的收益和资源成本。</p>
+
+<h2 id="ui">11. UI 信息架构与设计方向</h2>
+<p>参考用户提供的四个视觉方向：Lumière Desk 的克制型桌面工作台、Project Workspace Dashboard 的项目卡片布局、MDViewer 的文档阅读体验、Pieces 的上下文记忆组织方式。以下是产品信息架构，不是对参考作品的像素级复制。</p>
+<h3>11.1 一级导航</h3>
+<table><tr><th>导航</th><th>核心内容</th></tr>
+<tr><td>Overview</td><td>跨 Workspace 汇总、近期活动、项目健康状态和下一步</td></tr>
+<tr><td>Workspaces</td><td>工作空间列表、创建和成员管理</td></tr>
+<tr><td>Projects</td><td>全部项目搜索、筛选、路径状态和生命周期</td></tr>
+<tr><td>Reading</td><td>Inbox、Unread、Reading、Read、Archive</td></tr>
+<tr><td>Settings</td><td>扫描规则、Agent 契约、CLI、校验策略、备份</td></tr></table>
+<h3>11.2 Overview 汇总面板</h3>
+<ul>
+<li>Workspace 总数和 Project 总数。</li>
+<li>Active、Paused、Maintenance、Completed 项目数量。</li>
+<li>跨项目未完成 Task 数量。</li>
+<li>需要恢复的 Session 数量。</li>
+<li>过期上下文和 Missing Path 数量。</li>
+<li>近期 Decision 和 Reading 更新。</li>
+<li>每个项目的下一步行动。</li>
+</ul>
+<h3>11.3 Workspace Dashboard</h3>
+<p>顶部展示 Workspace 名称、描述、项目数量和添加项目操作。主体展示项目卡片。卡片显示项目名、技术栈、生命周期、当前里程碑、下一步、最近活动和路径状态。支持状态筛选和最近活动排序。</p>
+<h3>11.4 Project Detail</h3>
+<ol>
+<li>Overview：目标、进度、阻塞、下一步、最近 Session。</li>
+<li>Tasks：项目内任务列表和看板。</li>
+<li>Environment：声明环境、扫描环境、命令和差异。</li>
+<li>Knowledge：文档索引、分类、全文搜索和阅读器。</li>
+<li>Sessions：历史会话、恢复入口和上下文完整度。</li>
+<li>Activity：任务、决策、资料、文档和路径变更时间线。</li>
+</ol>
+<h3>11.5 Reading 页面</h3>
+<ul>
+<li>列表显示标题、来源、状态、关联项目和保存原因摘要。</li>
+<li>详情展示正文、个人笔记、关注问题和复访条件。</li>
+<li>操作包括标记已读、稍后阅读、归档、关联项目、关联任务和导出引用。</li>
+<li>保存链接时允许先不填写保存原因。Inbox 提醒用户补充。</li>
+</ul>
+<h3>11.6 交互细节</h3>
+<ul>
+<li>空状态提供明确操作入口。</li>
+<li>扫描结果与写入操作分离。</li>
+<li>文件写入显示 Diff、备份位置和撤销操作。</li>
+<li>危险操作显示受影响的项目、路径和数据。</li>
+<li>支持键盘导航、搜索快捷键和窗口尺寸变化。</li>
+<li>重要状态同时使用文字和图标表达，不只依赖颜色。</li>
+</ul>
+
+<h2 id="migration">12. 现有单目录 ToDo 迁移</h2>
+<h3>12.1 迁移步骤</h3>
+<ol>
+<li>备份现有数据库和应用配置。</li>
+<li>创建默认 Workspace。</li>
+<li>把当前选中的目录登记为默认 Project。</li>
+<li>生成稳定 Project ID。</li>
+<li>为现有 Task 回填 project_id。</li>
+<li>保留现有 Markdown 分析器。</li>
+<li>保留 X 和微信公众号解析器。</li>
+<li>扫描现有 Markdown 并展示分类映射。</li>
+<li>展示数据迁移预览和冲突。</li>
+<li>用户确认后执行数据库迁移。</li>
+<li>执行数量、关联和内容一致性检查。</li>
+</ol>
+<h3>12.2 回滚要求</h3>
+<ul>
+<li>数据库迁移前生成可验证备份。</li>
+<li>迁移使用版本化 schema migration。</li>
+<li>迁移脚本支持事务和重复执行保护。</li>
+<li>迁移不移动、不删除用户 Markdown 文件。</li>
+<li>回滚数据库时保留迁移期间产生的外部文档。</li>
+<li>迁移失败时恢复数据库并输出报告。</li>
+</ul>
+
+<h2 id="security">13. 安全、隐私和可靠性</h2>
+<table><tr><th>风险</th><th>实施要求</th></tr>
+<tr><td>路径穿越</td><td>规范化路径并验证目标仍位于 Project root。写入时检查符号链接。</td></tr>
+<tr><td>秘密泄露</td><td>跳过凭证文件。日志脱敏。只保存环境变量名称。</td></tr>
+<tr><td>误覆盖文档</td><td>先 Diff、备份和确认。默认不覆盖。</td></tr>
+<tr><td>命令副作用</td><td>显示命令、cwd 和影响。用户确认后执行。</td></tr>
+<tr><td>Markdown XSS</td><td>Sanitizer 清理 HTML。禁止脚本和危险 URL scheme。</td></tr>
+<tr><td>文件监听丢事件</td><td>应用启动时增量扫描。使用哈希对账。</td></tr>
+<tr><td>并发编辑</td><td>写入前校验旧哈希。冲突时停止并显示 Diff。</td></tr>
+<tr><td>重复项目</td><td>路径、Project UUID 和 Git remote 多维检测。</td></tr>
+<tr><td>数据损坏</td><td>事务、备份、版本化迁移和启动一致性检查。</td></tr></table>
+
+<h2 id="phases">14. 分阶段实施计划</h2>
+<p>每阶段完成后输出改动文件、测试证据、已知问题和回滚方式。未经用户批准，不进入下一阶段。</p>
+<div class="phase"><h3>Phase 0 — 仓库审计</h3><span class="gate">只读。禁止修改业务代码。</span>
+<ul>
+<li>检查技术栈、目录结构、应用入口、路由、状态管理和 UI 组件。</li>
+<li>检查目录选择器、文件权限、文件监听和多目录支持。</li>
+<li>检查数据库、Task schema、迁移机制和持久化。</li>
+<li>检查 Markdown 分析器和 HTML 渲染器。</li>
+<li>检查 X / 微信解析、阅读状态和内容缓存。</li>
+<li>检查构建、打包、测试、E2E 和 CI。</li>
+<li>输出架构映射、数据映射、复用清单、风险清单和修订后的实施计划。</li>
+</ul><p><b>Gate：</b>每个建议都引用真实代码文件和模块。等待用户审查。</p></div>
+<div class="phase"><h3>Phase 1 — Workspace 与 Project Registry</h3>
+<ul><li>新增 Workspace、Project、WorkspaceProject。</li><li>实现目录选择和项目登记。</li><li>实现多根路径聚合、去重、Missing 和重新关联。</li><li>将旧单目录入口迁移为默认 Workspace。</li></ul><p><b>Gate：</b>两个不同路径项目可以在同一 Workspace 中显示。移动路径后 Project ID 不变。</p></div>
+<div class="phase"><h3>Phase 2 — Project Profile 与 Environment</h3>
+<ul><li>实现项目档案、生命周期、里程碑、阻塞和下一步。</li><li>实现 Declared / Observed Environment。</li><li>识别运行时、包管理器、服务、端口和命令。</li><li>实现敏感文件排除和命令授权。</li></ul><p><b>Gate：</b>扫描结果不覆盖用户声明。秘密值不进入数据库和日志。</p></div>
+<div class="phase"><h3>Phase 3 — Knowledge 文档发现和阅读器</h3>
+<ul><li>扫描 Markdown 并提出分类。</li><li>实现用户确认映射和增量索引。</li><li>实现 Markdown HTML 阅读器和安全渲染。</li><li>实现模板预览、Diff、备份和确认写入。</li></ul><p><b>Gate：</b>现有文档不搬迁、不覆盖。HTML 可由 Markdown 重建。</p></div>
+<div class="phase"><h3>Phase 4 — Session 和上下文恢复</h3>
+<ul><li>实现 begin、finish、resume。</li><li>实现 Session 与 Task 关联。</li><li>实现 Session 模板、历史列表和恢复摘要。</li><li>确定性收集 Git diff、测试结果和任务状态。</li></ul><p><b>Gate：</b>应用重启后能恢复最近 Session、未完成事项和下一步动作。</p></div>
+<div class="phase"><h3>Phase 5 — Agent Contract、Skill、CLI 和 Validator</h3>
+<ul><li>生成 AGENTS.md 和 Agent Skill。</li><li>实现 CLI 和稳定 JSON 输出。</li><li>实现 ERROR、WARNING、INFO 规则。</li><li>提供 Git Hooks 和 CI 模板。</li><li>支持 advisory 和 blocking 策略。</li></ul><p><b>Gate：</b>CI 能阻断 ERROR。至少验证两种 Agent 接入方式。</p></div>
+<div class="phase"><h3>Phase 6 — Reading Context 融合</h3>
+<ul><li>保留 X 和微信解析器。</li><li>增加保存原因、关注问题、复访条件和个人笔记。</li><li>增加 Project / Task 多对多关联。</li><li>增加知识页展示和 Markdown 引用导出。</li></ul><p><b>Gate：</b>解析失败仍能保存。重新解析不会覆盖个人上下文。</p></div>
+<div class="phase"><h3>Phase 7 — 汇总面板和 UX 收敛</h3>
+<ul><li>实现 Overview 和 Workspace Dashboard。</li><li>实现项目卡片、筛选、排序和跨项目活动。</li><li>实现上下文过期、缺失路径和未分类文档提示。</li><li>完成键盘操作、空状态、错误状态和桌面窗口适配。</li></ul><p><b>Gate：</b>用户可以从汇总面板判断每个项目的状态和下一步。</p></div>
+
+<h2 id="tests">15. 自动化测试与验收</h2>
+<table><tr><th>领域</th><th>测试场景</th><th>通过标准</th></tr>
+<tr><td>Workspace</td><td>两个不同磁盘路径加入同一 Workspace</td><td>两个项目均可见且独立打开</td></tr>
+<tr><td>Workspace</td><td>一个 Project 加入两个 Workspace</td><td>成员关系独立，项目数据共享</td></tr>
+<tr><td>Workspace</td><td>从 Workspace 移除 Project</td><td>磁盘目录和 Project 数据保留</td></tr>
+<tr><td>Project</td><td>移动项目并重新关联</td><td>Project ID、Task 和 Session 关联保留</td></tr>
+<tr><td>Project</td><td>重复注册路径</td><td>提示现有项目，不创建重复记录</td></tr>
+<tr><td>Environment</td><td>扫描 .env 和私钥</td><td>秘密值不被读取和持久化</td></tr>
+<tr><td>Knowledge</td><td>现有 Markdown 多种命名</td><td>分类建议可确认，原文件保持不变</td></tr>
+<tr><td>Knowledge</td><td>外部修改文档</td><td>索引更新，不覆盖源文件</td></tr>
+<tr><td>Knowledge</td><td>文件移动或删除</td><td>显示状态并保留历史关联</td></tr>
+<tr><td>Knowledge</td><td>恶意 Markdown 内容</td><td>脚本和危险链接无法执行</td></tr>
+<tr><td>Session</td><td>开始、完成、中断和恢复</td><td>生命周期与必填字段正确</td></tr>
+<tr><td>Session</td><td>一个 Session 关联多个 Task</td><td>关联完整</td></tr>
+<tr><td>Reading</td><td>X / 微信解析失败</td><td>URL 和上下文仍可保存</td></tr>
+<tr><td>Reading</td><td>重新解析文章</td><td>个人笔记、关联和复访条件保留</td></tr>
+<tr><td>Agent</td><td>缺少 AGENTS.md</td><td>生成预览，确认后才写入</td></tr>
+<tr><td>Validator</td><td>必填字段缺失</td><td>输出 ERROR 和非零退出码</td></tr>
+<tr><td>CI</td><td>ERROR 与 WARNING</td><td>ERROR 阻断，WARNING 按配置提示</td></tr>
+<tr><td>Migration</td><td>旧数据升级和模拟失败</td><td>数据一致，失败可恢复</td></tr>
+<tr><td>Reliability</td><td>重启应用</td><td>Workspace、Project 和状态持久化</td></tr>
+<tr><td>Security</td><td>路径穿越和恶意符号链接</td><td>写入被拒绝</td></tr></table>
+<h3>15.1 主流程 E2E</h3>
+<ol>
+<li>创建 Workspace。</li><li>从两个不同路径添加两个 Project。</li><li>扫描并确认 Markdown 文档映射。</li><li>为其中一个 Project 创建 Task。</li><li>保存 X 或微信公众号文章并填写保存原因。</li><li>把文章关联到 Project 和 Task。</li><li>Agent 执行 context start 并读取上下文。</li><li>Agent 修改代码并执行验证。</li><li>Agent 执行 session finish。</li><li>重启应用并恢复项目状态。</li><li>CI 运行 Validator 并输出报告。</li>
+</ol>
+
+<h2 id="prompt">16. Agent 执行总提示词</h2>
+<p>将以下任务说明交给代码 Agent。Agent 第一轮只能完成 Phase 0。</p>
+<pre><code>你是本项目的 Staff Engineer 和实施负责人。
+目标：把当前只能选择单个目录的 ToDo 应用升级为多项目 Workspace 和 Project Knowledge 系统。
+
+执行规则：
+1. 先审计真实仓库。不得假设技术栈和数据模型。
+2. Phase 0 只读审计。不得修改业务代码。
+3. Workspace 是逻辑容器，可以聚合任意真实目录下的 Project。
+4. Project ID 稳定。项目路径变化不改变 Project ID。
+5. Task 必须成为 Project 的子对象。
+6. 先发现和映射现有 Markdown，再提出缺失模板。
+7. Markdown 是事实源。HTML 是生成阅读视图。
+8. 保留现有 ToDo、X 和微信解析能力。
+9. Reading 必须记录保存原因、关注问题、复访条件、个人笔记和项目任务关联。
+10. Session 必须记录目标、完成项、决策、验证证据、未完成项和下一步。
+11. 不接入 LLM API。
+12. Agent 集成采用 AGENTS.md、Skill、CLI、Validator、Git Hooks 和 CI。
+13. 所有文件写入先展示 Diff。
+14. 所有有副作用命令先展示命令、工作目录和影响，并等待授权。
+15. 只记录环境变量名称。凭证值不进入数据库、日志或 Markdown。
+16. 每阶段完成后执行测试并提交证据。
+17. 未经用户批准，不进入下一阶段。
+
+Phase 0 必须检查：
+A. 技术栈和目录结构。
+B. 应用入口、目录选择器和文件权限。
+C. 数据库、Task schema 和迁移方式。
+D. Markdown 分析器和阅读器。
+E. X / 微信解析和 Reading 数据结构。
+F. 文件监听和多目录支持能力。
+G. UI 路由、状态管理和组件。
+H. 单元测试、E2E、构建和 CI。
+I. 新旧数据模型映射。
+J. 风险、可复用模块和真实改动文件清单。
+
+Phase 0 输出：
+1. 当前架构图。
+2. 当前数据模型图。
+3. 当前功能到新模型的映射表。
+4. 可复用模块清单。
+5. 迁移风险和回滚方案。
+6. 按真实代码修订的分阶段实施计划。
+7. 每个结论对应的文件路径和代码证据。
+
+完成 Phase 0 后停止。等待用户批准。
+后续每个 Phase 输出：目标、改动文件、数据迁移、测试命令、测试结果、验收证据、回滚方式和未解决风险。</code></pre>
+
+<h2 id="decisions">17. 待确认决策与默认建议</h2>
+<table><tr><th>问题</th><th>默认建议</th><th>原因</th></tr>
+<tr><td>一个 Project 是否能加入多个 Workspace？</td><td>支持</td><td>同一项目可能同时属于 Personal 和 Client Work。</td></tr>
+<tr><td>一个 Session 是否能跨多个 Project？</td><td>第一版单 Project</td><td>降低上下文边界和数据关系复杂度。</td></tr>
+<tr><td>是否强制统一 Markdown 目录？</td><td>不强制</td><td>先兼容用户现有文档习惯。</td></tr>
+<tr><td>是否内置 LLM？</td><td>不内置</td><td>产品提供 Agent 标准和工具，不承担模型调用。</td></tr>
+<tr><td>是否先做向量搜索？</td><td>暂缓</td><td>先验证全文搜索和上下文流程的实际价值。</td></tr>
+<tr><td>Git Hook 是否强制？</td><td>本地提示，CI 可阻断</td><td>Hook 可以绕过，CI 可通过分支保护执行门禁。</td></tr>
+<tr><td>是否自动执行运行命令？</td><td>每次显示命令并授权</td><td>避免意外修改本机和远程环境。</td></tr>
+<tr><td>是否自动创建缺失文档？</td><td>先预览，再确认</td><td>避免生成重复文档和破坏原有结构。</td></tr></table>
+<div class="callout ok"><strong>最终产品定位</strong>这不是一个增加了项目卡片的 ToDo。它是一个本地优先的多项目工作台。它把项目身份、项目知识、开发会话、任务和外部资料组织在同一上下文中。它通过 Markdown 和 Agent 契约，让人和不同 AI Agent 可以持续接力开发。</div>
+<div class="footer"><p>文档版本：v1.0 · 2026-10-31</p><p>交付用途：产品模型修正、工程架构、Agent 实施规范、阶段验收和回归测试基线。</p></div>
+</main></div></body></html>
+

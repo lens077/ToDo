@@ -66,7 +66,14 @@ test('mobile navigation stays reachable at the bottom', async ({ page }) => {
   expect(sidebarBox!.y).toBeGreaterThanOrEqual(workspaceBox!.y + workspaceBox!.height - 1);
 
   const navButtons = page.getByRole('navigation', { name: '主要视图' }).getByRole('button');
-  await expect(navButtons).toHaveCount(6);
+  // Sidebar.tsx 的 navItems 拥有这套导航；断言标签与顺序而不是一个会过期的固定数。
+  const expectedNavLabels = ['总览', '阅读', '工作空间', '目标', '象限', '随记', 'AI', '扫描与历史', '规范'];
+  await expect(navButtons).toHaveCount(expectedNavLabels.length);
+  const navLabels: Array<string | null> = [];
+  for (const button of await navButtons.all()) {
+    navLabels.push(await button.getAttribute('aria-label'));
+  }
+  expect(navLabels).toEqual(expectedNavLabels);
   for (const button of await navButtons.all()) {
     const box = await button.boundingBox();
     expect(box?.height ?? 0).toBeGreaterThanOrEqual(44);

@@ -12,7 +12,7 @@
 
 ```bash
 pnpm --filter @todo/desktop tauri build --debug
-open target/debug/bundle/macos/Todo.app
+open "target/debug/bundle/macos/Sumery Virgo.app"
 ```
 
 用一个**可以随便改的测试仓库**，不要用正在工作的项目：

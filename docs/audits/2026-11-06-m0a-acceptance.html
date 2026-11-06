@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>M0-A 验收报告 · Virgo 收口与门禁恢复 · 2026-11-06</title>
+<style>
+  :root {
+    --paper: #faf9f7;
+    --panel: #ffffff;
+    --ink: #26221d;
+    --ink-soft: #6b6258;
+    --line: #e6e0d6;
+    --accent: #b45309;
+    --accent-soft: #fdf3e7;
+    --ok: #15803d;
+    --ok-soft: #ecfdf3;
+    --warn: #b45309;
+    --warn-soft: #fdf3e7;
+    --info-soft: #eef4fb;
+    --info: #1d4ed8;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--paper);
+    color: var(--ink);
+    font: 15px/1.75 -apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+  }
+  .page { max-width: 960px; margin: 0 auto; padding: 48px 28px 80px; }
+  header.report-head { border-bottom: 3px double var(--line); padding-bottom: 24px; margin-bottom: 32px; }
+  .kicker { font-size: 12px; letter-spacing: .18em; color: var(--accent); font-weight: 700; text-transform: uppercase; }
+  h1 { font-size: 30px; line-height: 1.3; margin: 8px 0 6px; font-weight: 800; }
+  .subtitle { color: var(--ink-soft); margin: 0 0 18px; }
+  .meta-chips { display: flex; flex-wrap: wrap; gap: 8px; }
+  .chip {
+    background: var(--panel); border: 1px solid var(--line); border-radius: 999px;
+    padding: 3px 12px; font-size: 12.5px; color: var(--ink-soft);
+  }
+  .chip b { color: var(--ink); font-weight: 600; }
+  .chip code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11.5px; color: var(--ink); }
+  .verdict {
+    display: flex; align-items: center; gap: 14px;
+    background: var(--ok-soft); border: 1px solid #bbe7c9; border-left: 5px solid var(--ok);
+    border-radius: 10px; padding: 14px 18px; margin: 0 0 36px;
+  }
+  .verdict .mark { font-size: 22px; }
+  .verdict b { color: var(--ok); }
+  .verdict .note { color: var(--ink-soft); font-size: 13.5px; }
+  section { margin-bottom: 40px; }
+  h2 {
+    font-size: 19px; margin: 0 0 14px; padding-left: 12px; font-weight: 800;
+    border-left: 4px solid var(--accent); line-height: 1.4;
+  }
+  h2 .sec-no { color: var(--accent); margin-right: 6px; }
+  h3 { font-size: 15px; margin: 18px 0 8px; font-weight: 700; }
+  p { margin: 8px 0; }
+  .card {
+    background: var(--panel); border: 1px solid var(--line); border-radius: 10px;
+    padding: 18px 20px; margin-bottom: 16px; overflow-x: auto;
+  }
+  table { width: 100%; border-collapse: collapse; background: var(--panel); font-size: 13.5px; }
+  th, td { border: 1px solid var(--line); padding: 8px 12px; text-align: left; vertical-align: top; }
+  th { background: #f5f1ea; font-weight: 700; white-space: nowrap; }
+  tbody tr:nth-child(even) td { background: #fcfbf9; }
+  td code, p code, li code {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 12.5px; background: #f3efe8; border-radius: 4px; padding: 1px 5px; color: #43331f;
+    word-break: break-all;
+  }
+  .badge {
+    display: inline-block; border-radius: 6px; padding: 1px 9px;
+    font-size: 12px; font-weight: 700; white-space: nowrap;
+  }
+  .badge.ok { background: var(--ok-soft); color: var(--ok); border: 1px solid #bbe7c9; }
+  .badge.warn { background: var(--warn-soft); color: var(--warn); border: 1px solid #f2d9b8; }
+  .badge.info { background: var(--info-soft); color: var(--info); border: 1px solid #c7d8f5; }
+  .badge.neutral { background: #f1ede6; color: var(--ink-soft); border: 1px solid var(--line); }
+  ul { margin: 8px 0; padding-left: 22px; }
+  li { margin: 4px 0; }
+  .num { font-variant-numeric: tabular-nums; }
+  .filelist { font-size: 12.5px; color: var(--ink-soft); }
+  .filelist code { background: none; padding: 0; }
+  .foot {
+    border-top: 3px double var(--line); margin-top: 48px; padding-top: 18px;
+    color: var(--ink-soft); font-size: 13px;
+  }
+  .toc { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 30px; }
+  .toc a {
+    text-decoration: none; color: var(--ink); background: var(--panel);
+    border: 1px solid var(--line); border-radius: 8px; padding: 4px 12px; font-size: 13px;
+  }
+  .toc a:hover { border-color: var(--accent); color: var(--accent); }
+  .diff {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 12px; line-height: 1.6; background: #fbfaf8; border: 1px solid var(--line);
+    border-radius: 8px; padding: 10px 14px; overflow-x: auto; white-space: pre; margin: 8px 0;
+  }
+  .diff .add { color: #15803d; background: #ecfdf3; display: inline-block; width: 100%; }
+  .diff .del { color: #b91c1c; background: #fef2f2; display: inline-block; width: 100%; }
+  @media print {
+    body { background: #fff; }
+    .page { padding: 0; max-width: none; }
+    .toc { display: none; }
+    section { break-inside: avoid-page; }
+  }
+</style>
+</head>
+<body>
+<div class="page">
+
+<header class="report-head">
+  <div class="kicker">Sumery · Virgo · 工程收口</div>
+  <h1>M0-A 验收报告</h1>
+  <p class="subtitle">收口与门禁恢复（2026-11-03 审计 P0-1 / P0-4 / P0-5）——只读审计后的第一阶段实施</p>
+  <div class="meta-chips">
+    <span class="chip">日期 <b>2026-11-06</b></span>
+    <span class="chip">分支 <b>main</b></span>
+    <span class="chip">HEAD <code>2d0379e</code></span>
+    <span class="chip">工作区 <b>49 → 50 条</b></span>
+    <span class="chip">Git 写操作 <b>无</b>（未 commit / push / reset / merge）</span>
+  </div>
+</header>
+
+<div class="verdict">
+  <span class="mark">✅</span>
+  <div>
+    <b>验收结论：通过，全部门禁绿。</b>
+    <div class="note">全程未执行任何 git commit / push / reset / clean / merge。M0-A 就此停止，等待用户批准后进入 M0-B（提交计划）。</div>
+  </div>
+</div>
+
+<nav class="toc">
+  <a href="#s1">1 Git 状态</a>
+  <a href="#s2">2 变更归属</a>
+  <a href="#s3">3 本轮修改</a>
+  <a href="#s4">4 测试证据</a>
+  <a href="#s5">5 验收对照</a>
+  <a href="#s6">6 未解决问题</a>
+  <a href="#s7">7 下一步</a>
+</nav>
+
+<section id="s1">
+  <h2><span class="sec-no">1</span>Git 状态检查（M0-A-1）</h2>
+  <div class="card">
+    <table>
+      <thead><tr><th style="width:140px">项</th><th>结果</th></tr></thead>
+      <tbody>
+        <tr><td>分支</td><td><code>main</code></td></tr>
+        <tr><td>HEAD</td><td><code>2d0379ea9d79a218fb4b8b0fc38b109d57f94067</code></td></tr>
+        <tr><td>origin/main</td><td><code>3613d96</code>（领先本地 1 个提交：<code>chore(site): release 2d0379e [skip ci]</code>，只改 <code>web/deploy/chart/virgo/values-prod.yaml</code> 1 行）</td></tr>
+        <tr><td>文件交集</td><td>该远端提交与本轮全部 50 项工作区变更<b>零交集</b>，M0-B 提交无冲突风险；按禁令<b>未做合并</b></td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section id="s2">
+  <h2><span class="sec-no">2</span>变更归属分类（M0-A-2/3）</h2>
+  <p>工作区条目 49 → 50（−2 个目录被 .gitignore 忽略，+3 处本轮修改）：</p>
+  <div class="card">
+    <table>
+      <thead><tr><th style="width:220px">归属</th><th>文件</th><th style="width:170px">处理</th></tr></thead>
+      <tbody>
+        <tr>
+          <td><span class="badge info">Phase 1–7 实现 · 未跟踪</span><br><span class="filelist">18 处</span></td>
+          <td class="filelist"><code>crates/todo-core/src/{workspace,session,knowledge,profile,overview}.rs</code>、<code>src-tauri/src/workspace.rs</code>、前端 5 个新组件 + 4 个新 lib、2 个新 e2e spec、5 份 workspace/reading 文档、<code>docs/audits/</code></td>
+          <td>原样保留，待 M0-B 提交</td>
+        </tr>
+        <tr>
+          <td><span class="badge info">Phase 1–7 实现 · 已修改</span><br><span class="filelist">22 处</span></td>
+          <td class="filelist"><code>reading.rs</code>（+820）、<code>main.rs</code>（+217）、<code>tests/cli.rs</code>（+178）、<code>lib.rs</code> / <code>App.tsx</code> / <code>Sidebar.tsx</code>（9 视图）、<code>reading.spec.ts</code> 等</td>
+          <td>逐 diff 抽验确认，原样保留</td>
+        </tr>
+        <tr>
+          <td><span class="badge warn">用户自主修改</span><br><span class="filelist">约 8 处</span></td>
+          <td class="filelist"><code>apps/desktop/package.json</code>（Tauri 依赖降级固定 2.12.4→2.11.1 等）+ <code>pnpm-lock.yaml</code>（配套 34 行）；<code>DECISIONS.md</code> / <code>docs/site-copy.md</code>（决策④ 商业授权条款）；<code>README.md</code> 等为 11-03 审计的文档修正</td>
+          <td><b>逐字节未动</b></td>
+        </tr>
+        <tr>
+          <td><span class="badge neutral">本地非仓库内容</span><br><span class="filelist">2 处</span></td>
+          <td class="filelist"><code>x-downloader/</code>（17MB）、<code>.trae-html-share-packages/</code>（3.9MB）</td>
+          <td>按授权加入 .gitignore，<b>未删除任何文件</b></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section id="s3">
+  <h2><span class="sec-no">3</span>本轮修改（5 个文件，全部在授权范围内）</h2>
+  <div class="card">
+    <table>
+      <thead><tr><th style="width:36px">#</th><th style="width:320px">文件</th><th>改动</th></tr></thead>
+      <tbody>
+        <tr><td class="num">1</td><td><code>apps/desktop/e2e/mobile.spec.ts</code></td>
+          <td>导航断言 <code>toHaveCount(6)</code> → 断言 9 个标签的<b>集合与顺序</b>（<code>expectedNavLabels</code>，对应 <code>Sidebar.tsx</code> navItems；按钮有显式 <code>aria-label</code>，徽标计数不干扰可访问名），数量由集合长度派生。净 +8/−1 行。</td></tr>
+        <tr><td class="num">2</td><td><code>docs/workspace-knowledge-phase0-audit.md</code></td>
+          <td>文末「Phase 0 完毕，等待批准」加删除线并附 <b>2026-11-06 更正块</b>（指向 Phase 1–7 交付证据），沿用该文件 §8 自身的更正先例，不篡改历史。</td></tr>
+        <tr><td class="num">3</td><td><code>CONTEXT.md</code></td>
+          <td>末尾追加 <code>## Progress</code> 节（3 条事实：Phase 1–7 已实现待提交 / M0 收口进行中 / 两项阻塞），<code>.virgo/project.yaml</code> 的 <code>progress: CONTEXT.md</code> 映射保持不变。</td></tr>
+        <tr><td class="num">4</td><td><code>.gitignore</code></td>
+          <td>并入既有 research 块：<code>/x-downloader/</code>、<code>/.trae-html-share-packages/</code>。</td></tr>
+        <tr><td class="num">5</td><td><code>docs/verification-log.md</code></td>
+          <td><b>只追加</b> 2026-11-06 M0-A 条目（修改文件 / 验证表 / Gate 对应 / 已知边界）；用户已有 213 行逐字节未动（diff tail 已复核）。</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <h3>mobile.spec.ts 修复的核心 diff</h3>
+  <div class="diff"><span class="del">-  await expect(navButtons).toHaveCount(6);</span><span class="add">+  // Sidebar.tsx 的 navItems 拥有这套导航；断言标签与顺序而不是一个会过期的固定数。</span><span class="add">+  const expectedNavLabels = ['总览', '阅读', '工作空间', '目标', '象限', '随记', 'AI', '扫描与历史', '规范'];</span><span class="add">+  await expect(navButtons).toHaveCount(expectedNavLabels.length);</span><span class="add">+  const navLabels: Array&lt;string | null&gt; = [];</span><span class="add">+  for (const button of await navButtons.all()) {</span><span class="add">+    navLabels.push(await button.getAttribute('aria-label'));</span><span class="add">+  }</span><span class="add">+  expect(navLabels).toEqual(expectedNavLabels);</span></div>
+</section>
+
+<section id="s4">
+  <h2><span class="sec-no">4</span>测试证据（实际命令、退出码、关键输出）</h2>
+  <div class="card">
+    <table>
+      <thead><tr><th>命令</th><th style="width:80px">退出码</th><th>关键输出</th></tr></thead>
+      <tbody>
+        <tr><td><code>cargo test --workspace --locked</code></td><td><span class="badge ok">0</span></td><td><code>TOTAL passed=420 failed=0</code></td></tr>
+        <tr><td><code>make check</code>（<code>scripts/verify.sh</code> 全量）</td><td><span class="badge ok">0</span></td><td>mock E2E <b>155 passed / 16 skipped</b>（修复前 154 passed + 1 failed，<code>mobile.spec.ts:69</code>）；真实后端 web E2E <b>15 passed</b>（21.2s）；fmt / clippy / test / build / typecheck / identity 全过</td></tr>
+        <tr><td><code>make check-quick</code></td><td><span class="badge ok">0</span></td><td><code>✅ rust(fmt+clippy+test) 绿</code>、<code>✅ web(desktop build + static site) 绿</code>、<code>verify-quick: 绿（128s）</code></td></tr>
+        <tr><td><code>todo contract check --root .</code>（文档修改后复验）</td><td><span class="badge ok">0</span></td><td><code>contract ok: ./.virgo/project.yaml (guided)</code></td></tr>
+        <tr><td><code>todo lint</code></td><td><span class="badge ok">0</span></td><td><code>no issues</code></td></tr>
+        <tr><td><code>playwright test mobile.spec.ts</code>（单 spec 复核）</td><td><span class="badge ok">0</span></td><td><code>5 passed (2.3s)</code></td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p class="filelist">过程记录：首次使用 <code>allAccessibleNames()</code> 时在实际解析的 Playwright 副本中触发 <code>TypeError: ... is not a function</code>，已改为版本无关的 <code>getAttribute('aria-label')</code> 写法后通过；试错已解决，未留痕迹。</p>
+</section>
+
+<section id="s5">
+  <h2><span class="sec-no">5</span>验收标准对照</h2>
+  <div class="card">
+    <table>
+      <thead><tr><th>标准</th><th style="width:120px">结果</th></tr></thead>
+      <tbody>
+        <tr><td><code>cargo test --workspace --locked</code> 通过</td><td><span class="badge ok">✅ 420 passed / 0 failed</span></td></tr>
+        <tr><td><code>todo contract check</code> 通过</td><td><span class="badge ok">✅ 修改后复验两次</span></td></tr>
+        <tr><td><code>make check-quick</code> 通过</td><td><span class="badge ok">✅ 128s</span></td></tr>
+        <tr><td><code>make check</code> 通过</td><td><span class="badge ok">✅ 退出码 0</span></td></tr>
+        <tr><td>mobile.spec.ts 不再依赖过时固定导航数量</td><td><span class="badge ok">✅ 标签集合断言 + 数量派生</span></td></tr>
+        <tr><td>Phase 0 审计文档与实现状态一致</td><td><span class="badge ok">✅ 更正块落地</span></td></tr>
+        <tr><td>CONTEXT.md 进度映射指向真实进度内容</td><td><span class="badge ok">✅ Progress 节 + contract check 复验</span></td></tr>
+        <tr><td>.gitignore 排除指定目录</td><td><span class="badge ok">✅ 两目录已从 git status 消失</span></td></tr>
+        <tr><td>原有用户修改全部保留</td><td><span class="badge ok">✅ 本轮 tracked diff 仅含 4 文件</span></td></tr>
+        <tr><td>输出完整 git diff 和测试证据</td><td><span class="badge ok">✅ 见本报告 §3 / §4</span></td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section id="s6">
+  <h2><span class="sec-no">6</span>未解决问题（移交后续）</h2>
+  <div class="card">
+    <ol>
+      <li><b>Phase 1–7 成果仍未提交</b>——等 M0-B 提交计划批准后执行 git 操作。</li>
+      <li><b>本地落后 origin/main 1 提交</b>——合并/变基需单独授权，届时无文件冲突。</li>
+      <li><code>make check-quick</code> 128s 仍超脚本 2 分钟目标（P3 项，本轮未处理）。</li>
+      <li>与门禁无关的三条旧阻塞不变：release 签名凭据、支付宝生产签约、三条人工验收。</li>
+    </ol>
+  </div>
+</section>
+
+<section id="s7">
+  <h2><span class="sec-no">7</span>下一步</h2>
+  <div class="card">
+    <p><b>M0-A 完成并全绿，就此停止。</b>待用户验收通过后进入 M0-B（提交准备，仍不含实际 git 操作）：</p>
+    <ul>
+      <li>制定 5–6 个职责明确的提交（按 workspace/profile/knowledge/session/overview、reading context、docs/e2e 依赖排序）；</li>
+      <li>为每个提交列出文件清单与 diff 摘要，标明提交间依赖；</li>
+      <li>核查是否混入用户无关修改（已确认：<code>package.json</code> 依赖固定与决策④文档须随其归属提交，不拆散）；</li>
+      <li>输出提交计划后停止，等待对 <code>git commit</code> 的单独批准；<code>push</code> 是另一项独立授权。</li>
+    </ul>
+  </div>
+</section>
+
+<div class="foot">
+  <p><b>报告格式说明：</b>自本报告起，需要用户审阅的报告统一使用自包含 HTML 格式（无外部依赖，可直接浏览器打开 / 打印），存放于 <code>docs/audits/</code>；本文件为未跟踪新文件，随 M0-B 提交计划一并处置。</p>
+  <p>Virgo 工作流 · 证据文件：<code>docs/verification-log.md</code>（2026-11-06 条目）、<code>docs/audits/2026-11-03-audit.md</code>（P0 来源）。</p>
+</div>
+
+</div>
+</body>
+</html>

@@ -39,3 +39,11 @@ _Avoid_: Error, automatic fix
 **Today View**:
 从 Project Task 的状态与截止日期派生出的当日工作视图，不拥有任务数据。
 _Avoid_: Daily task list, separate inbox
+
+## Progress
+
+进度只在这里做摘要；逐条任务见 `TODO.md`，逐阶段验证证据见 `docs/verification-log.md`。
+
+- Workspace / Project Profile / Knowledge / Session / Overview（蓝图 Phase 1–7）已实现并通过测试；截至 2026-11-06 成果仍在工作区待提交（现状与风险见 `docs/audits/2026-11-03-audit.md`）。
+- 进行中：M0 收口——恢复完整门禁（`make check`）并把上述成果按模块提交进 Git。
+- 阻塞项：可分发的桌面端 release（缺 Developer ID 签名与 Apple 公证凭据，`TODO.md` `d3l8hn`）；赞助生产切换（等支付宝签约，`TODO.md` `3nd6da`）。

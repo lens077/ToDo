@@ -47,5 +47,7 @@ apps/desktop/icon/out/
 /apps/sponsor-api/.dev/
 /apps/sponsor-api/data/
 
-# Vendored research repos (not part of the build)
+# Vendored research repos and local tool exports (not part of the build)
 /twitter-text/
+/x-downloader/
+/.trae-html-share-packages/
