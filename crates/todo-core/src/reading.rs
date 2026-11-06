@@ -63,6 +63,61 @@ pub struct ReadingArticleDetail {
     /// Absolute directory holding this article's localized images.
     pub image_dir: String,
     pub annotations: Vec<ReadingAnnotation>,
+    /// User-authored context. Only `update_context` writes these fields;
+    /// re-fetching an article can never touch them.
+    #[serde(default = "ReadingContext::empty")]
+    pub context: ReadingContext,
+}
+
+/// Why an article was saved and what to do with it later. Stored on the
+/// article row but written exclusively through [`ReadingStore::update_context`].
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
+pub struct ReadingContext {
+    pub saved_reason: String,
+    pub focus_questions: String,
+    pub revisit_condition: String,
+    pub personal_notes: String,
+    /// `NONE` | `DATE` | `TASK_COMPLETED` | `PROJECT_COMPLETED` | `MANUAL` (stored only in v1).
+    pub revisit_type: String,
+    /// `ok` | `failed` — failed records keep the URL and accept context edits.
+    pub parse_status: String,
+    #[serde(default)]
+    pub project_links: Vec<ReadingLink>,
+    #[serde(default)]
+    pub task_links: Vec<ReadingLink>,
+}
+
+impl ReadingContext {
+    pub fn empty() -> Self {
+        Self {
+            revisit_type: "NONE".into(),
+            parse_status: "ok".into(),
+            ..Self::default()
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ReadingLink {
+    /// Registry project ID or task ID on the reading side; the reading store
+    /// never writes into project files (ADR-0003 boundary).
+    pub reference: String,
+    pub label: String,
+    pub created_at: i64,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ReadingContextInput {
+    pub saved_reason: String,
+    pub focus_questions: String,
+    pub revisit_condition: String,
+    pub personal_notes: String,
+    #[serde(default = "default_revisit_type")]
+    pub revisit_type: String,
+}
+
+fn default_revisit_type() -> String {
+    "NONE".into()
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -149,7 +204,33 @@ impl ReadingStore {
                created_at INTEGER NOT NULL,
                updated_at INTEGER NOT NULL
              );
-             CREATE INDEX IF NOT EXISTS annotations_article ON annotations(article_id, start);",
+             CREATE INDEX IF NOT EXISTS annotations_article ON annotations(article_id, start);
+             CREATE TABLE IF NOT EXISTS article_project_links (
+               article_id TEXT NOT NULL REFERENCES articles(id) ON DELETE CASCADE,
+               project_ref TEXT NOT NULL,
+               label TEXT NOT NULL DEFAULT '',
+               created_at INTEGER NOT NULL,
+               PRIMARY KEY (article_id, project_ref)
+             );
+             CREATE TABLE IF NOT EXISTS article_task_links (
+               article_id TEXT NOT NULL REFERENCES articles(id) ON DELETE CASCADE,
+               task_ref TEXT NOT NULL,
+               label TEXT NOT NULL DEFAULT '',
+               created_at INTEGER NOT NULL,
+               PRIMARY KEY (article_id, task_ref)
+             );",
+        )?;
+        ensure_columns(
+            &connection,
+            "articles",
+            &[
+                ("saved_reason", "TEXT NOT NULL DEFAULT ''"),
+                ("focus_questions", "TEXT NOT NULL DEFAULT ''"),
+                ("revisit_condition", "TEXT NOT NULL DEFAULT ''"),
+                ("personal_notes", "TEXT NOT NULL DEFAULT ''"),
+                ("revisit_type", "TEXT NOT NULL DEFAULT 'NONE'"),
+                ("parse_status", "TEXT NOT NULL DEFAULT 'ok'"),
+            ],
         )?;
         connection.execute_batch("PRAGMA foreign_keys = ON;")?;
         Ok(connection)
@@ -271,13 +352,478 @@ impl ReadingStore {
                 })
             })?
             .collect::<std::result::Result<Vec<_>, _>>()?;
+        let context = self.context(&connection, &article.id)?;
         Ok(ReadingArticleDetail {
             image_dir: self.image_dir(&article.id).to_string_lossy().into_owned(),
             article,
             content_html,
             markdown,
             annotations,
+            context,
         })
+    }
+
+    /// Loads the user-authored context plus the project/task links. Plain
+    /// column reads: nothing here can resurrect lost context because re-parse
+    /// paths never write these columns.
+    fn context(&self, connection: &Connection, article_id: &str) -> Result<ReadingContext> {
+        let mut context = connection
+            .query_row(
+                "SELECT saved_reason, focus_questions, revisit_condition, personal_notes,
+                        revisit_type, parse_status
+                 FROM articles WHERE id = ?1",
+                params![article_id],
+                |row| {
+                    Ok(ReadingContext {
+                        saved_reason: row.get(0)?,
+                        focus_questions: row.get(1)?,
+                        revisit_condition: row.get(2)?,
+                        personal_notes: row.get(3)?,
+                        revisit_type: row.get(4)?,
+                        parse_status: row.get(5)?,
+                        project_links: Vec::new(),
+                        task_links: Vec::new(),
+                    })
+                },
+            )
+            .optional()?
+            .unwrap_or_else(ReadingContext::empty);
+        let links = |table: &str, column: &str| -> Result<Vec<ReadingLink>> {
+            let mut statement = connection.prepare(&format!(
+                "SELECT {column} AS reference, label, created_at FROM {table} WHERE article_id = ?1 ORDER BY created_at"
+            ))?;
+            let rows = statement.query_map(params![article_id], |row| {
+                Ok(ReadingLink {
+                    reference: row.get(0)?,
+                    label: row.get(1)?,
+                    created_at: row.get(2)?,
+                })
+            })?;
+            rows.collect::<std::result::Result<Vec<_>, _>>()
+                .map_err(Error::from)
+        };
+        context.project_links = links("article_project_links", "project_ref")?;
+        context.task_links = links("article_task_links", "task_ref")?;
+        Ok(context)
+    }
+
+    /// Saves the user-authored context. This is the only write path for these
+    /// fields — the structural guarantee behind "re-parse never overwrites".
+    pub fn update_context(
+        &self,
+        id: &str,
+        input: &ReadingContextInput,
+    ) -> Result<ReadingArticleDetail> {
+        let connection = self.connect()?;
+        let changed = connection.execute(
+            "UPDATE articles SET saved_reason = ?2, focus_questions = ?3, revisit_condition = ?4,
+                    personal_notes = ?5, revisit_type = ?6
+             WHERE id = ?1",
+            params![
+                id,
+                input.saved_reason.trim(),
+                input.focus_questions.trim(),
+                input.revisit_condition.trim(),
+                input.personal_notes.trim(),
+                if input.revisit_type.trim().is_empty() {
+                    "NONE"
+                } else {
+                    input.revisit_type.trim()
+                },
+            ],
+        )?;
+        if changed == 0 {
+            return Err(Error::ReadingArticleNotFound(id.to_string()));
+        }
+        drop(connection);
+        self.get(id)
+    }
+
+    /// Saves a URL that could not be parsed. The record keeps the URL, enters
+    /// the library as `failed`, and accepts context edits immediately
+    /// (收藏优先：解析失败不能阻止收藏).
+    pub fn add_failed(&self, url: &str) -> Result<ReadingArticleDetail> {
+        let url = normalize_url(url)?;
+        if let Some(existing) = self.find_by_url(&url)? {
+            return self.get(&existing);
+        }
+        let id = new_id();
+        let connection = self.connect()?;
+        connection.execute(
+            "INSERT INTO articles (id, url, title, content_html, added_at, parse_status)
+             VALUES (?1, ?2, ?3, '', ?4, 'failed')",
+            params![id, url, host_of(&url), now_ms()],
+        )?;
+        drop(connection);
+        self.get(&id)
+    }
+
+    /// Re-fetches the article and replaces only the source metadata and body.
+    /// Saved reason, questions, notes, links and reading state are untouched:
+    /// the UPDATE simply does not mention those columns.
+    pub fn refetch(&self, id: &str) -> Result<ReadingArticleDetail> {
+        let url = {
+            let connection = self.connect()?;
+            connection
+                .query_row(
+                    "SELECT url FROM articles WHERE id = ?1",
+                    params![id],
+                    |row| row.get::<_, String>(0),
+                )
+                .optional()?
+                .ok_or_else(|| Error::ReadingArticleNotFound(id.to_string()))?
+        };
+        let fetched = fetch_page(&url)?;
+        self.replace_content(id, &fetched)
+    }
+
+    /// Applies fetched content to an existing record (shared by `refetch` and
+    /// the retry of a failed capture). Testable without the network.
+    #[allow(private_interfaces)]
+    pub(crate) fn replace_content(
+        &self,
+        id: &str,
+        fetched: &FetchedPage,
+    ) -> Result<ReadingArticleDetail> {
+        let url = {
+            let connection = self.connect()?;
+            connection
+                .query_row(
+                    "SELECT url FROM articles WHERE id = ?1",
+                    params![id],
+                    |row| row.get::<_, String>(0),
+                )
+                .optional()?
+                .ok_or_else(|| Error::ReadingArticleNotFound(id.to_string()))?
+        };
+        let extracted = extract(fetched, &url)?;
+        let image_dir = self.image_dir(id);
+        let localized = localize_images(&extracted.content_html, &url, &image_dir);
+        let cover_file = extracted
+            .cover_url
+            .as_deref()
+            .and_then(|cover| localize_cover(cover, &url, &image_dir));
+        let connection = self.connect()?;
+        connection.execute(
+            "UPDATE articles SET title = ?2, site_name = ?3, excerpt = ?4, byline = ?5, cover_file = ?6,
+                    content_html = ?7, markdown = ?8, word_count = ?9, reading_minutes = ?10,
+                    parse_status = 'ok'
+             WHERE id = ?1",
+            params![
+                id,
+                extracted.title,
+                extracted.site_name,
+                extracted.excerpt,
+                extracted.byline,
+                cover_file,
+                localized,
+                extracted.markdown,
+                extracted.word_count,
+                extracted.reading_minutes,
+            ],
+        )?;
+        drop(connection);
+        self.get(id)
+    }
+
+    /// Links the article to a registered project (by registry ID). Idempotent.
+    pub fn link_project(
+        &self,
+        id: &str,
+        project_ref: &str,
+        label: &str,
+    ) -> Result<ReadingArticleDetail> {
+        self.link(
+            id,
+            "article_project_links",
+            "project_ref",
+            project_ref,
+            label,
+        )?;
+        self.get(id)
+    }
+
+    pub fn unlink_project(&self, id: &str, project_ref: &str) -> Result<ReadingArticleDetail> {
+        self.unlink(id, "article_project_links", "project_ref", project_ref)?;
+        self.get(id)
+    }
+
+    /// Links the article to a task (by stable task ID). Idempotent.
+    pub fn link_task(&self, id: &str, task_ref: &str, label: &str) -> Result<ReadingArticleDetail> {
+        self.link(id, "article_task_links", "task_ref", task_ref, label)?;
+        self.get(id)
+    }
+
+    pub fn unlink_task(&self, id: &str, task_ref: &str) -> Result<ReadingArticleDetail> {
+        self.unlink(id, "article_task_links", "task_ref", task_ref)?;
+        self.get(id)
+    }
+
+    fn link(
+        &self,
+        id: &str,
+        table: &str,
+        column: &str,
+        reference: &str,
+        label: &str,
+    ) -> Result<()> {
+        let reference = reference.trim();
+        if reference.is_empty() {
+            return Err(Error::InvalidReadingUrl("关联引用不能为空".into()));
+        }
+        let connection = self.connect()?;
+        let exists: Option<String> = connection
+            .query_row(
+                "SELECT id FROM articles WHERE id = ?1",
+                params![id],
+                |row| row.get(0),
+            )
+            .optional()?;
+        if exists.is_none() {
+            return Err(Error::ReadingArticleNotFound(id.to_string()));
+        }
+        connection.execute(
+            &format!(
+                "INSERT OR IGNORE INTO {table} (article_id, {column}, label, created_at) VALUES (?1, ?2, ?3, ?4)"
+            ),
+            params![id, reference, label.trim(), now_ms()],
+        )?;
+        Ok(())
+    }
+
+    fn unlink(&self, id: &str, table: &str, column: &str, reference: &str) -> Result<()> {
+        let connection = self.connect()?;
+        let changed = connection.execute(
+            &format!("DELETE FROM {table} WHERE article_id = ?1 AND {column} = ?2"),
+            params![id, reference],
+        )?;
+        if changed == 0 {
+            return Err(Error::ReadingArticleNotFound(id.to_string()));
+        }
+        Ok(())
+    }
+
+    /// Markdown 引用卡片：标题、作者、来源、保存原因、关联、笔记。
+    pub fn export_reference(&self, id: &str) -> Result<String> {
+        let detail = self.get(id)?;
+        let context = &detail.context;
+        let mut markdown = String::new();
+        markdown.push_str(
+            "---
+type: reading
+",
+        );
+        markdown.push_str(&format!(
+            "title: {}
+",
+            detail.article.title
+        ));
+        markdown.push_str(&format!(
+            "url: {}
+",
+            detail.article.url
+        ));
+        markdown.push_str(&format!(
+            "parse_status: {}
+",
+            context.parse_status
+        ));
+        markdown.push_str(&format!(
+            "captured_at: {}
+---
+
+",
+            detail.article.added_at
+        ));
+        markdown.push_str(&format!(
+            "# {}
+
+",
+            detail.article.title
+        ));
+        if let Some(byline) = &detail.article.byline {
+            markdown.push_str(&format!(
+                "- 作者：{byline}
+"
+            ));
+        }
+        markdown.push_str(&format!(
+            "- 来源：{}
+",
+            detail.article.site_name
+        ));
+        markdown.push_str(&format!(
+            "- 原始链接：{}
+",
+            detail.article.url
+        ));
+        markdown.push_str(
+            "
+# 收藏原因
+
+",
+        );
+        markdown.push_str(if context.saved_reason.is_empty() {
+            "（未填写）"
+        } else {
+            &context.saved_reason
+        });
+        markdown.push_str(
+            "
+
+# 未来关注点
+
+",
+        );
+        markdown.push_str(if context.focus_questions.is_empty() {
+            "（未填写）"
+        } else {
+            &context.focus_questions
+        });
+        markdown.push_str(
+            "
+
+# 复访条件
+
+",
+        );
+        markdown.push_str(if context.revisit_condition.is_empty() {
+            "（未填写）"
+        } else {
+            &context.revisit_condition
+        });
+        markdown.push_str(
+            "
+
+# 阅读笔记
+
+",
+        );
+        markdown.push_str(if context.personal_notes.is_empty() {
+            "（未填写）"
+        } else {
+            &context.personal_notes
+        });
+        if !context.project_links.is_empty() {
+            markdown.push_str(
+                "
+# 关联项目
+
+",
+            );
+            for link in &context.project_links {
+                markdown.push_str(&format!(
+                    "- {}{}
+",
+                    link.reference,
+                    if link.label.is_empty() {
+                        String::new()
+                    } else {
+                        format!("（{}）", link.label)
+                    }
+                ));
+            }
+        }
+        if !context.task_links.is_empty() {
+            markdown.push_str(
+                "
+# 关联任务
+
+",
+            );
+            for link in &context.task_links {
+                markdown.push_str(&format!(
+                    "- {}
+",
+                    link.reference
+                ));
+            }
+        }
+        Ok(markdown)
+    }
+
+    /// 项目阅读索引：一个注册项目的全部关联文章，按阅读状态分组。
+    pub fn export_project_index(&self, project_ref: &str) -> Result<String> {
+        let connection = self.connect()?;
+        let mut statement = connection.prepare(
+            "SELECT a.id, a.title, a.url, a.progress_percent
+             FROM article_project_links l
+             JOIN articles a ON a.id = l.article_id
+             WHERE l.project_ref = ?1
+             ORDER BY a.added_at DESC",
+        )?;
+        let rows = statement.query_map(params![project_ref], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, String>(2)?,
+                row.get::<_, u32>(3)?,
+            ))
+        })?;
+        let mut unread = Vec::new();
+        let mut read = Vec::new();
+        for row in rows {
+            let (id, title, url, percent) = row?;
+            let detail = self.get(&id)?;
+            let reason = detail.context.saved_reason;
+            let entry = format!(
+                "### {title}
+
+- URL: {url}
+- 收藏原因：{}
+- Virgo: reading://{id}
+",
+                if reason.is_empty() {
+                    "（未填写）"
+                } else {
+                    &reason
+                }
+            );
+            if percent >= 100 {
+                read.push(entry)
+            } else {
+                unread.push(entry)
+            }
+        }
+        let mut markdown = String::from(
+            "# Reading References
+
+",
+        );
+        markdown.push_str(
+            "## 待阅读
+
+",
+        );
+        if unread.is_empty() {
+            markdown.push_str(
+                "（无）
+
+",
+            );
+        } else {
+            for entry in &unread {
+                markdown.push_str(entry);
+                markdown.push('\n');
+            }
+        }
+        markdown.push_str(
+            "## 已阅读
+
+",
+        );
+        if read.is_empty() {
+            markdown.push_str(
+                "（无）
+",
+            );
+        } else {
+            for entry in &read {
+                markdown.push_str(entry);
+                markdown.push('\n');
+            }
+        }
+        Ok(markdown)
     }
 
     /// Records that the reader opened the article now.
@@ -477,6 +1023,34 @@ struct FetchedPage {
 }
 
 /// Only absolute web URLs are accepted; anything else could reach local files.
+/// Best-effort display name for a URL that failed to parse.
+fn host_of(url: &str) -> String {
+    url.split("://")
+        .nth(1)
+        .unwrap_or(url)
+        .split('/')
+        .next()
+        .unwrap_or(url)
+        .to_string()
+}
+
+/// Adds columns that postdate a user's existing database. `CREATE TABLE IF
+/// NOT EXISTS` cannot evolve a live library; this checks `PRAGMA table_info`
+/// and alters only what is missing, so upgrades are idempotent.
+fn ensure_columns(connection: &Connection, table: &str, columns: &[(&str, &str)]) -> Result<()> {
+    let existing: std::collections::HashSet<String> = {
+        let mut statement = connection.prepare(&format!("PRAGMA table_info({table})"))?;
+        let rows = statement.query_map([], |row| row.get::<_, String>(1))?;
+        rows.flatten().collect()
+    };
+    for (name, ddl) in columns {
+        if !existing.contains(*name) {
+            connection.execute_batch(&format!("ALTER TABLE {table} ADD COLUMN {name} {ddl};"))?;
+        }
+    }
+    Ok(())
+}
+
 fn normalize_url(url: &str) -> Result<String> {
     let trimmed = url.trim();
     if !(trimmed.starts_with("http://") || trimmed.starts_with("https://")) {
@@ -1362,7 +1936,7 @@ fn prepare_html(html: &str) -> String {
     result
 }
 
-fn sanitize_html(html: &str) -> String {
+pub(crate) fn sanitize_html(html: &str) -> String {
     let mut builder = ammonia::Builder::default();
     builder
         .add_tags([
@@ -2020,5 +2594,247 @@ mod live_tests {
         probe(&std::env::var("READING_URL").unwrap_or_else(|_| {
             "https://blog.rust-lang.org/2026/10/26/how-to-fund-rust-contributors/".into()
         }));
+    }
+}
+
+#[cfg(test)]
+mod reading_context_tests {
+    use super::*;
+
+    fn store() -> (tempfile::TempDir, ReadingStore) {
+        let dir = tempfile::tempdir().unwrap();
+        let store = ReadingStore::new(dir.path().join("reading"));
+        (dir, store)
+    }
+
+    fn fixture_page(title: &str, body: &str) -> FetchedPage {
+        // Long enough to pass extract()'s readability threshold.
+        let paragraph = format!("{body}，并且这一段足够长，可以被可读性算法识别为正文。");
+        let article = (0..12)
+            .map(|_| format!("<p>{paragraph}</p>"))
+            .collect::<String>();
+        FetchedPage {
+            html: format!("<html><head><title>{title}</title></head><body><article>{article}</article></body></html>"),
+            final_url: "https://example.com/a".into(),
+        }
+    }
+
+    fn seed(store: &ReadingStore) -> String {
+        // Direct insert keeps the fixture free of extract()'s readability
+        // requirements; these tests cover the context layer, not extraction.
+        let _ = store.list(); // Ensure the database file exists.
+        let connection = rusqlite::Connection::open(store.root().join("reading.sqlite")).unwrap();
+        let id = new_id();
+        connection
+            .execute(
+                "INSERT INTO articles (id, url, title, site_name, byline, content_html, word_count, added_at)
+                 VALUES (?1, ?2, ?3, 'example.com', '作者', '<p>原正文</p>', 10, ?4)",
+                rusqlite::params![id, "https://example.com/a", "原标题", now_ms()],
+            )
+            .unwrap();
+        id
+    }
+
+    #[test]
+    fn context_round_trips_and_defaults_are_sane() {
+        let (_d, store) = store();
+        let id = seed(&store);
+        let detail = store.get(&id).unwrap();
+        assert_eq!(detail.context, ReadingContext::empty());
+
+        let saved = store
+            .update_context(
+                &id,
+                &ReadingContextInput {
+                    saved_reason: "研究 E2E 定位方式".into(),
+                    focus_questions: "能否兼容 Playwright？".into(),
+                    revisit_condition: "E2E 重构进入 In Progress".into(),
+                    personal_notes: "可访问性树方案可行".into(),
+                    revisit_type: "TASK_COMPLETED".into(),
+                },
+            )
+            .unwrap();
+        assert_eq!(saved.context.saved_reason, "研究 E2E 定位方式");
+        assert_eq!(saved.context.revisit_type, "TASK_COMPLETED");
+        let reloaded = store.get(&id).unwrap();
+        assert_eq!(reloaded.context, saved.context);
+    }
+
+    #[test]
+    fn failed_capture_keeps_url_and_accepts_context() {
+        let (_d, store) = store();
+        let detail = store
+            .add_failed("https://unreachable.invalid/post")
+            .unwrap();
+        assert_eq!(detail.context.parse_status, "failed");
+        assert_eq!(detail.article.url, "https://unreachable.invalid/post");
+        // Context edits work immediately on the failed record.
+        let updated = store
+            .update_context(
+                &detail.article.id,
+                &ReadingContextInput {
+                    saved_reason: "先收藏，稍后再试".into(),
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+        assert_eq!(updated.context.saved_reason, "先收藏，稍后再试");
+        // Re-adding the same URL dedups instead of duplicating.
+        let again = store
+            .add_failed("https://unreachable.invalid/post")
+            .unwrap();
+        assert_eq!(again.article.id, detail.article.id);
+    }
+
+    #[test]
+    fn refetch_updates_source_but_never_touches_context() {
+        let (_d, store) = store();
+        let id = seed(&store);
+        store
+            .update_context(
+                &id,
+                &ReadingContextInput {
+                    saved_reason: "珍贵的原因".into(),
+                    personal_notes: "我的笔记".into(),
+                    focus_questions: "我的关注".into(),
+                    revisit_condition: "我的条件".into(),
+                    revisit_type: "DATE".into(),
+                },
+            )
+            .unwrap();
+        let before = store.get(&id).unwrap();
+        let before_progress = store.set_progress(&id, 40, Some("anchor")).unwrap();
+
+        // Simulate a successful re-parse (no network): source columns change.
+        let replaced = store
+            .replace_content(&id, &fixture_page("新标题", "新正文"))
+            .unwrap();
+        assert_eq!(replaced.article.title, "新标题");
+        assert!(replaced.article.title.starts_with("新标题"));
+
+        let after = store.get(&id).unwrap();
+        assert_eq!(after.context.saved_reason, "珍贵的原因");
+        assert_eq!(after.context.personal_notes, "我的笔记");
+        assert_eq!(after.context.focus_questions, "我的关注");
+        assert_eq!(after.context.revisit_condition, "我的条件");
+        assert_eq!(after.context.revisit_type, "DATE");
+        assert_eq!(after.context.parse_status, "ok");
+        // Reading state survives too.
+        assert_eq!(
+            after.article.progress_percent,
+            before_progress.progress_percent
+        );
+        assert_eq!(before.article.title, "原标题");
+    }
+
+    #[test]
+    fn project_and_task_links_are_deduped_and_removable() {
+        let (_d, store) = store();
+        let id = seed(&store);
+        let linked = store.link_project(&id, "proj-1", "Desktop App").unwrap();
+        assert_eq!(linked.context.project_links.len(), 1);
+        // Duplicate insert is ignored.
+        let again = store.link_project(&id, "proj-1", "Desktop App").unwrap();
+        assert_eq!(again.context.project_links.len(), 1);
+        store.link_project(&id, "proj-2", "").unwrap();
+        store.link_task(&id, "a1b2c3", "降低 E2E 耦合").unwrap();
+
+        let multi = store.get(&id).unwrap();
+        assert_eq!(multi.context.project_links.len(), 2);
+        assert_eq!(multi.context.task_links.len(), 1);
+
+        // Removing a membership keeps the article and the other link.
+        let unlinked = store.unlink_project(&id, "proj-1").unwrap();
+        assert_eq!(unlinked.context.project_links.len(), 1);
+        assert_eq!(unlinked.context.task_links.len(), 1);
+        // Unknown link removal is an error, not a silent no-op.
+        assert!(store.unlink_task(&id, "zzzzzz").is_err());
+    }
+
+    #[test]
+    fn removing_article_cascades_links() {
+        let (_d, store) = store();
+        let id = seed(&store);
+        store.link_project(&id, "proj-1", "").unwrap();
+        store.link_task(&id, "a1b2c3", "").unwrap();
+        store.remove(&id).unwrap();
+        let connection = rusqlite::Connection::open(store.root().join("reading.sqlite")).unwrap();
+        let projects: i64 = connection
+            .query_row("SELECT COUNT(*) FROM article_project_links", [], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        let tasks: i64 = connection
+            .query_row("SELECT COUNT(*) FROM article_task_links", [], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        assert_eq!((projects, tasks), (0, 0));
+    }
+
+    #[test]
+    fn exports_reference_card_and_project_index() {
+        let (_d, store) = store();
+        let id = seed(&store);
+        store
+            .update_context(
+                &id,
+                &ReadingContextInput {
+                    saved_reason: "研究定位".into(),
+                    focus_questions: "Q1".into(),
+                    revisit_condition: "条件".into(),
+                    personal_notes: "结论".into(),
+                    revisit_type: "NONE".into(),
+                },
+            )
+            .unwrap();
+        store.link_project(&id, "proj-1", "Desktop App").unwrap();
+        store.link_task(&id, "a1b2c3", "").unwrap();
+
+        let card = store.export_reference(&id).unwrap();
+        assert!(card.contains("type: reading"));
+        assert!(card.contains("# 收藏原因"));
+        assert!(card.contains("研究定位"));
+        assert!(card.contains("- proj-1（Desktop App）"));
+        assert!(card.contains("- a1b2c3"));
+
+        let index = store.export_project_index("proj-1").unwrap();
+        assert!(index.contains("# Reading References"));
+        assert!(index.contains("## 待阅读"));
+        assert!(index.contains("- 收藏原因：研究定位"));
+        assert!(index.contains("reading://"));
+        // Mark read → moves to 已阅读 section.
+        store.set_read(&id, true).unwrap();
+        let index = store.export_project_index("proj-1").unwrap();
+        assert!(index.contains("## 已阅读"));
+    }
+
+    #[test]
+    fn legacy_database_is_upgraded_without_loss() {
+        let (_dir, store) = store();
+        let id = seed(&store);
+        // Simulate a v1 library (no context columns/tables).
+        {
+            let connection =
+                rusqlite::Connection::open(store.root().join("reading.sqlite")).unwrap();
+            connection.execute_batch(
+                "CREATE TABLE legacy AS SELECT id, url, title FROM articles;
+                 DROP TABLE article_project_links;
+                 DROP TABLE article_task_links;
+                 ALTER TABLE articles DROP COLUMN saved_reason;
+                 ALTER TABLE articles DROP COLUMN parse_status;
+                 ALTER TABLE articles ADD COLUMN saved_reason TEXT NOT NULL DEFAULT '';
+                 ALTER TABLE articles ADD COLUMN parse_status TEXT NOT NULL DEFAULT 'ok';
+                 INSERT INTO articles (id, url, title, content_html, added_at) VALUES ('legacy1', 'https://example.com/old', '旧文章', '', 0);
+                 ",
+            )
+            .unwrap();
+        }
+        // Reconnecting upgrades in place and keeps every row readable.
+        let detail = store.get(&id).unwrap();
+        assert_eq!(detail.context.saved_reason, "");
+        let legacy = store.get("legacy1").unwrap();
+        assert_eq!(legacy.article.title, "旧文章");
+        assert_eq!(legacy.context.parse_status, "ok");
     }
 }
