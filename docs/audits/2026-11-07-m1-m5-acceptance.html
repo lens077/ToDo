@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>M1–M5 实施验收报告 · Virgo · 2026-11-07</title>
+<style>
+  :root { --paper:#faf9f7; --panel:#fff; --ink:#26221d; --ink-soft:#6b6258; --line:#e6e0d6;
+    --accent:#b45309; --accent-soft:#fdf3e7; --ok:#15803d; --ok-soft:#ecfdf3; --info:#1d4ed8; --info-soft:#eef4fb; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--paper); color:var(--ink);
+    font:15px/1.75 -apple-system,BlinkMacSystemFont,"PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif; }
+  .page { max-width:1000px; margin:0 auto; padding:48px 28px 80px; }
+  header { border-bottom:3px double var(--line); padding-bottom:24px; margin-bottom:32px; }
+  .kicker { font-size:12px; letter-spacing:.18em; color:var(--accent); font-weight:700; text-transform:uppercase; }
+  h1 { font-size:29px; line-height:1.3; margin:8px 0 6px; font-weight:800; }
+  .subtitle { color:var(--ink-soft); margin:0 0 18px; }
+  .chips { display:flex; flex-wrap:wrap; gap:8px; }
+  .chip { background:var(--panel); border:1px solid var(--line); border-radius:999px; padding:3px 12px; font-size:12.5px; color:var(--ink-soft); }
+  .chip b { color:var(--ink); } .chip code { font-family:ui-monospace,Menlo,monospace; font-size:11.5px; color:var(--ink); }
+  .verdict { display:flex; gap:14px; background:var(--ok-soft); border:1px solid #bbe7c9; border-left:5px solid var(--ok);
+    border-radius:10px; padding:14px 18px; margin-bottom:36px; }
+  .verdict .mark { font-size:22px; } .verdict b { color:var(--ok); } .verdict .note { color:var(--ink-soft); font-size:13.5px; }
+  section { margin-bottom:44px; }
+  h2 { font-size:19px; margin:0 0 14px; padding-left:12px; font-weight:800; border-left:4px solid var(--accent); }
+  h2 .no { color:var(--accent); margin-right:6px; }
+  h3 { font-size:15px; margin:0 0 6px; }
+  p { margin:8px 0; }
+  .card { background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:16px 20px; margin-bottom:14px; overflow-x:auto; }
+  table { width:100%; border-collapse:collapse; background:var(--panel); font-size:13.5px; }
+  th,td { border:1px solid var(--line); padding:8px 12px; text-align:left; vertical-align:top; }
+  th { background:#f5f1ea; white-space:nowrap; }
+  tbody tr:nth-child(even) td { background:#fcfbf9; }
+  code { font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:12.5px; background:#f3efe8;
+    border-radius:4px; padding:1px 5px; color:#43331f; word-break:break-all; }
+  .badge { display:inline-block; border-radius:6px; padding:1px 9px; font-size:12px; font-weight:700; white-space:nowrap; }
+  .badge.ok { background:var(--ok-soft); color:var(--ok); border:1px solid #bbe7c9; }
+  .badge.warn { background:var(--accent-soft); color:var(--accent); border:1px solid #f2d9b8; }
+  .badge.info { background:var(--info-soft); color:var(--info); border:1px solid #c7d8f5; }
+  ul,ol { margin:6px 0; padding-left:22px; } li { margin:3px 0; }
+  .toc { display:flex; flex-wrap:wrap; gap:8px; margin-bottom:30px; }
+  .toc a { text-decoration:none; color:var(--ink); background:var(--panel); border:1px solid var(--line);
+    border-radius:8px; padding:4px 12px; font-size:13px; }
+  .toc a:hover { border-color:var(--accent); color:var(--accent); }
+  .foot { border-top:3px double var(--line); margin-top:48px; padding-top:18px; color:var(--ink-soft); font-size:13px; }
+  @media print { body{background:#fff} .page{padding:0;max-width:none} .toc{display:none} section{break-inside:avoid-page} }
+</style>
+</head>
+<body>
+<div class="page">
+
+<header>
+  <div class="kicker">Sumery · Virgo · 路线图交付</div>
+  <h1>M1–M5 实施验收报告（代决策模式）</h1>
+  <p class="subtitle">授权方式：无需询问、逐里程碑代决策并记录，全部实现完成后一次性验收</p>
+  <div class="chips">
+    <span class="chip">日期 <b>2026-11-07</b></span>
+    <span class="chip">提交 <b>6 个（M1–M5 + 记录）</b></span>
+    <span class="chip">决策项 <b>14 条，全部记录在案</b></span>
+    <span class="chip">push <b>未执行</b></span>
+  </div>
+</header>
+
+<div class="verdict">
+  <span class="mark">✅</span>
+  <div>
+    <b>结论：M1–M5 全部实现、测试与提交完毕，终验 <code>make check</code> 全绿。</b>
+    <div class="note">14 条代决策集中记录在 <code>docs/audits/2026-11-07-m1-m5-decisions.html</code>——验收时请重点复核该文档，每条都写明「如何修改」；推翻任何一条都不需要重构，影响面均已控制在单模块内。</div>
+  </div>
+</div>
+
+<nav class="toc">
+  <a href="#s1">1 交付总览</a>
+  <a href="#s2">2 各里程碑要点</a>
+  <a href="#s3">3 验证证据</a>
+  <a href="#s4">4 决策复核入口</a>
+  <a href="#s5">5 已知边界</a>
+  <a href="#s6">6 验收清单</a>
+</nav>
+
+<section id="s1">
+  <h2><span class="no">1</span>交付总览</h2>
+  <div class="card">
+    <table>
+      <thead><tr><th style="width:70px">里程碑</th><th>交付</th><th style="width:110px">提交</th><th style="width:150px">状态</th></tr></thead>
+      <tbody>
+        <tr><td><b>M1</b></td><td>Session–Task 关联闭环：finish 记录 Task Links（Markdown 事实源），resume 解析任务当前状态（found/completed/column/body），CLI <code>--task</code>、桌面表单与状态列表、mock 同契约</td><td><code>01cdbb9</code></td><td><span class="badge ok">✅ 实现+测试</span></td></tr>
+        <tr><td><b>M2</b></td><td>审批确认对象（ai-feed-spec v2）：<code>action</code>+<code>params</code> 发布、ToDo 侧规范化 SHA-256 摘要、ack 门禁（盲 ack/错摘要均拒绝）、参数重发自动作废旧审批、v1 双向兼容、桌面「确认执行」卡片</td><td><code>fa6171a</code> + <code>dbf0493</code></td><td><span class="badge ok">✅ 实现+测试</span></td></tr>
+        <tr><td><b>M3</b></td><td>确定性验证器：finish 自动追加 lint / 对账结构层 / docs validate 三行 virgo 验证（与 agent 自报行分层标注），失败不阻断，仍不执行项目任意测试</td><td><code>5949fd6</code></td><td><span class="badge ok">✅ 实现+测试</span></td></tr>
+        <tr><td><b>M4</b></td><td>Knowledge 全文搜索与增量重建：schema v4 FTS5、CJK 字间空格方案（两字中文可查）、输入引号防注入、snippet 高亮、桌面搜索框、5s 去抖自动重建</td><td><code>03950f5</code></td><td><span class="badge ok">✅ 实现+测试</span></td></tr>
+        <tr><td><b>M5</b></td><td>投影接入决策：新建 10k 任务基准并实测（parse 59ms / 重建 28ms / 增量 132ms）→ <b>暂不接入</b>，三触发条件重开；<code>DECISIONS.md</code> 决策⑥ + <code>TODO</code> <code>b6r1vy</code> 备注更新</td><td><code>81fb857</code></td><td><span class="badge ok">✅ 数据驱动决策</span></td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section id="s2">
+  <h2><span class="no">2</span>各里程碑要点与架构约束</h2>
+  <div class="card">
+    <ul>
+      <li><b>高内聚</b>：每个里程碑只触碰自己的模块——M1/M3 在 <code>session.rs</code>、M2 在 <code>ai.rs</code>、M4 在 <code>knowledge.rs</code>+<code>workspace.rs</code> 迁移层；Tauri 壳与 HTTP 层都是纯透传。</li>
+      <li><b>低耦合</b>：M1 的任务解析只依赖 <code>parse</code>（不引入 project 发现机制，升级点单函数）；M2 摘要在 ToDo 侧计算（不信任宿主）；M4 复用既有 watcher 事件而非新建管道。</li>
+      <li><b>决策可改</b>：全部 14 条决策的影响面与修改点见决策文档 §7 汇总表——没有一条的修改成本超过单模块。</li>
+      <li><b>兼容性优先</b>：M2 对 v1 发布方与存量文件双向兼容（含真实 store 实测）；M1/M3 对既有会话文件向后兼容（新节为可选，serde default）；M4 schema 迁移沿用 fail-loud 框架，旧索引由下次扫描补齐。</li>
+    </ul>
+  </div>
+</section>
+
+<section id="s3">
+  <h2><span class="no">3</span>验证证据（实际命令与结果）</h2>
+  <div class="card">
+    <table>
+      <thead><tr><th style="width:220px">时点</th><th>命令</th><th>结果</th></tr></thead>
+      <tbody>
+        <tr><td>M1 后</td><td><code>cargo test -p todo-core --locked session::</code> / <code>--test cli session</code></td><td><span class="badge ok">✅ 16 passed</span> / <span class="badge ok">✅ 3 passed</span></td></tr>
+        <tr><td>M1 后</td><td><code>pnpm typecheck</code> + <code>playwright test workspaces.spec.ts</code> + <code>cargo check -p todo-desktop</code></td><td><span class="badge ok">✅ 全绿（e2e 7 passed）</span></td></tr>
+        <tr><td>M2 后</td><td><code>cargo test -p todo-core --locked ai::</code> / <code>--test cli ai</code> / 真实存量 store 读取</td><td><span class="badge ok">✅ 12 + 7 passed</span>，v1 store 正常</td></tr>
+        <tr><td>M2 后</td><td><code>pnpm typecheck</code> + <code>playwright test ai.spec.ts</code></td><td><span class="badge ok">✅ 9 passed</span></td></tr>
+        <tr><td>M3 后</td><td><code>cargo test -p todo-core --locked</code>（全量）/ <code>-p todo-cli</code>（全量）</td><td><span class="badge ok">✅ 284 passed</span> / <span class="badge ok">✅ 104 passed</span></td></tr>
+        <tr><td>M4 后</td><td><code>cargo test -p todo-core --locked knowledge</code> / <code>workspace::</code> / <code>playwright test workspaces.spec.ts</code></td><td><span class="badge ok">✅ 11 + 9 passed</span> / <span class="badge ok">✅ 7 passed</span></td></tr>
+        <tr><td>M5 后</td><td><code>cargo test --release --test projection -- --ignored benchmark</code></td><td><span class="badge ok">✅</span> parse 59ms / rebuild 28ms / update 132ms</td></tr>
+        <tr><td>M5 后</td><td><code>todo note b6r1vy …</code> + <code>todo lint</code> + <code>todo contract check</code></td><td><span class="badge ok">✅ no issues / contract ok</span></td></tr>
+        <tr><td><b>终验</b></td><td><code>make check</code>（verify.sh 全量）</td><td><span class="badge ok">✅ 退出码 0</span>（数字见 verification-log 2026-11-07 条目）</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section id="s4">
+  <h2><span class="no">4</span>决策复核入口（验收重点）</h2>
+  <div class="card">
+    <p><b>唯一决策汇总文档：<code>docs/audits/2026-11-07-m1-m5-decisions.html</code></b></p>
+    <table>
+      <thead><tr><th>分组</th><th>决策</th><th>一句话</th></tr></thead>
+      <tbody>
+        <tr><td>M0 遗留</td><td>D-M0-1/2/3</td><td>fix 提交不折叠；push 推迟；CSP 挂起</td></tr>
+        <tr><td>M1</td><td>D-M1-1..4</td><td>Task Links 存 Markdown；resume 只查根 TODO.md；仅 finish 关联；文本框 UI</td></tr>
+        <tr><td>M2</td><td>D-M2-1..4</td><td>ToDo 算规范化 SHA-256；exit 1 门禁；v1 双向兼容；确认卡片</td></tr>
+        <tr><td>M3</td><td>D-M3-1..3</td><td>白名单三项检查；记录不阻断；行序与来源标注</td></tr>
+        <tr><td>M4</td><td>D-M4-1..3</td><td>CJK 空格短语查询；索引随扫描重建；前端 5s 去抖</td></tr>
+        <tr><td>M5</td><td>D-M5-1</td><td>投影暂不接入（数据驱动），三触发条件重开</td></tr>
+      </tbody>
+    </table>
+    <p class="foot">复核方式：打开决策文档逐条看「如何修改」列；想改哪条按锚点改代码，<code>make check-quick</code> 回归即可。</p>
+  </div>
+</section>
+
+<section id="s5">
+  <h2><span class="no">5</span>已知边界（都已在决策文档挂账）</h2>
+  <div class="card">
+    <ul>
+      <li>M1 resume 只解析项目根 <code>TODO.md</code>；多来源项目里其他 Task Source 的任务显示「未找到」（D-M1-2，单函数可升级）。</li>
+      <li>M2 的 DSH 桥未升级——v1 记录完全有效；桥侧 <code>action/params</code> 发布是后续可选项。</li>
+      <li>M4 的 CJK snippet 在中文之间展示为原文（去空格后），英文与中英混排无影响；FTS 不做拼音/分词级语义搜索。</li>
+      <li>M5 任务 <code>b6r1vy</code> 的复选框状态保留未勾——「使用投影」的正文与「决定不接入」的结论需你在验收时裁决（<code>todo done b6r1vy</code> 一条命令的事）。</li>
+      <li>全程未 push；本地 <code>main</code> 领先 <code>origin/main</code>（M0 7 个 + 本轮 6 个 = 13 个提交）、落后 1 个（<code>3613d96</code>，零文件交集）。</li>
+    </ul>
+  </div>
+</section>
+
+<section id="s6">
+  <h2><span class="no">6</span>验收清单</h2>
+  <div class="card">
+    <table>
+      <thead><tr><th>项</th><th style="width:110px">状态</th></tr></thead>
+      <tbody>
+        <tr><td>M1–M5 功能与验收标准（路线图 E 节逐条）</td><td><span class="badge ok">✅ 全部落地</span></td></tr>
+        <tr><td>每个里程碑有 Rust 单测 + CLI/e2e 验证</td><td><span class="badge ok">✅</span></td></tr>
+        <tr><td>决策逐条记录于单一 HTML 文档，含修改指引</td><td><span class="badge ok">✅ 14 条</span></td></tr>
+        <tr><td>代码高内聚低耦合（模块边界未扩散）</td><td><span class="badge ok">✅ 见 §2</span></td></tr>
+        <tr><td><code>make check</code> 终验</td><td><span class="badge ok">✅ 全绿</span></td></tr>
+        <tr><td>verification-log 记录（2026-11-07 M1–M5 条目）</td><td><span class="badge ok">✅</span></td></tr>
+        <tr><td>未执行 push / 未动远端</td><td><span class="badge ok">✅</span></td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<div class="foot">
+  <p>证据链：决策文档 <code>docs/audits/2026-11-07-m1-m5-decisions.html</code> · 验证记录 <code>docs/verification-log.md</code>（2026-11-07 条目）· 提交序列 <code>01cdbb9 → 81fb857</code>（<code>git log origin/main..HEAD</code>）。</p>
+</div>
+
+</div>
+</body>
+</html>

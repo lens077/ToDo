@@ -805,4 +805,42 @@ Session 存为项目内 Markdown（`<project>/.virgo/sessions/s-<ts>.md`），�
 
 - **未 push**：本地 `main` 现领先 `origin/main` 6 个提交、落后 1 个（`3613d96`）。push 前需合并该提交（零文件交集，预期无冲突），合并与 push 均待单独授权。
 - C1/C2 快照编译瑕疵（上述偏差 2）；`f5f3ed3` 提交信息中已写明折叠方案。
+
+## 2026-11-07 M1–M5 路线图交付（代决策模式，一次性验收）
+
+授权方式：无需询问、逐里程碑代决策并记录到 `docs/audits/2026-11-07-m1-m5-decisions.html`（14 条，每条含「如何修改」），全部完成后统一验收。验收报告：`docs/audits/2026-11-07-m1-m5-acceptance.html`。
+
+### 交付内容与提交
+
+| 里程碑 | 提交 | 内容 |
+|---|---|---|
+| M1 | `01cdbb9` feat(session) | Session–Task 关联：finish `--task` 写 `## Task Links`（Markdown 事实源），resume 解析任务当前状态（found/completed/column/body，仅根 TODO.md，缺失降级不报错）；桌面表单+状态列表；mock 同契约 |
+| M2 | `fa6171a` feat(ai) + `dbf0493` fix(ai) | 审批确认对象（ai-feed-spec v2）：`action`/`params` 发布、ToDo 侧规范化 JSON SHA-256 摘要、ack 门禁（盲/错摘要 exit 1，锁内校验）、参数重发自动作废旧审批、v1 发布方与存量文件双向兼容（真实 store 实测）、桌面「确认执行」卡片 |
+| M3 | `5949fd6` feat(session) | 确定性验证器：finish 自动追加 lint / reconcile 结构层 / docs validate 三行 virgo 验证（agent 行在前、来源标注「virgo 自动（确定性检查，非 agent 自报）」），失败不阻断，仍不执行项目任意测试 |
+| M4 | `03950f5` feat(knowledge) | 全文搜索：schema v4 FTS5（doc_id/title/body）、CJK 字间空格短语方案（两字中文可查）、逐词引号防注入、snippet 高亮展示、桌面搜索框；前端订阅既有 watcher 事件 5s 去抖自动重建（仅扫描过才触发） |
+| M5 | `81fb857` docs(project) | 投影接入决策：新建 `benchmark_projection_10k_tasks`（`#[ignore]`）实测 release 10k 任务 parse **59ms** / 投影全量重建 **28ms** / 增量更新 **132ms** → **暂不接入**（`DECISIONS.md` 决策⑥，三触发条件重开）；`todo note b6r1vy` 更新备注 |
+
+### 逐里程碑验证
+
+| 门禁 | 结果 |
+|---|---|
+| `cargo test -p todo-core --locked`（session/ai/knowledge/workspace 分模块及全量） | ✅ 全绿（全量 284 passed 起步，逐里程碑递增） |
+| `cargo test -p todo-cli --locked`（全量，含 serve_ai、ai 集成） | ✅ 104 passed / 0 failed |
+| `cargo test -p todo-desktop`（src-tauri 测试，ai_feed 修复后） | ✅ 含于终验 |
+| `pnpm typecheck` + `pnpm build`（各里程碑） | ✅ 0 错误 |
+| `playwright test workspaces.spec.ts`（M1/M4） | ✅ 7 passed |
+| `playwright test ai.spec.ts`（M2，徽标计数随演示确认记录更新） | ✅ 13 passed |
+| `cargo test --release --test projection -- --ignored benchmark`（M5） | ✅ 数字见上表 |
+| `todo lint` / `todo contract check --root .`（M5 后） | ✅ no issues / contract ok |
+| **终验 `make check`（verify.sh 全量）** | ✅ **退出码 0**：cargo 429 passed / 0 failed，mock E2E 155 passed / web E2E 15 passed |
+
+### 执行记录
+
+- 过程中一次 `make check` 红被如实处理：① `cargo fmt` 对 M1/M3 测试代码的格式意见；② `todo-desktop` 的 `tests/ai_feed.rs` 仍在用 M2 之前的 `AiUpsert`/`ai_ack` 旧签名（此前仅 `cargo check` 未编译该 crate 测试）；③ AI 演示确认记录使 mock 徽标 +1，`ai.spec.ts` 四处计数断言随之更新。均修复后终验全绿。
+- 全程未 push；本地 `main` 现领先 `origin/main` 13 个提交、落后 1 个（`3613d96`，零文件交集）。
+
+### 已知边界 / 未完成
+
+- 见决策文档各条「已知边界」：M1 多来源解析（D-M1-2）、M2 DSH 桥未升级（D-M2-3）、M4 无拼音/语义搜索（D-M4-1）、M5 `b6r1vy` 复选框状态待用户裁决（D-M5-1）。
+- push、历史整理（`f5f3ed3` 折叠）、CSP 收窄三项均待用户验收时单独授权（D-M0-1/2/3）。
 - 执行报告：`docs/audits/2026-11-07-m0b-execution.html`。
