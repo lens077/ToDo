@@ -808,7 +808,7 @@ Session 存为项目内 Markdown（`<project>/.virgo/sessions/s-<ts>.md`），�
 
 ## 2026-11-07 M1–M5 路线图交付（代决策模式，一次性验收）
 
-授权方式：无需询问、逐里程碑代决策并记录到 `docs/audits/2026-11-07-m1-m5-decisions.html`（14 条，每条含「如何修改」），全部完成后统一验收。验收报告：`docs/audits/2026-11-07-m1-m5-acceptance.html`。
+授权方式：无需询问、逐里程碑代决策并记录到 `docs/audits/2026-11-07-m1-m5-decisions.html`（18 条，每条含「如何修改」），全部完成后统一验收。验收报告：`docs/audits/2026-11-07-m1-m5-acceptance.html`。
 
 ### 交付内容与提交
 

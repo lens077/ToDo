@@ -56,7 +56,7 @@
   <div class="chips">
     <span class="chip">日期 <b>2026-11-07</b></span>
     <span class="chip">提交 <b>6 个（M1–M5 + 记录）</b></span>
-    <span class="chip">决策项 <b>14 条，全部记录在案</b></span>
+    <span class="chip">决策项 <b>18 条，全部记录在案</b></span>
     <span class="chip">push <b>未执行</b></span>
   </div>
 </header>
@@ -65,7 +65,7 @@
   <span class="mark">✅</span>
   <div>
     <b>结论：M1–M5 全部实现、测试与提交完毕，终验 <code>make check</code> 全绿。</b>
-    <div class="note">14 条代决策集中记录在 <code>docs/audits/2026-11-07-m1-m5-decisions.html</code>——验收时请重点复核该文档，每条都写明「如何修改」；推翻任何一条都不需要重构，影响面均已控制在单模块内。</div>
+    <div class="note">18 条代决策集中记录在 <code>docs/audits/2026-11-07-m1-m5-decisions.html</code>——验收时请重点复核该文档，每条都写明「如何修改」；推翻任何一条都不需要重构，影响面均已控制在单模块内。</div>
   </div>
 </div>
 
@@ -100,7 +100,7 @@
     <ul>
       <li><b>高内聚</b>：每个里程碑只触碰自己的模块——M1/M3 在 <code>session.rs</code>、M2 在 <code>ai.rs</code>、M4 在 <code>knowledge.rs</code>+<code>workspace.rs</code> 迁移层；Tauri 壳与 HTTP 层都是纯透传。</li>
       <li><b>低耦合</b>：M1 的任务解析只依赖 <code>parse</code>（不引入 project 发现机制，升级点单函数）；M2 摘要在 ToDo 侧计算（不信任宿主）；M4 复用既有 watcher 事件而非新建管道。</li>
-      <li><b>决策可改</b>：全部 14 条决策的影响面与修改点见决策文档 §7 汇总表——没有一条的修改成本超过单模块。</li>
+      <li><b>决策可改</b>：全部 18 条决策的影响面与修改点见决策文档 §7 汇总表——没有一条的修改成本超过单模块。</li>
       <li><b>兼容性优先</b>：M2 对 v1 发布方与存量文件双向兼容（含真实 store 实测）；M1/M3 对既有会话文件向后兼容（新节为可选，serde default）；M4 schema 迁移沿用 fail-loud 框架，旧索引由下次扫描补齐。</li>
     </ul>
   </div>
@@ -166,7 +166,7 @@
       <tbody>
         <tr><td>M1–M5 功能与验收标准（路线图 E 节逐条）</td><td><span class="badge ok">✅ 全部落地</span></td></tr>
         <tr><td>每个里程碑有 Rust 单测 + CLI/e2e 验证</td><td><span class="badge ok">✅</span></td></tr>
-        <tr><td>决策逐条记录于单一 HTML 文档，含修改指引</td><td><span class="badge ok">✅ 14 条</span></td></tr>
+        <tr><td>决策逐条记录于单一 HTML 文档，含修改指引</td><td><span class="badge ok">✅ 18 条</span></td></tr>
         <tr><td>代码高内聚低耦合（模块边界未扩散）</td><td><span class="badge ok">✅ 见 §2</span></td></tr>
         <tr><td><code>make check</code> 终验</td><td><span class="badge ok">✅ 全绿</span></td></tr>
         <tr><td>verification-log 记录（2026-11-07 M1–M5 条目）</td><td><span class="badge ok">✅</span></td></tr>
