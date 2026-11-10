@@ -623,7 +623,32 @@ fn runtime_capture_store(lock_timeout: Duration) -> todo_core::Result<CaptureSto
     if let Some(path) = std::env::var_os("TODO_DESKTOP_TEST_CAPTURE_PATH") {
         return Ok(CaptureStore::new(PathBuf::from(path), lock_timeout));
     }
+    // `dirs::home_dir()` is `None` inside the Android sandbox, so
+    // `CaptureStore::global` fails; fall back to a writable app-private dir
+    // instead of panicking at startup. The mobile client is a server-data
+    // consumer (决策③), so this local inbox is a degraded stopgap only.
+    #[cfg(mobile)]
+    if let Some(dir) = mobile_writable_dir() {
+        return Ok(CaptureStore::new(
+            dir.join(".todo").join("inbox.md"),
+            lock_timeout,
+        ));
+    }
     CaptureStore::global(lock_timeout)
+}
+
+/// First writable app-private directory on mobile: `$HOME` when the Android
+/// runtime sets it, otherwise `TMPDIR` (the app cache dir set by
+/// `ActivityThread`). Returns `None` only if neither resolves, matching the
+/// desktop error path.
+#[cfg(mobile)]
+fn mobile_writable_dir() -> Option<PathBuf> {
+    if let Some(home) = std::env::var_os("HOME").map(PathBuf::from) {
+        if home.is_dir() {
+            return Some(home);
+        }
+    }
+    std::env::var_os("TMPDIR").map(PathBuf::from)
 }
 
 /// The AI feed store: `TODO_AI_STORE` overrides the global path, the same
