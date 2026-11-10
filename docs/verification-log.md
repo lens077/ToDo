@@ -954,3 +954,8 @@ Session 存为项目内 Markdown（`<project>/.virgo/sessions/s-<ts>.md`），�
 2. Tauri 命令 `reading_sync_now`（spawn_blocking）；前端 ReadingView 加「同步」按钮 + 配置面板（base/token 存 localStorage，键与 sync-web 一致）；浏览器 mock 构建下按钮不渲染（E2E 不受影响）。
 3. 集成测试 `tests/sync.rs`：起真实 `virgo-sync` 子进程（按 workspace target 定位，缺失时兜底构建）做双向往返——上行/下行/备注随行/二次幂等全部断言通过。
 4. `make check-quick` 绿。
+
+## 2026-11-11 Android 分享接收（D 层 v1）
+
+1. 新增 `ShareReceiverActivity`：注册 ACTION_SEND text/plain；从分享文本提取第一个 http(s) 链接，直接 `POST {base}/links`（不进 WebView 主界面）；token 存 SharedPreferences（首次分享出极简表单填一次，默认服务器 todo-sync.apikv.com）；成功/失败 Toast 并退出。
+2. `--debug --target aarch64` APK 构建通过（含新 activity）。真机验收待设备连接（本轮手机未连接）——验收步骤：安装 → 模拟 `am start -a android.intent.action.SEND --es android.intent.extra.TEXT "<url>" -n com.sumery.virgo/.ShareReceiverActivity` → 首次填 token → 服务器列表出现该 URL。
