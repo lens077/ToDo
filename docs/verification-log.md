@@ -859,3 +859,21 @@ Session 存为项目内 Markdown（`<project>/.virgo/sessions/s-<ts>.md`），�
 
 - D-M0-1（`f5f3ed3` 折叠）按决策保留未折叠历史，已随本次 push 进入远端；如需可二分历史需在远端做强制操作，不建议。
 - D-M0-3（CSP 收窄）仍挂起到发布前。
+
+## 2026-11-11 Android APK 构建打通（移动端可行性验证）
+
+背景：用户提出「快速保存链接 + 备注 + 多端同步」需求，移动端是其中一端；本次按决策③ P1 路线先验证 APK 产出链路（DESKTOP-MVP 未扩范围）。
+
+1. `apps/desktop/src-tauri/src/lib.rs` 桌面专属 API 用 `#[cfg(desktop)]` 隔离（4 处）：global-shortcut 插件导入与注册（移动端为空壳 crate）、setup 内快捷键注册（移动端置说明性 `shortcut_status`）、`unminimize()` 调用、`show_capture_window`。语义不变：桌面路径逐字节等价。
+2. `pnpm tauri android init` 生成 `src-tauri/gen/android`；Gradle 仓库全部换成阿里云镜像（`settings.gradle`、`build.gradle.kts`、`buildSrc/build.gradle.kts`、新建 `buildSrc/settings.gradle.kts`）——原报错为 `plugins.gradle.org` 的 `kotlin-build-statistics:2.3.21` TLS 握手被断（国内网络），镜像后配置阶段通过。
+3. 验证实际执行结果：
+   - `cargo check --target aarch64-linux-android`：通过（1m05s）；
+   - `cargo check`（桌面目标）：通过，无回归；
+   - `./gradlew help`：通过（镜像源解析 kotlin-dsl 插件成功）；
+   - `pnpm tauri android build --apk --target aarch64`：**产出 `app-universal-release-unsigned.apk`**（Gradle 9.6.1 + AGP 9.3.1，警告均为 AGP 9 过时 API 提示，不影响产物）。
+
+### 已知边界 / 未完成
+
+- 未真机安装运行验收；release APK 未签名（装机先走 `--debug` 包或自行配 keystore）。
+- 移动端 Rust host 仍直读本地路径：Android 沙盒无 `~/.todo`，数据通道待链接保存需求的 sync-server（服务端 API）落地，这正是决策③「移动端只能是同步副本消费者」的印证。
+- `gen/android` 依赖本机 SDK/NDK 路径（`local.properties` 已被生成 .gitignore 忽略）；JNI 符号链接每次构建自动重建。

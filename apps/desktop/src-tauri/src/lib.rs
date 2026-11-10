@@ -12,6 +12,7 @@ use std::{
     time::{Duration, Instant},
 };
 use tauri::{Emitter, Manager, State};
+#[cfg(desktop)]
 use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState};
 use todo_core::{
     AiRecord, AiStore, Capture, CaptureStore, ColumnSetupOptions, ColumnSetupPreview,
@@ -434,6 +435,9 @@ fn open_session_window(app: tauri::AppHandle, url: String) -> Result<(), String>
     let target = parse_web_url(&url)?;
     if let Some(window) = app.get_webview_window(SESSION_WINDOW_LABEL) {
         window.navigate(target).map_err(|error| error.to_string())?;
+        // `unminimize` is a desktop-only window API; on mobile the window is
+        // always foregrounded by the system when opened.
+        #[cfg(desktop)]
         if window.is_minimized().unwrap_or(false) {
             window.unminimize().map_err(|error| error.to_string())?;
         }
@@ -504,6 +508,9 @@ fn desktop_status(state: State<'_, AppState>) -> Result<DesktopStatus, String> {
     Ok(status)
 }
 
+/// Shows the desktop quick-capture window. Only reachable through the
+/// global-shortcut handler, which is desktop-only.
+#[cfg(desktop)]
 fn show_capture_window(app: &tauri::AppHandle) -> Result<u64, String> {
     let started = Instant::now();
     let window = app
@@ -645,27 +652,30 @@ pub fn run() {
     if let Some(store) = ai_store {
         ops = ops.with_ai_store(store);
     }
-    tauri::Builder::default()
-        .plugin(tauri_plugin_dialog::init())
-        .plugin(
-            tauri_plugin_global_shortcut::Builder::new()
-                .with_handler(|app, _shortcut, event| {
-                    if event.state() == ShortcutState::Pressed {
-                        match show_capture_window(app) {
-                            #[cfg(debug_assertions)]
-                            Ok(elapsed_us) => {
-                                eprintln!("capture_shortcut_dispatch_us={elapsed_us}");
-                            }
-                            #[cfg(not(debug_assertions))]
-                            Ok(_) => {}
-                            Err(error) => {
-                                let _ = app.emit("desktop://shortcut-error", error);
-                            }
+    let builder = tauri::Builder::default().plugin(tauri_plugin_dialog::init());
+    // The global-shortcut plugin is desktop-only; on mobile it compiles to an
+    // empty stub with none of these types exported.
+    #[cfg(desktop)]
+    let builder = builder.plugin(
+        tauri_plugin_global_shortcut::Builder::new()
+            .with_handler(|app, _shortcut, event| {
+                if event.state() == ShortcutState::Pressed {
+                    match show_capture_window(app) {
+                        #[cfg(debug_assertions)]
+                        Ok(elapsed_us) => {
+                            eprintln!("capture_shortcut_dispatch_us={elapsed_us}");
+                        }
+                        #[cfg(not(debug_assertions))]
+                        Ok(_) => {}
+                        Err(error) => {
+                            let _ = app.emit("desktop://shortcut-error", error);
                         }
                     }
-                })
-                .build(),
-        )
+                }
+            })
+            .build(),
+    );
+    builder
         .manage(reading::ReadingState {
             store: reading::runtime_reading_store(),
         })
@@ -756,18 +766,24 @@ pub fn run() {
             workspace_open_project
         ])
         .setup(move |app| {
-            let shortcut = if cfg!(target_os = "macos") {
-                Shortcut::new(Some(Modifiers::SUPER | Modifiers::SHIFT), Code::Space)
-            } else {
-                Shortcut::new(Some(Modifiers::CONTROL | Modifiers::SHIFT), Code::Space)
+            #[cfg(desktop)]
+            let registration = {
+                let shortcut = if cfg!(target_os = "macos") {
+                    Shortcut::new(Some(Modifiers::SUPER | Modifiers::SHIFT), Code::Space)
+                } else {
+                    Shortcut::new(Some(Modifiers::CONTROL | Modifiers::SHIFT), Code::Space)
+                };
+                let registration = app
+                    .global_shortcut()
+                    .register(shortcut)
+                    .map_err(|error| error.to_string());
+                if let Err(error) = &registration {
+                    let _ = app.emit("desktop://shortcut-error", error.clone());
+                }
+                registration
             };
-            let registration = app
-                .global_shortcut()
-                .register(shortcut)
-                .map_err(|error| error.to_string());
-            if let Err(error) = &registration {
-                let _ = app.emit("desktop://shortcut-error", error.clone());
-            }
+            #[cfg(mobile)]
+            let registration: Result<(), String> = Err("全局快捷键仅在桌面端可用".to_string());
             let status = status_after_setup(started.elapsed(), registration);
             let startup_ms = status.startup_ms.unwrap_or_default();
             *app.state::<AppState>()
