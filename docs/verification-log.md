@@ -877,3 +877,16 @@ Session 存为项目内 Markdown（`<project>/.virgo/sessions/s-<ts>.md`），�
 - 未真机安装运行验收；release APK 未签名（装机先走 `--debug` 包或自行配 keystore）。
 - 移动端 Rust host 仍直读本地路径：Android 沙盒无 `~/.todo`，数据通道待链接保存需求的 sync-server（服务端 API）落地，这正是决策③「移动端只能是同步副本消费者」的印证。
 - `gen/android` 依赖本机 SDK/NDK 路径（`local.properties` 已被生成 .gitignore 忽略）；JNI 符号链接每次构建自动重建。
+
+## 2026-11-11 Android 真机验收（启动修复后）
+
+1. 首次真机启动闪退：logcat 实锤 `lib.rs:648` panic —— `runtime_capture_store().expect()` 在 Android 沙盒触发（`dirs::home_dir()` 返回 `None`）。
+2. 修复：`runtime_capture_store` 移动端回退到可写私有目录（`$HOME`，兜底 `TMPDIR`/应用缓存目录）；`tauri.android.conf.json` 只保留 main 窗口（capture 速记窗是桌面快捷键专属，此前 Android 把它当主窗口显示了）。ai/reading/workspace/preferences 原本就走 `Option` 降级，logcat 可见优雅降级日志。
+3. 真机（vivo V2425A，USB）实测：安装 → 启动无 panic（`desktop_status startup_ms=92`，shortcut_status 如实报移动端说明）→ 截屏确认主界面完整渲染（底部导航、onboarding、顶栏）。
+4. 门禁插曲：verify-quick 的 `git diff --check <merge-base> HEAD` 三次报 `buildSrc/build.gradle.kts:24 blank line at EOF`——0f6bace 把带 EOF 空行的生成文件提交了；552f47a 修复后区间 diff 干净。另：AGENTS.md 的 `todo contract check` 实为 `cargo run -p todo-cli -- contract check --root .`（全局安装的 todo 二进制太旧没有该子命令）。
+
+### 已知边界 / 未完成
+
+- 移动端本地 inbox 落在应用缓存目录（TMPDIR 兜底），系统清缓存即丢——真数据通道待 sync-server（决策③：移动端是副本消费者）。
+- reading/workspace 沙盒里不可用，阅读视图在移动端为空属预期。
+- release 签名、图标（`pnpm icon` 的 android 删除段）待发布前处理。
