@@ -31,9 +31,12 @@ columns:
 - [ ] 调研 twitter-text 库在阅读功能中的用途 <!--t:6h0jqz--> #research #reading !3
       ↳ 已拉取 github.com/sayrer/twitter-text 到 ./twitter-text/（未进 git）。结论：它是推文正文文本处理库（长度计算、提取 @/#/URL、autolink、校验），不解决链接解析本身；X 状态链接解析已由 syndication 方案实现（见 reading.rs）。候选增强：用它的 autolinker/extractor 把保存的推文正文里的 @提及、#话题、链接渲染成可点击元素，且 unicode/emoji 边界处理比正则严谨；代价是 cxx（C++ 工具链）+ pest 依赖较重。先试轻量正则，不够再上此库。 <!--n:6h0jqz-->
 - [ ] 移动端底部导航栏：默认5项+固定「我的」+3~7自定义+拖拽排序（规格见 docs/design/mobile-bottom-nav-spec.md） <!--t:c947n8--> #desktop #mobile !2
+- [ ] sync-server B2：k8s 部署（镜像+helm+Secret），等 B1 本地跑通后执行 <!--t:yfj0ol--> #sync #release !2
+- [ ] 链接库 C 层：桌面同步模块 + 网页端独立小前端（待 B2） <!--t:u9lj4a--> #sync #desktop !2
 
 ## Doing
 - [ ] 人工验收看板任务写回 TODO.md <!--t:h4m9zc--> #desktop #manual !1 ^3000
 - [ ] 用 todo 自身管理本项目后续开发 <!--t:1pevv2--> #process !2 🔗2e112404a57360d0d054543cbbdff4ace9862afd..9142b5b6dfed7ee34d7991c60a882c398496a43a
+- [x] sync-server B1：crates/sync-server API+鉴权+SSE+单测（规格见 docs/sync-server-spec.md） <!--t:5uhqjl--> #sync #backend !1
 
 ## Done

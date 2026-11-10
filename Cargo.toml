@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/todo-core", "crates/todo-cli", "apps/desktop/src-tauri"]
+members = ["crates/todo-core", "crates/todo-cli", "crates/sync-server", "apps/desktop/src-tauri"]
 resolver = "2"
 
 [workspace.package]

@@ -890,3 +890,19 @@ Session 存为项目内 Markdown（`<project>/.virgo/sessions/s-<ts>.md`），�
 - 移动端本地 inbox 落在应用缓存目录（TMPDIR 兜底），系统清缓存即丢——真数据通道待 sync-server（决策③：移动端是副本消费者）。
 - reading/workspace 沙盒里不可用，阅读视图在移动端为空属预期。
 - release 签名、图标（`pnpm icon` 的 android 删除段）待发布前处理。
+
+## 2026-11-11 sync-server B1（crates/sync-server MVP）
+
+规格：`docs/sync-server-spec.md`。任务：5uhqjl（B1）、yfj0ol（B2 部署）、u9lj4a（C 层）。
+
+1. 新 crate `crates/sync-server`（bin `virgo-sync`）：axum 0.8 + `ReadingStore` 复用（root 可指定，解析/备注/进度零复制）。API：`POST /links`（收藏优先，stub 毫秒级返回 + 后台 refetch + SSE ping）、`GET /articles`（全量对账模型）、detail/context/progress/read/delete/refetch、`GET /stream`（SSE change 事件）、`GET /images` 静态、`GET /healthz`（免鉴权）。鉴权 Bearer token（env 注入，缺失拒启），blocking 调用走 spawn_blocking。
+2. 单测 7 个全绿（鉴权 401/健康检查豁免/保存-列表-备注-删除全流程/非法 URL 422/未知 id 404/SSE 广播）。
+3. 真实进程冒烟（127.0.0.1:18099）：healthz ok；无 token 401；保存 201；备注持久化验证；SSE 收到 `event: change`；后台解析实测 `example.com` → title 'Example Domain'、word_count 25（fetch→readability→落库全链路通）。
+4. X 链接冒烟失败定位：测试用推文 ID 为编造（fxtwitter 对不存在推文正确返回 404），且沙盒网络不可达 `cdn.syndication.twimg.com`；解析代码为桌面端已验证原逻辑未改动，待 B2 部署海外服务器后真实推文验证。
+5. `make check-quick` 绿（34s）。
+
+### 已知边界 / 未完成
+
+- 全量对账模型：个人库 >5k 条时需换 cursor 增量（触发条件见规格 §3）。
+- token 比较非常数时间；离线写入队列未做（规格 §3/§6）。
+- B2 部署（镜像/helm/Secret）待用户给部署窗口。
