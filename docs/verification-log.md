@@ -906,3 +906,20 @@ Session 存为项目内 Markdown（`<project>/.virgo/sessions/s-<ts>.md`），�
 - 全量对账模型：个人库 >5k 条时需换 cursor 增量（触发条件见规格 §3）。
 - token 比较非常数时间；离线写入队列未做（规格 §3/§6）。
 - B2 部署（镜像/helm/Secret）待用户给部署窗口。
+
+## 2026-11-11 sync-server B2（todo-sync 部署与真机测试）
+
+1. Dockerfile 两处修复：src-tauri 需整目录 COPY（manifest 声明 lib path，只拷清单解析失败）；runtime 用户 `sync` 与 Debian 自带系统账号冲突改名 `virgo`。镜像 `todo-sync-api:715a8ca` 已推 TCR（构建上下文仓库根 + `.dockerignore`）。
+2. 部署踩坑与结论：
+   - `virgo-tcr` imagePullSecret 是 namespace 级，已复制到 `todo`；
+   - 按 **OCI index digest**（buildx 默认产物）拉取在 k3 containerd 报 NotFound，按 **平台 manifest digest**（`9913426b…`）或 tag 正常——镜像 tag 钉平台 manifest digest；
+   - openebs-lvm RWO 卷在 k3 有 kubelet 残留挂载（verifyMount），删 pod 等周期清理后恢复；
+   - PVC 绑定 k3 节点亲和，nodeSelector 绕不开（chart 已加 `api.nodeSelector` 通道备用）。
+3. 部署成功（helm revision 4，pod Running on k3）。端到端实测（集群内 Service 路径）：healthz 200；无 token 401；`POST /links` 201（stub + 备注「部署验证」）；8s 后 GitHub 链接解析完成（title 'GitHub - rust-lang/rust…'，wc=236）；真实推文 `x.com/jack/status/20` 解析成功（title 'just setting up my twttr'，wc=9，fxtwitter 200 可达）。
+4. `make check-quick` 绿。
+
+### 已知边界 / 未完成
+
+- **外网 `https://todo-sync.apikv.com/healthz` 返回 Pangolin 的 401**（响应体 'Unauthorized'、content-type text/plain，非本服务格式）——Pangolin 资源默认开了认证，需用户在 Pangolin 控制台对该资源关闭认证（纯 API 服务，客户端只带 Bearer）。集群内路径已全部验证通过。
+- `cdn.syndication.twimg.com` 集群内 SSL 握手失败（exit 35），fxtwitter 主路径可用、兜底路径不可用。
+- ArgoCD Application 注册待路由全通后补（当前 helm bootstrap revision 4 手工管理）。
