@@ -40,7 +40,6 @@ columns:
 - [ ] 人工验收看板任务写回 TODO.md <!--t:h4m9zc--> #desktop #manual !1 ^3000
 - [ ] 用 todo 自身管理本项目后续开发 <!--t:1pevv2--> #process !2 🔗2e112404a57360d0d054543cbbdff4ace9862afd..9142b5b6dfed7ee34d7991c60a882c398496a43a
 - [x] sync-server B1：crates/sync-server API+鉴权+SSE+单测（规格见 docs/sync-server-spec.md） <!--t:5uhqjl--> #sync #backend !1
-- [ ] sync-web C1：网页端小前端 MVP——快速保存/列表搜索/阅读详情/SSE 近实时（部署走 virgo-sync 静态托管） <!--t:kot9n4--> #sync #frontend !1
-      ↳ C1 代码完成并过门禁；镜像重建部署后外网验收（本条待更新） <!--n:kot9n4-->
+- [x] sync-web C1：网页端小前端 MVP——快速保存/列表搜索/阅读详情/SSE 近实时（部署走 virgo-sync 静态托管） <!--t:kot9n4--> #sync #frontend !1
 
 ## Done

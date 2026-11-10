@@ -936,3 +936,14 @@ Session 存为项目内 Markdown（`<project>/.virgo/sessions/s-<ts>.md`），�
 2. sync-server 增加 `VIRGO_SYNC_WEB_DIR` 静态托管：API 路由继续走 token 门禁，静态资源与 SPA fallback 免鉴权（页面本身不含数据）。坑：`ServeDir::not_found_service` 对 `/anything` 不生效（404 直通），改用 `ServeDir::fallback(ServeFile(index))` 后 SPA fallback 正常。
 3. 单测 8 个全绿（新增：静态页免鉴权 + SPA fallback + API 仍 401）；本地真实进程冒烟：`/` 出 HTML、assets 200、API 401。`make check-quick` 绿。
 4. 镜像 Dockerfile 增加 node:26-alpine 阶段（pnpm 过滤安装 + 构建），产物入 `/app/web` 并默认启用 `VIRGO_SYNC_WEB_DIR`。
+
+## 2026-11-11 sync-web C1 部署验收（外网全通）
+
+1. 镜像重建（Node 26 无 corepack，Dockerfile 改 `npm i -g pnpm@12.15.0`）。
+2. 部署插曲两件：① digest 拉取再次 NotFound（TCR 行为不稳定，此前同方式成功过）——**降级为按 tag 钉版本**，digest 钉版待 CI 阶段重验；② `virgo-tcr` imagePullSecret 在 todo ns 被回收——根因：virgo 的该 Secret 由 ESO 管理（ownerRef 指向 ExternalSecret），手工复制把 ownerRef 一起带走，指向 todo ns 不存在的 ExternalSecret 被 GC 清理。正确做法：照 virgo 建 ExternalSecret `virgo-tcr`（ClusterSecretStore openbao），Synced True。
+3. 外网最终验收全绿：healthz `ok`；`/` 返回 Virgo Sync 页面；SPA fallback `/anything` 200；API 无 token 401；带 token 保存 201；tauri 仓库文章解析 521 词（首次瞬时失败，`refetch` 恢复——失败→重解路径如设计工作）。
+
+### 已知边界 / 未完成
+
+- 镜像版本钉 tag 不钉 digest（TCR digest 解析在 k3 上不稳定），CI 化时重验。
+- C2（桌面双向对账）未开始：dj9w2g。

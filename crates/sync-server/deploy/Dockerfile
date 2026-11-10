@@ -23,7 +23,9 @@ COPY apps/sync-web/package.json apps/sync-web/
 COPY apps/desktop/package.json apps/desktop/
 COPY apps/sponsor-api/package.json apps/sponsor-api/
 COPY web/package.json web/
-RUN corepack enable && pnpm install --frozen-lockfile --filter @sumery/sync-web
+# Node 25+ 不再内置 corepack，显式装 pnpm（版本与 packageManager 对齐）。
+RUN npm i -g pnpm@12.15.0 \
+    && pnpm install --frozen-lockfile --filter @sumery/sync-web
 COPY apps/sync-web apps/sync-web
 RUN pnpm --filter @sumery/sync-web build
 
