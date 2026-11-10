@@ -32,8 +32,7 @@ columns:
       ↳ 已拉取 github.com/sayrer/twitter-text 到 ./twitter-text/（未进 git）。结论：它是推文正文文本处理库（长度计算、提取 @/#/URL、autolink、校验），不解决链接解析本身；X 状态链接解析已由 syndication 方案实现（见 reading.rs）。候选增强：用它的 autolinker/extractor 把保存的推文正文里的 @提及、#话题、链接渲染成可点击元素，且 unicode/emoji 边界处理比正则严谨；代价是 cxx（C++ 工具链）+ pest 依赖较重。先试轻量正则，不够再上此库。 <!--n:6h0jqz-->
 - [ ] 移动端底部导航栏：默认5项+固定「我的」+3~7自定义+拖拽排序（规格见 docs/design/mobile-bottom-nav-spec.md） <!--t:c947n8--> #desktop #mobile !2
 - [x] sync-server B2：k8s 部署（镜像+helm+Secret），等 B1 本地跑通后执行 <!--t:yfj0ol--> #sync #release !2
-- [ ] 链接库 C 层：桌面同步模块 + 网页端独立小前端（待 B2） <!--t:u9lj4a--> #sync #desktop !2
-      ↳ 2026-11-11 拆分：网页端先行（自包含、立刻可用），桌面同步随后；两卡分别跟踪 <!--n:u9lj4a-->
+- [x] 链接库 C 层：桌面同步模块 + 网页端独立小前端（待 B2） <!--t:u9lj4a--> #sync #desktop !2
 - [x] desktop-sync C2：桌面阅读库与 todo-sync 服务器双向对账（全量对账 + SSE 触发） <!--t:dj9w2g--> #sync #desktop !2
 - [ ] Android 分享接收真机验收（装机后 am start 模拟 SEND intent，验服务器收到） <!--t:51swhk--> #mobile #manual !2
 
