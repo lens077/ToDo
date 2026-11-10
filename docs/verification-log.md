@@ -923,3 +923,9 @@ Session 存为项目内 Markdown（`<project>/.virgo/sessions/s-<ts>.md`），�
 - **外网 `https://todo-sync.apikv.com/healthz` 返回 Pangolin 的 401**（响应体 'Unauthorized'、content-type text/plain，非本服务格式）——Pangolin 资源默认开了认证，需用户在 Pangolin 控制台对该资源关闭认证（纯 API 服务，客户端只带 Bearer）。集群内路径已全部验证通过。
 - `cdn.syndication.twimg.com` 集群内 SSL 握手失败（exit 35），fxtwitter 主路径可用、兜底路径不可用。
 - ArgoCD Application 注册待路由全通后补（当前 helm bootstrap revision 4 手工管理）。
+
+## 2026-11-11 sync-server 外网链路打通（503 定位与修复）
+
+1. 用户关闭 Pangolin 资源认证后 401 变 503；逐层定位（集群内经网关 IP 直打）发现 **503 来自 Cilium 网关本身**（对照 virgo 200），与 Pangolin 无关——外网链路是 client→Pangolin(TLS)→cilium-gateway→Service。
+2. 根因：`networkpolicy.yaml` 沿用 sponsor-api 图的 k8s NetworkPolicy `namespaceSelector: io.cilium/k8s=default`，但 default ns 没有该标签（该图从未上线验证过），Cilium Gateway 的流量身份是 **ingress entity**，规则什么都放不进来 → no healthy upstream。正确模式照 virgo 图改写为 `CiliumNetworkPolicy`（fromEntities: ingress/host/remote-node；egress DNS + toCIDRSet 全网段除内网——CNP 语法是 toCIDRSet 而非 ipBlock/except）。
+3. 修复后全绿实测（外网 https://todo-sync.apikv.com）：healthz `ok`；无 token 401；带 token 保存 201；列表返回已解析文章（新增 axum 仓库链接 wc=581）；CNP egress 下 fxtwitter 仍 200。
