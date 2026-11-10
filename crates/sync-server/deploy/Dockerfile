@@ -14,6 +14,19 @@ COPY crates/sync-server crates/sync-server
 COPY apps/desktop/src-tauri apps/desktop/src-tauri
 RUN cargo build --release --locked -p sync-server
 
+# 网页端小前端：pnpm workspace 过滤安装后构建，产物由运行时静态托管。
+FROM node:26-alpine AS web
+WORKDIR /repo
+COPY pnpm-workspace.yaml pnpm-lock.yaml package.json ./
+# 过滤安装与 frozen lockfile 校验要求全部 workspace 成员的 manifest 在位。
+COPY apps/sync-web/package.json apps/sync-web/
+COPY apps/desktop/package.json apps/desktop/
+COPY apps/sponsor-api/package.json apps/sponsor-api/
+COPY web/package.json web/
+RUN corepack enable && pnpm install --frozen-lockfile --filter @sumery/sync-web
+COPY apps/sync-web apps/sync-web
+RUN pnpm --filter @sumery/sync-web build
+
 FROM debian:bookworm-slim
 RUN apt-get update \
     && apt-get install -y --no-install-recommends ca-certificates curl \
@@ -22,10 +35,12 @@ RUN apt-get update \
 # 那是 Debian 自带系统账号。
 RUN useradd --uid 1000 --create-home virgo && mkdir -p /data && chown virgo:virgo /data
 COPY --from=build /build/target/release/virgo-sync /usr/local/bin/virgo-sync
+COPY --from=web /repo/apps/sync-web/dist /app/web
 USER virgo:virgo
 WORKDIR /data
 ENV VIRGO_SYNC_BIND=0.0.0.0:8090 \
-    VIRGO_SYNC_DATA_DIR=/data
+    VIRGO_SYNC_DATA_DIR=/data \
+    VIRGO_SYNC_WEB_DIR=/app/web
 VOLUME ["/data"]
 EXPOSE 8090
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \

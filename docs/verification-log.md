@@ -929,3 +929,10 @@ Session 存为项目内 Markdown（`<project>/.virgo/sessions/s-<ts>.md`），�
 1. 用户关闭 Pangolin 资源认证后 401 变 503；逐层定位（集群内经网关 IP 直打）发现 **503 来自 Cilium 网关本身**（对照 virgo 200），与 Pangolin 无关——外网链路是 client→Pangolin(TLS)→cilium-gateway→Service。
 2. 根因：`networkpolicy.yaml` 沿用 sponsor-api 图的 k8s NetworkPolicy `namespaceSelector: io.cilium/k8s=default`，但 default ns 没有该标签（该图从未上线验证过），Cilium Gateway 的流量身份是 **ingress entity**，规则什么都放不进来 → no healthy upstream。正确模式照 virgo 图改写为 `CiliumNetworkPolicy`（fromEntities: ingress/host/remote-node；egress DNS + toCIDRSet 全网段除内网——CNP 语法是 toCIDRSet 而非 ipBlock/except）。
 3. 修复后全绿实测（外网 https://todo-sync.apikv.com）：healthz `ok`；无 token 401；带 token 保存 201；列表返回已解析文章（新增 axum 仓库链接 wc=581）；CNP egress 下 fxtwitter 仍 200。
+
+## 2026-11-11 sync-web C1（网页端小前端 MVP + 服务器静态托管）
+
+1. `apps/sync-web`（React 19 + Vite 8，pnpm workspace 成员）：Token 配置（localStorage）、快速保存（URL+备注，收藏优先语义）、列表（搜索标题/链接/摘要/站点 + 全部/未读/已读筛选）、阅读详情（正文渲染/备注编辑失焦保存/标记已读/重新解析/删除/打开原文）、SSE 订阅（fetch 流解析——EventSource 无法带 Authorization 头，断线 3s 重连）。构建产物 228KB JS（gzip 72KB）。
+2. sync-server 增加 `VIRGO_SYNC_WEB_DIR` 静态托管：API 路由继续走 token 门禁，静态资源与 SPA fallback 免鉴权（页面本身不含数据）。坑：`ServeDir::not_found_service` 对 `/anything` 不生效（404 直通），改用 `ServeDir::fallback(ServeFile(index))` 后 SPA fallback 正常。
+3. 单测 8 个全绿（新增：静态页免鉴权 + SPA fallback + API 仍 401）；本地真实进程冒烟：`/` 出 HTML、assets 200、API 401。`make check-quick` 绿。
+4. 镜像 Dockerfile 增加 node:26-alpine 阶段（pnpm 过滤安装 + 构建），产物入 `/app/web` 并默认启用 `VIRGO_SYNC_WEB_DIR`。

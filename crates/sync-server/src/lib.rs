@@ -21,7 +21,7 @@ use serde::Deserialize;
 use serde_json::json;
 use todo_core::{ReadingArticleDetail, ReadingContextInput, ReadingStore};
 use tokio_stream::{wrappers::BroadcastStream, Stream, StreamExt};
-use tower_http::services::ServeDir;
+use tower_http::services::{ServeDir, ServeFile};
 
 /// Shared server state: the reading library plus the change broadcaster that
 /// SSE subscribers listen on.
@@ -44,10 +44,16 @@ impl SyncState {
     }
 }
 
-pub fn build_router(state: Arc<SyncState>, token: &str) -> Router {
+pub fn build_router(
+    state: Arc<SyncState>,
+    token: &str,
+    web_dir: Option<&std::path::Path>,
+) -> Router {
     let token = token.to_owned();
     let images = state.store.root().join("images");
-    Router::new()
+    // The API is token-gated; the static web client is not (it ships no
+    // data — the page itself asks for the token and calls the API).
+    let api = Router::new()
         .route("/healthz", get(healthz))
         .route("/articles", get(list_articles))
         .route("/articles/{id}", get(get_article).delete(remove_article))
@@ -57,13 +63,22 @@ pub fn build_router(state: Arc<SyncState>, token: &str) -> Router {
         .route("/articles/{id}/refetch", post(refetch_article))
         .route("/links", post(save_link))
         .route("/stream", get(stream))
-        .nest_service("/images", ServeDir::new(images))
         .layer(middleware::from_fn(
             move |headers: HeaderMap, req: Request, next: Next| {
                 authorize(headers, req, next, token.clone())
             },
         ))
-        .with_state(state)
+        .with_state(state);
+    let mut app = Router::new()
+        .merge(api)
+        .nest_service("/images", ServeDir::new(images));
+    if let Some(dir) = web_dir {
+        let index = dir.join("index.html");
+        // SPA fallback: unknown paths render the client, which routes
+        // client-side.
+        app = app.fallback_service(ServeDir::new(dir).fallback(ServeFile::new(index)));
+    }
+    app
 }
 
 /// Bearer-token gate. `/healthz` stays open for k8s probes.
@@ -348,21 +363,21 @@ mod tests {
 
     #[tokio::test]
     async fn rejects_requests_without_bearer_token() {
-        let app = build_router(test_state(), "secret");
+        let app = build_router(test_state(), "secret", None);
         let (status, _) = send(app, "GET", "/articles", None, None).await;
         assert_eq!(status, StatusCode::UNAUTHORIZED);
     }
 
     #[tokio::test]
     async fn healthz_is_open() {
-        let app = build_router(test_state(), "secret");
+        let app = build_router(test_state(), "secret", None);
         let (status, _) = send(app, "GET", "/healthz", None, None).await;
         assert_eq!(status, StatusCode::OK);
     }
 
     #[tokio::test]
     async fn wrong_token_is_unauthorized() {
-        let app = build_router(test_state(), "secret");
+        let app = build_router(test_state(), "secret", None);
         let (status, _) = send(app, "GET", "/articles", Some("nope"), None).await;
         assert_eq!(status, StatusCode::UNAUTHORIZED);
     }
@@ -370,7 +385,7 @@ mod tests {
     #[tokio::test]
     async fn save_list_update_delete_flow() {
         let state = test_state();
-        let app = build_router(state.clone(), "secret");
+        let app = build_router(state.clone(), "secret", None);
 
         // Quick save with a note: stub created, no parsing, context saved.
         let (status, saved) = send(
@@ -419,7 +434,7 @@ mod tests {
 
     #[tokio::test]
     async fn save_rejects_non_http_urls() {
-        let app = build_router(test_state(), "secret");
+        let app = build_router(test_state(), "secret", None);
         let (status, _) = send(
             app,
             "POST",
@@ -433,7 +448,7 @@ mod tests {
 
     #[tokio::test]
     async fn unknown_article_is_404() {
-        let app = build_router(test_state(), "secret");
+        let app = build_router(test_state(), "secret", None);
         let (status, _) = send(app, "GET", "/articles/nope", Some("secret"), None).await;
         assert_eq!(status, StatusCode::NOT_FOUND);
     }
@@ -442,7 +457,7 @@ mod tests {
     async fn mutations_notify_sse_subscribers() {
         let state = test_state();
         let mut receiver = state.events.subscribe();
-        let app = build_router(state, "secret");
+        let app = build_router(state, "secret", None);
         let (_, _) = send(
             app,
             "POST",
@@ -452,5 +467,25 @@ mod tests {
         )
         .await;
         assert!(receiver.try_recv().is_ok(), "expected a change broadcast");
+    }
+
+    #[tokio::test]
+    async fn web_client_serves_without_token_and_api_stays_gated() {
+        let root = tempfile::tempdir().expect("tempdir");
+        std::fs::write(root.path().join("index.html"), "<html>sync-web</html>").expect("write");
+        let app = build_router(test_state(), "secret", Some(root.path()));
+
+        // Static client loads without a token.
+        let (status, page) = send(app.clone(), "GET", "/", None, None).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(page, serde_json::Value::Null); // body is html, json parse yields null
+
+        // SPA fallback: an unknown path renders the client too.
+        let (status, _) = send(app.clone(), "GET", "/anything", None, None).await;
+        assert_eq!(status, StatusCode::OK);
+
+        // The API behind it stays token-gated.
+        let (status, _) = send(app, "GET", "/articles", None, None).await;
+        assert_eq!(status, StatusCode::UNAUTHORIZED);
     }
 }

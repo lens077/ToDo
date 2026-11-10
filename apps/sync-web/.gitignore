@@ -1,0 +1,4 @@
+dist/
+tsbuilderinfo
+tsconfig.tsbuildinfo
+node_modules/
