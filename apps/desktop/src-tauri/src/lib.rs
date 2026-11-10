@@ -1,6 +1,7 @@
 pub mod ops;
 mod preferences;
 mod reading;
+pub mod sync;
 mod watch;
 pub mod workspace;
 
@@ -748,6 +749,7 @@ pub fn run() {
             open_session_window,
             desktop_status,
             reading::reading_list,
+            reading::reading_sync_now,
             reading::reading_import_browser,
             reading::reading_add,
             reading::reading_get,

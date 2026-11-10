@@ -947,3 +947,10 @@ Session 存为项目内 Markdown（`<project>/.virgo/sessions/s-<ts>.md`），�
 
 - 镜像版本钉 tag 不钉 digest（TCR digest 解析在 k3 上不稳定），CI 化时重验。
 - C2（桌面双向对账）未开始：dj9w2g。
+
+## 2026-11-11 desktop-sync C2（桌面阅读库双向对账）
+
+1. `apps/desktop/src-tauri/src/sync.rs`：`sync::run(store, base, token)`——URL 为唯一键的全量对账。上行：本地有/服务器无 → `POST /links`（stub+context，服务器后台解析）；下行：服务器有/本地无 → `GET detail` → `add_failed`+`update_context`+本地 `refetch`（每轮预算 10，超出留 stub 下轮续）；重试：本地 wc=0 的 stub 在预算内继续 `refetch`。已有条目的备注/进度互不覆盖（v1 冲突策略：随创建走，之后各自独立）。
+2. Tauri 命令 `reading_sync_now`（spawn_blocking）；前端 ReadingView 加「同步」按钮 + 配置面板（base/token 存 localStorage，键与 sync-web 一致）；浏览器 mock 构建下按钮不渲染（E2E 不受影响）。
+3. 集成测试 `tests/sync.rs`：起真实 `virgo-sync` 子进程（按 workspace target 定位，缺失时兜底构建）做双向往返——上行/下行/备注随行/二次幂等全部断言通过。
+4. `make check-quick` 绿。

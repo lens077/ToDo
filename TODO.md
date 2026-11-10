@@ -34,7 +34,7 @@ columns:
 - [x] sync-server B2：k8s 部署（镜像+helm+Secret），等 B1 本地跑通后执行 <!--t:yfj0ol--> #sync #release !2
 - [ ] 链接库 C 层：桌面同步模块 + 网页端独立小前端（待 B2） <!--t:u9lj4a--> #sync #desktop !2
       ↳ 2026-11-11 拆分：网页端先行（自包含、立刻可用），桌面同步随后；两卡分别跟踪 <!--n:u9lj4a-->
-- [ ] desktop-sync C2：桌面阅读库与 todo-sync 服务器双向对账（全量对账 + SSE 触发） <!--t:dj9w2g--> #sync #desktop !2
+- [x] desktop-sync C2：桌面阅读库与 todo-sync 服务器双向对账（全量对账 + SSE 触发） <!--t:dj9w2g--> #sync #desktop !2
 
 ## Doing
 - [ ] 人工验收看板任务写回 TODO.md <!--t:h4m9zc--> #desktop #manual !1 ^3000

@@ -2159,3 +2159,26 @@
 .ov-card__blockers { color: #b42318; }
 .ov-card__hint { color: #946200; }
 @media (max-width: 850px) { .ov-card__fields { grid-template-columns: 1fr; } }
+
+/* ---------- 阅读库 ↔ todo-sync 同步 ---------- */
+.reading-sync { position: relative; display: inline-flex; }
+.reading-sync__panel {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 300px;
+  padding: 14px;
+  background: var(--panel);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-panel);
+  box-shadow: 0 12px 32px rgb(0 0 0 / 35%);
+}
+.reading-sync__panel label { display: flex; flex-direction: column; gap: 5px; color: var(--ink-3); font-size: 11.5px; }
+.reading-sync__panel input { height: 32px; font-size: 13px; }
+.reading-sync__panel > button { align-self: flex-start; }
+.reading-sync__report { color: var(--ink-2); font-size: 12px; }
+.reading-sync__error { color: var(--danger); font-size: 12px; }

@@ -3,6 +3,7 @@
 //! Fetching a page blocks on the network, so `reading_add` runs on the
 //! blocking pool; every other call is a local SQLite read or write.
 
+use crate::sync;
 use crate::workspace::WorkspaceState;
 use serde::Deserialize;
 use tauri::State;
@@ -248,4 +249,17 @@ pub fn reading_export_project_index(
     reading
         .export_project_index(&project_ref)
         .map_err(|error| error.to_string())
+}
+
+/// 全量对账：本地阅读库 ↔ todo-sync 服务器。网络往返阻塞，走 blocking pool。
+#[tauri::command]
+pub async fn reading_sync_now(
+    state: State<'_, ReadingState>,
+    base: String,
+    token: String,
+) -> Result<sync::SyncReport, String> {
+    let store = state.store()?;
+    tauri::async_runtime::spawn_blocking(move || sync::run(&store, &base, &token))
+        .await
+        .map_err(|error| error.to_string())?
 }

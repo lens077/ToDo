@@ -200,6 +200,7 @@ export function ReadingView({ model }: ReadingViewProps) {
           <button type="button" className="reading-add__browser" disabled={model.adding || model.batch.running} onClick={() => setBatchOpen(true)}>
             批量导入
           </button>
+          <SyncControl disabled={model.adding || model.batch.running} onSynced={model.refresh} />
         </span>
         {model.addError && (
           <p className="reading-add__error" role="alert">{model.addError}</p>
@@ -334,5 +335,101 @@ export function ReadingView({ model }: ReadingViewProps) {
         </div>
       )}
     </section>
+  );
+}
+
+const SYNC_CONFIG_KEY = 'virgo-sync-config';
+
+interface SyncReport {
+  pulled: number;
+  pushed: number;
+  refetched: number;
+  pending_parse: number;
+  errors: string[];
+}
+
+function isTauriRuntime(): boolean {
+  return typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
+}
+
+async function call<T>(command: string, args?: Record<string, unknown>): Promise<T> {
+  const { invoke } = await import('@tauri-apps/api/core');
+  return invoke<T>(command, args);
+}
+
+/// 与 todo-sync 服务器（todo-sync.apikv.com）对账。配置存 localStorage，
+/// 与网页端 sync-web 的键一致，方便同一份 token 两处复用。
+function SyncControl({ disabled, onSynced }: { disabled: boolean; onSynced: () => void }) {
+  const [open, setOpen] = React.useState(false);
+  const [base, setBase] = React.useState('https://todo-sync.apikv.com');
+  const [token, setToken] = React.useState('');
+  const [busy, setBusy] = React.useState(false);
+  const [report, setReport] = React.useState<string | null>(null);
+  const [error, setError] = React.useState<string | null>(null);
+
+  React.useEffect(() => {
+    try {
+      const raw = localStorage.getItem(SYNC_CONFIG_KEY);
+      if (!raw) return;
+      const parsed = JSON.parse(raw) as { base?: string; token?: string };
+      if (parsed.base) setBase(parsed.base);
+      if (parsed.token) setToken(parsed.token);
+    } catch {
+      // 无有效配置时保持默认，首次同步前用户自行填写。
+    }
+  }, []);
+
+  if (!isTauriRuntime()) return null;
+
+  const run = async () => {
+    if (busy || !base.trim() || !token.trim()) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const result = await call<SyncReport>('reading_sync_now', {
+        base: base.trim(),
+        token: token.trim(),
+      });
+      localStorage.setItem(SYNC_CONFIG_KEY, JSON.stringify({ base: base.trim(), token: token.trim() }));
+      const parts = [`下行 ${result.pulled}`, `上行 ${result.pushed}`, `解析 ${result.refetched}`];
+      if (result.pending_parse > 0) parts.push(`待解析 ${result.pending_parse}`);
+      setReport(parts.join(' · ') + (result.errors.length > 0 ? ` · ${result.errors[0]}` : ''));
+      onSynced();
+    } catch (cause) {
+      setError(String(cause));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <span className="reading-sync">
+      <button
+        type="button"
+        className="reading-add__browser"
+        disabled={disabled || busy}
+        title="与 todo-sync 服务器双向对账"
+        onClick={() => setOpen((current) => !current)}
+      >
+        {busy ? '同步中…' : '同步'}
+      </button>
+      {open && (
+        <span className="reading-sync__panel">
+          <label>
+            服务器
+            <input value={base} onChange={(event) => setBase(event.target.value)} placeholder="https://todo-sync.apikv.com" />
+          </label>
+          <label>
+            Token
+            <input type="password" value={token} onChange={(event) => setToken(event.target.value)} placeholder="todo-sync-token 的值" />
+          </label>
+          <button type="button" disabled={busy || !base.trim() || !token.trim()} onClick={() => void run()}>
+            立即对账
+          </button>
+          {report && <span className="reading-sync__report" role="status">{report}</span>}
+          {error && <span className="reading-sync__error" role="alert">{error}</span>}
+        </span>
+      )}
+    </span>
   );
 }
