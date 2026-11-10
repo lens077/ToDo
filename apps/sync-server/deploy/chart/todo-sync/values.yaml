@@ -1,0 +1,41 @@
+# 通用默认值。生产差异（镜像 tag、域名）放 values-prod.yaml。
+
+api:
+  replicas: 1
+  image:
+    repository: ccr.ccs.tencentyun.com/sumery/todo-sync-api
+    # 形如 "<git sha>@sha256:<digest>"；由 CI 回写，空值会让渲染失败。
+    tag: ""
+    pullPolicy: IfNotPresent
+  resources:
+    requests: { cpu: 10m, memory: 48Mi }
+    # 解析大网页（readability + 图片本地化）比 sponsor-api 更吃内存
+    limits: { cpu: "1", memory: 512Mi }
+  imagePullSecret: virgo-tcr
+  # 链接库 SQLite + 全量文章图片落盘的 PVC 大小。
+  storage: 5Gi
+
+config:
+  # 服务端口与数据目录（Dockerfile 已设默认值，这里显式钉死）。
+  port: 8090
+  dataDir: /data
+
+# VIRGO_SYNC_TOKEN 由外部 Secret 注入（不进 Git、不进 OpenBao——单用户
+# 个人服务，kubectl 创建即可，见 Makefile sync-k8s-deploy 的前置步骤）。
+tokenSecret:
+  name: todo-sync-token
+  key: VIRGO_SYNC_TOKEN
+
+route:
+  enabled: true
+  gateway:
+    name: cilium-gateway
+    namespace: default
+    httpsSection: https
+    httpSection: http
+  hostnames:
+    - todo-sync.apikv.com
+  redirectHttp: true
+
+networkPolicy:
+  enabled: true

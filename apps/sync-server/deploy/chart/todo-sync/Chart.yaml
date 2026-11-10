@@ -1,0 +1,7 @@
+apiVersion: v2
+name: todo-sync
+description: Virgo 链接库自托管同步/解析服务（virgo-sync）—— 链接保存、解析与多端对账
+type: application
+# chart 结构变了才升 version；镜像版本在 values-prod.yaml。
+version: 0.1.0
+appVersion: "1"

@@ -1,0 +1,15 @@
+# 仓库根目录是 sync-server 镜像的构建上下文；只服务于 docker build。
+target/
+node_modules/
+**/node_modules/
+.git/
+apps/desktop/dist/
+apps/desktop/test-results/
+apps/desktop/test-results-columns-live/
+apps/desktop/test-results-webkit/
+web/dist/
+research/
+tasks/
+deploy/
+docs/
+*.html

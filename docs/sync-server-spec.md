@@ -51,7 +51,7 @@
 
 - `Authorization: Bearer <VIRGO_SYNC_TOKEN>`，环境变量注入（k8s Secret），缺失直接拒启；`/healthz` 豁免。
 - 环境变量：`VIRGO_SYNC_DATA_DIR`（必填）、`VIRGO_SYNC_TOKEN`（必填）、`VIRGO_SYNC_BIND`（默认 `127.0.0.1:8090`，k8s 里由 Service 暴露）。
-- MVP 本地跑通后再出 k8s 清单（沿用 sponsor-api 的部署模式），不在本规格内。
+- 部署（2026-11-11 拍板）：`todo-sync.apikv.com`，k1 集群 `todo` namespace，PVC 落库，随机 token 走 `todo-sync-token` Secret。chart 在 `apps/sync-server/deploy/chart/todo-sync`（沿用 sponsor-api 模式：HTTPRoute→cilium-gateway、NetworkPolicy、非 root）；Makefile 目标 `sync-secret` / `sync-image` / `sync-k8s-deploy`。ArgoCD 注册待首跑稳定后补。
 
 ## 5. 实施切分
 

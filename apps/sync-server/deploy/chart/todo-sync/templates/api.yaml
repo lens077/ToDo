@@ -1,0 +1,104 @@
+{{- $name := include "todo-sync.fullname" . -}}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "todo-sync.labels" . | nindent 4 }}
+spec:
+  selector:
+    {{- include "todo-sync.selector" . | nindent 4 }}
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ $name }}-data
+  labels:
+    {{- include "todo-sync.labels" . | nindent 4 }}
+spec:
+  accessModes: ["ReadWriteOnce"]
+  resources:
+    requests:
+      storage: {{ .Values.api.storage }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "todo-sync.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.api.replicas }}
+  revisionHistoryLimit: 5
+  selector:
+    matchLabels:
+      {{- include "todo-sync.selector" . | nindent 6 }}
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      # RWO PVC 只能被单节点挂载：滚动更新必须先杀旧 pod 再起新 pod。
+      maxUnavailable: 1
+      maxSurge: 0
+  template:
+    metadata:
+      labels:
+        {{- include "todo-sync.selector" . | nindent 8 }}
+    spec:
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      terminationGracePeriodSeconds: 15
+      imagePullSecrets:
+        - name: {{ .Values.api.imagePullSecret }}
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: todo-sync
+          image: {{ include "todo-sync.image" .Values.api.image }}
+          imagePullPolicy: {{ .Values.api.image.pullPolicy }}
+          ports:
+            - { name: http, containerPort: {{ .Values.config.port }} }
+          env:
+            - name: VIRGO_SYNC_BIND
+              value: "0.0.0.0:{{ .Values.config.port }}"
+            - name: VIRGO_SYNC_DATA_DIR
+              value: {{ .Values.config.dataDir | quote }}
+            - name: VIRGO_SYNC_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.tokenSecret.name }}
+                  key: {{ .Values.tokenSecret.key }}
+          readinessProbe:
+            httpGet: { path: /healthz, port: http }
+            periodSeconds: 10
+            timeoutSeconds: 3
+          livenessProbe:
+            httpGet: { path: /healthz, port: http }
+            periodSeconds: 30
+            timeoutSeconds: 3
+            failureThreshold: 3
+          lifecycle:
+            preStop:
+              exec:
+                command: ["sleep", "5"]
+          resources:
+            {{- toYaml .Values.api.resources | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            # SQLite（WAL）需要可写数据盘；根文件系统保持只读。
+            readOnlyRootFilesystem: true
+          volumeMounts:
+            - name: data
+              mountPath: {{ .Values.config.dataDir }}
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: {{ $name }}-data

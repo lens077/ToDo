@@ -1,0 +1,37 @@
+{{- if .Values.networkPolicy.enabled -}}
+{{- $name := include "todo-sync.fullname" . -}}
+# 入向：来自网关（多端同步）；出向：解析目标站（X/fxtwitter/微信/普通网页）
+# + DNS。出向放行全部 IPv4（除内网），依赖 HTTPS 出口审计——与服务端
+# 解析能力同边界：能解析什么取决于网络能到达什么。
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "todo-sync.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "todo-sync.selector" . | nindent 6 }}
+  policyTypes: ["Ingress", "Egress"]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              io.cilium/k8s: default
+      ports:
+        - { port: {{ .Values.config.port }}, protocol: TCP }
+  egress:
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 10.0.0.0/8
+              - 172.16.0.0/12
+              - 192.168.0.0/16
+    - to:
+        - namespaceSelector: {}
+      ports:
+        - { port: 53, protocol: UDP }
+        - { port: 53, protocol: TCP }
+{{- end }}

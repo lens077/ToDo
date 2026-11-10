@@ -17,10 +17,15 @@ CHART_DIR ?= web/deploy/chart/virgo
 SPONSOR_IMAGE ?= ccr.ccs.tencentyun.com/sumery/virgo-sponsor-api
 SPONSOR_TAG ?= $(shell git rev-parse --short HEAD)
 SPONSOR_CHART_DIR ?= apps/sponsor-api/deploy/chart/sponsor-api
+SYNC_IMAGE ?= ccr.ccs.tencentyun.com/sumery/todo-sync-api
+SYNC_TAG ?= $(shell git rev-parse --short HEAD)
+SYNC_CHART_DIR ?= apps/sync-server/deploy/chart/todo-sync
+SYNC_NAMESPACE ?= todo
 
 .PHONY: help install dev icon check check-quick hooks build bundle-macos package-macos package-macos-signed \
         comm-build other-build build-mac-arm64 build-mac-x64 build-win-x64 build-win-arm64 build-linux-x64 \
-        site-build pages-deploy pages-deploy-eo site-image k8s-deploy argo-apply site-deploy
+        site-build pages-deploy pages-deploy-eo site-image k8s-deploy argo-apply site-deploy \
+        sync-secret sync-image sync-k8s-deploy
 
 help: ## List available build and packaging targets
 	@printf '%s\n' \
@@ -169,5 +174,26 @@ sponsor-k8s-deploy: sponsor-image
 
 sponsor-argo-apply: ## Register the sponsor-api ArgoCD application
 	kubectl apply -f deploy/argocd/application-sponsor-api.yaml
+
+# 链接库同步服务（todo namespace，todo-sync.apikv.com）。一次性前置：
+#   make sync-secret     创建命名空间与随机 token Secret
+sync-secret:
+	kubectl get namespace $(SYNC_NAMESPACE) >/dev/null 2>&1 || kubectl create namespace $(SYNC_NAMESPACE)
+	@if kubectl -n $(SYNC_NAMESPACE) get secret todo-sync-token >/dev/null 2>&1; then \
+	  echo "secret todo-sync-token 已存在，跳过（不覆盖）"; \
+	else \
+	  kubectl -n $(SYNC_NAMESPACE) create secret generic todo-sync-token \
+	    --from-literal=VIRGO_SYNC_TOKEN="$$(openssl rand -hex 32)"; \
+	fi
+
+sync-image: ## Build & push the virgo-sync image to TCR (amd64)
+	docker buildx build --platform linux/amd64 -f crates/sync-server/deploy/Dockerfile \
+	  -t $(SYNC_IMAGE):$(SYNC_TAG) --push .
+
+sync-k8s-deploy: sync-image ## Build image and deploy todo-sync to the k1 cluster now
+	helm upgrade --install todo-sync $(SYNC_CHART_DIR) -n $(SYNC_NAMESPACE) --create-namespace \
+	  -f $(SYNC_CHART_DIR)/values.yaml -f $(SYNC_CHART_DIR)/values-prod.yaml \
+	  --set api.image.tag=$(SYNC_TAG) --wait --timeout 5m
+	kubectl -n $(SYNC_NAMESPACE) rollout status deploy/todo-sync --timeout=180s
 
 site-deploy: pages-deploy pages-deploy-eo k8s-deploy ## Deploy the landing site to all three origins
