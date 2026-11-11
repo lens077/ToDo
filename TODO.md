@@ -43,6 +43,9 @@ columns:
       ↳ 粘贴链接秒回入列，正文后台解析（解析中/失败/重试），剪贴板单条/多条提示并按内容指纹去重；真机验收见 docs/verification-log.md <!--n:n0fz2h-->
 - [x] 阅读：修复多链接粘贴与无正文文章解析 <!--t:3571gu--> #sync #desktop
       ↳ 根因是多行粘贴折行拼成畸形 URL；已拆条入队并在两端拒绝脏链接，无正文文章改为仅链接收藏，失败原因落库并显示；真机三条微信链接均 ok，见 docs/verification-log.md <!--n:3571gu-->
+- [ ] 清理 sync-server 测试脏数据（example.com/*、/s/quick-1..3、clip-a/b、dbg-one、rust-lang/cargo） <!--t:t4gfbx--> #sync #backend !2
+      ↳ 删除无墓碑：先清所有持有该行的设备本地库（PC ~/.todo/reading/reading.sqlite、手机清应用数据），否则下一轮对账会把它们推回服务器；顺序：设备本地 → 服务器。详见 docs/handoff-2026-11-11-sync-v2.md §8.1/§9.1 <!--n:t4gfbx-->
+- [ ] Android APK 重打并真机复验同步 v2（进度/取消/热同步） <!--t:0x16fl--> #mobile #sync !2
 
 ## Doing
 - [ ] 人工验收看板任务写回 TODO.md <!--t:h4m9zc--> #desktop #manual !1 ^3000
