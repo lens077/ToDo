@@ -983,3 +983,12 @@ Session 存为项目内 Markdown（`<project>/.virgo/sessions/s-<ts>.md`），�
 3. 视图 id 的唯一事实源移到 `lib/views.ts`（`MAIN_VIEW_IDS` / `isMainView`），`Sidebar` 重新导出 `MainView`，偏好层不再依赖 React 组件。
 4. 底栏列数改由 `--mobile-tab-count` 驱动；「更多视图」列表随偏好变化，只列未入栏视图。
 5. E2E 新增 2 条：脏数据（未知 id / 重复 / 超 6 项）渲染 6 项并回写；仅 1 项时回退默认 4 项。移动端 7 项通过，全量 157 passed（16 skipped），`make check-quick` 绿。
+
+## 2026-11-11 移动端底部导航 M3（c947n8）
+
+1. 编辑入口两处：底栏非固定项长按 400ms（长按后的 click 被抑制，不会误切视图），或「我的」→ 设置 → 底部导航栏。
+2. 编辑器 `MobileTabBarEditor`：上半区当前栏预览（长按 300ms 拖动重排、− 移除），下半区未入栏视图池（＋ 加入）；每次操作即写偏好，无保存按钮。
+3. 拖拽走 Pointer Events（Android WebView 的 HTML5 DnD 不可用）：拖动开始时快照槽位坐标做命中判定，避免 chip 换位后命中漂移导致来回抖动；换位用 FLIP（Web Animations API）补间；拖动期间 `body.is-tab-dragging` 锁定滚动与选择。
+4. 数量约束：2~6；到下限时 − 禁用并提示「至少保留 2 个视图」，到上限时 ＋ 禁用并提示「最多 6 个视图，其余收纳在『我的』」。
+5. 长按入口打开设置时自动滚到「底部导航栏」分区（`initialSection`）。
+6. E2E 新增 3 条：长按开编辑器且不切视图；增删到 6 / 2 的 clamp 与按钮禁用；拖拽换位后偏好落盘。移动端 10 项通过，全量 160 passed（16 skipped），`make check-quick` 绿。

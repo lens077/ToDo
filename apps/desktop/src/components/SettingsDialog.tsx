@@ -2,6 +2,7 @@ import * as React from 'react';
 import { LAYOUT_DENSITIES, OPEN_SESSION_MODES, defaultAppSettings, useAppSettings } from '../lib/appSettings';
 import { readProviderSettings } from '../lib/providerSettings';
 import { Icon } from './Icon';
+import { MobileTabBarEditor } from './MobileTabBarEditor';
 import { navItems, type MainView } from './Sidebar';
 
 interface SettingsDialogProps {
@@ -10,11 +11,19 @@ interface SettingsDialogProps {
   /** Narrow screens only: every view that did not fit in the tab bar is listed here. */
   activeView?: MainView;
   onChangeView?: (view: MainView) => void;
+  /** Open scrolled to the tab editor, for the long-press entry on the bar. */
+  initialSection?: 'tabs' | null;
 }
 
-export function SettingsDialog({ onClose, onOpenProviderSettings, activeView, onChangeView }: SettingsDialogProps) {
+export function SettingsDialog({ onClose, onOpenProviderSettings, activeView, onChangeView, initialSection }: SettingsDialogProps) {
   const [settings, update] = useAppSettings();
   const provider = readProviderSettings();
+  const panelRef = React.useRef<HTMLElement>(null);
+
+  React.useEffect(() => {
+    if (initialSection !== 'tabs') return;
+    panelRef.current?.querySelector('.settings-tabs')?.scrollIntoView({ block: 'start' });
+  }, [initialSection]);
 
   React.useEffect(() => {
     const closeOnEscape = (event: KeyboardEvent) => {
@@ -32,7 +41,7 @@ export function SettingsDialog({ onClose, onOpenProviderSettings, activeView, on
         if (event.target === event.currentTarget) onClose();
       }}
     >
-      <section className="settings-panel" role="dialog" aria-modal="true" aria-labelledby="settings-title">
+      <section className="settings-panel" role="dialog" aria-modal="true" aria-labelledby="settings-title" ref={panelRef}>
         <header className="settings-panel__header">
           <h2 id="settings-title">设置</h2>
           <button type="button" className="icon-action settings-panel__close" aria-label="关闭设置" onClick={onClose}>
@@ -143,6 +152,13 @@ export function SettingsDialog({ onClose, onOpenProviderSettings, activeView, on
               </span>
             </label>
           </section>
+
+          {onChangeView && (
+            <MobileTabBarEditor
+              order={settings.mobileTabBar.order}
+              onChange={(order) => update({ mobileTabBar: { order, version: 1 } })}
+            />
+          )}
 
           {onChangeView && (
             <section className="settings-group settings-views" aria-labelledby="settings-views">

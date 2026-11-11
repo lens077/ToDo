@@ -292,6 +292,10 @@
   /* Paper-only until the narrow-screen breakpoint swaps it in for the sidebar. */
   .mobile-tab-bar { display: none; }
 
+  /* A chip in flight owns the pointer: the panel must not scroll underneath it. */
+  body.is-tab-dragging { user-select: none; }
+  body.is-tab-dragging .settings-panel { overflow: hidden; touch-action: none; }
+
   .workspace { position: relative; display: grid; grid-template-rows: auto minmax(0, 1fr); min-width: 0; min-height: 0; overflow: hidden; background: var(--bg); }
   .workspace.is-read-only { grid-template-rows: auto auto minmax(0, 1fr); }
   .workspace__content { min-width: 0; min-height: 0; overflow: auto; animation: rise-in 0.8s var(--ease-rise) both; }
@@ -1307,7 +1311,8 @@
   .settings-views { display: grid; }
   .settings-views__hint { color: var(--ink-3); font-size: 12px; line-height: 1.5; }
   .settings-views__grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
-  .settings-views__grid button {
+  .settings-views__grid button,
+  .settings-tabs__pool button {
     display: flex;
     align-items: center;
     gap: 8px;
@@ -1323,6 +1328,51 @@
   }
   .settings-views__grid button.is-active { color: var(--accent); border-color: var(--accent); background: var(--accent-wash); }
   .settings-views__grid svg { width: 16px; height: 16px; }
+
+  .settings-tabs { display: grid; }
+  .settings-tabs__hint { color: var(--ink-3); font-size: 12px; line-height: 1.5; }
+  .settings-tabs__preview {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    min-height: 56px;
+    padding: 9px;
+    background: var(--bg);
+    border: 1px dashed var(--hairline-2);
+    border-radius: 10px;
+  }
+  .tab-chip {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-height: 40px;
+    padding: 0 5px 0 10px;
+    background: var(--panel);
+    border: 1px solid var(--hairline-2);
+    border-radius: var(--radius-control);
+    font-size: 13px;
+    touch-action: none;
+    user-select: none;
+  }
+  .tab-chip svg { width: 15px; height: 15px; color: var(--ink-3); }
+  .tab-chip.is-dragging { opacity: 0.7; border-color: var(--accent); }
+  .tab-chip__remove {
+    display: grid;
+    width: 28px;
+    height: 28px;
+    padding: 0;
+    place-items: center;
+    color: var(--ink-2);
+    background: var(--panel-2);
+    border: 0;
+    border-radius: 6px;
+  }
+  .tab-chip__remove:disabled { opacity: 0.35; }
+  .tab-chip__remove svg { width: 12px; height: 12px; }
+  .settings-tabs__clamp { min-height: 16px; color: var(--ink-3); font-size: 12px; }
+  .settings-tabs__pool { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+  .settings-tabs__pool button:disabled { opacity: 0.4; }
+  .settings-tabs__pool svg { width: 15px; height: 15px; }
 
   .command-bar {
     min-height: calc(56px + env(safe-area-inset-top));
@@ -1517,6 +1567,7 @@
   .settings-footnote { color: var(--ink-3); font-size: 12px; }
   /* Reachability for views that did not fit the narrow-screen tab bar. */
   .settings-views { display: none; }
+  .settings-tabs { display: none; }
 
   .switch { position: relative; display: inline-block; width: 40px; height: 22px; flex: 0 0 auto; }
   .switch input { position: absolute; z-index: 1; inset: 0; width: 100%; height: 100%; margin: 0; opacity: 0; cursor: pointer; }

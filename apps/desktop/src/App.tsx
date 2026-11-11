@@ -51,6 +51,7 @@ export function App() {
   // one surface, so "what should I do now" is answered without navigating.
   const [activeView, setActiveView] = React.useState<MainView>('goal');
   const [settingsOpen, setSettingsOpen] = React.useState(false);
+  const [settingsSection, setSettingsSection] = React.useState<'tabs' | null>(null);
   const [projectPickerOpen, setProjectPickerOpen] = React.useState(false);
   const [providerSettingsOpen, setProviderSettingsOpen] = React.useState(false);
   const [completionRequest, setCompletionRequest] = React.useState<CompletionRequest | null>(null);
@@ -257,7 +258,10 @@ export function App() {
         readOnly={readOnly}
         onChangeView={setActiveView}
         onChooseProject={chooseProject}
-        onOpenSettings={() => setSettingsOpen(true)}
+        onOpenSettings={() => {
+          setSettingsSection(null);
+          setSettingsOpen(true);
+        }}
       />
 
       <div className={`workspace${readOnly ? ' is-read-only' : ''}`}>
@@ -389,7 +393,14 @@ export function App() {
       <MobileTabBar
         activeView={activeView}
         onChangeView={setActiveView}
-        onOpenSettings={() => setSettingsOpen(true)}
+        onOpenSettings={() => {
+          setSettingsSection(null);
+          setSettingsOpen(true);
+        }}
+        onEditTabs={() => {
+          setSettingsSection('tabs');
+          setSettingsOpen(true);
+        }}
       />
 
       {columnSetup && columnSetup.contextKey === sourceContextKey && !model.sourceBusy && (
@@ -473,6 +484,7 @@ export function App() {
         <SettingsDialog
           activeView={activeView}
           onChangeView={setActiveView}
+          initialSection={settingsSection}
           onClose={() => setSettingsOpen(false)}
           onOpenProviderSettings={() => {
             setSettingsOpen(false);

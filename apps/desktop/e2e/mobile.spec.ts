@@ -87,7 +87,7 @@ test('mobile navigation uses a five-slot bottom tab bar', async ({ page }) => {
   await bar.getByRole('button', { name: '我的' }).click();
   const settings = page.getByRole('dialog', { name: '设置' });
   await expect(settings).toBeVisible();
-  await settings.getByRole('button', { name: '工作空间' }).click();
+  await settings.getByRole('button', { name: '工作空间', exact: true }).click();
   await expect(settings).toBeHidden();
   await expect(page.getByRole('heading', { name: '工作空间', exact: true })).toBeVisible();
 });
@@ -133,6 +133,77 @@ test('a stored bar with fewer than two views falls back to the default four', as
     labels.push(await button.getAttribute('aria-label'));
   }
   expect(labels).toEqual(['目标', '阅读', '随记', '总览', '我的']);
+});
+
+test('long-pressing a tab opens the tab editor without switching views', async ({ page }) => {
+  await page.goto('/');
+  const reading = page.getByRole('navigation', { name: '底部导航' }).getByRole('button', { name: '阅读', exact: true });
+  const box = await reading.boundingBox();
+  expect(box).not.toBeNull();
+  await page.mouse.move(box!.x + box!.width / 2, box!.y + box!.height / 2);
+  await page.mouse.down();
+  await page.waitForTimeout(600);
+  await page.mouse.up();
+
+  await expect(page.getByRole('dialog', { name: '设置' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: '底部导航栏' })).toBeVisible();
+  // The click that follows a hold must not navigate away from 目标.
+  await expect(page.getByRole('heading', { name: '目标', exact: true })).toBeVisible();
+});
+
+test('tab editor adds and removes views within the two-to-six clamp', async ({ page }) => {
+  await page.goto('/');
+  await page.getByRole('button', { name: '我的' }).click();
+  const editor = page.locator('.settings-tabs');
+  await expect(editor).toBeVisible();
+  await expect(editor.locator('.tab-chip')).toHaveCount(4);
+
+  await editor.getByRole('button', { name: '加入AI' }).click();
+  await editor.getByRole('button', { name: '加入象限' }).click();
+  await expect(editor.locator('.tab-chip')).toHaveCount(6);
+  await expect(editor.getByRole('status')).toContainText('最多 6 个视图');
+  await expect(editor.getByRole('button', { name: '加入规范' })).toBeDisabled();
+
+  await editor.getByRole('button', { name: '移除随记' }).click();
+  await expect(editor.locator('.tab-chip')).toHaveCount(5);
+
+  for (const label of ['移除AI', '移除象限', '移除目标']) {
+    await editor.getByRole('button', { name: label }).click();
+  }
+  await expect(editor.locator('.tab-chip')).toHaveCount(2);
+  await expect(editor.getByRole('status')).toContainText('至少保留 2 个视图');
+  await expect(editor.getByRole('button', { name: '移除阅读' })).toBeDisabled();
+
+  // Closing the dialog is enough: the bar already reflects the new order.
+  await page.getByRole('button', { name: '关闭设置' }).click();
+  const labels: Array<string | null> = [];
+  for (const button of await page.getByRole('navigation', { name: '底部导航' }).getByRole('button').all()) {
+    labels.push(await button.getAttribute('aria-label'));
+  }
+  expect(labels).toEqual(['阅读', '总览', '我的']);
+});
+
+test('dragging a chip reorders the bar and persists the order', async ({ page }) => {
+  await page.goto('/');
+  await page.getByRole('button', { name: '我的' }).click();
+  const chips = page.locator('.settings-tabs .tab-chip');
+  const first = chips.nth(0);
+  const second = chips.nth(1);
+  await first.scrollIntoViewIfNeeded();
+  const a = await first.boundingBox();
+  const b = await second.boundingBox();
+  expect(a).not.toBeNull();
+  expect(b).not.toBeNull();
+
+  await page.mouse.move(a!.x + a!.width / 2, a!.y + a!.height / 2);
+  await page.mouse.down();
+  await page.waitForTimeout(450);
+  await page.mouse.move(b!.x + b!.width / 2, b!.y + b!.height / 2, { steps: 8 });
+  await page.waitForTimeout(120);
+  await page.mouse.up();
+
+  const stored = await page.evaluate(() => JSON.parse(window.localStorage.getItem('todo.app-settings.v1') ?? '{}'));
+  expect(stored.mobileTabBar.order.slice(0, 2)).toEqual(['reading', 'goal']);
 });
 
 test('goal regions stack without horizontal scrolling', async ({ page }) => {
@@ -215,7 +286,7 @@ test('read-only mode disables task, capture, import, and restore writes', async 
   expect(captureRequests).toEqual([]);
 
   await page.getByRole('button', { name: '我的' }).click();
-  await page.getByRole('dialog', { name: '设置' }).getByRole('button', { name: '扫描与历史' }).click();
+  await page.getByRole('dialog', { name: '设置' }).getByRole('button', { name: '扫描与历史', exact: true }).click();
   const previewImport = page.getByRole('button', { name: '预览导入' });
   await expect(previewImport).toBeDisabled();
   await expect(previewImport).toHaveAttribute('title', '只读模式下不能导入');
