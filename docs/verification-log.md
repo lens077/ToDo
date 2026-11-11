@@ -1078,3 +1078,11 @@ Session 存为项目内 Markdown（`<project>/.virgo/sessions/s-<ts>.md`），�
 3. **实测**（真实服务器，23 条 / 79 张图）：首次下行 11.7s → **9.15s**（`pulled=23 pushed=0 errors=[]`）；无变更热同步秒级内（本轮复测 1.88s，受网络波动影响，热路径代码未变）。提升幅度有限的原因：图片复制仍在 `save_pulled` 内逐篇 6 路执行，且 23 篇基数小。
 4. **单测**：新增 `concurrent_pull_fetches_each_detail_exactly_once`（本地 mock HTTP 服务器，6 篇并发下拉，断言每篇详情拉且只拉一次、第二轮零请求、落库 6 行均带正文）；`cargo test -p todo-desktop --lib` 16 passed。
 5. **门禁**：`cargo fmt` / `cargo clippy --all-targets` 干净。
+
+## 2026-11-12 同步测试脏数据清理（通过）
+
+1. **背景**：删除无墓碑（交接文档 §8.1），全量对账只做有无对比——持有行会把行推回服务器，无行会从服务器拉回。所以顺序必须是：停所有同步源 → 删设备本地 → 删服务器。
+2. **执行顺序**：① PC 端 `tauri dev` 停止（用户确认已退，实际进程残留，已 kill；SSE 对账活跃时会把服务器删掉的行推回去）；② 手机 `adb shell pm clear com.sumery.virgo` 清数据（手机立即退出持有方）；③ 服务器 `DELETE /articles/{id}` ×9 全部 204（交接文档 §9.1 清单 8 条 + `x.com/jack/status/20` 经用户确认一并删）；④ PC 本地 sqlite 删对应 9 行 + `images/<id>` 目录；⑤ 重新构建 debug APK（含同步 v2 + 详情并发）并 `adb install -r` 装回手机（vivo 需手机屏幕确认 USB 安装，首次被拒、用户确认后成功）。
+3. **复验**：`GET /articles` 剩 14 条且无脏数据残留；PC 本地 14 行（0 空壳 / 0 失败）；服务器与 PC 的 URL 集合 diff 为空。手机装好后未打开，首次打开将拉到同一 14 条。
+4. **构建备注**：`pnpm tauri android build` 需要 `.zshrc` 里的 `ANDROID_HOME=$HOME/android/sdk`、`NDK_HOME`（ndk/30.0.16138531）与 `JAVA_HOME`（Android Studio JBR）；裸跑会报 "Skipping Android Studio command line tools installation" 且管道会让 exit code 假绿。
+5. **待办**：用户打开手机 App 首次同步（应拉 14 条）并复验进度/取消/热同步（TODO 0x16fl）；重启 `tauri dev` 后 PC 同步应零变更。
