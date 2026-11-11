@@ -43,11 +43,6 @@ export function useReading() {
   const [addNotice, setAddNotice] = React.useState<string | null>(null);
   const [batch, setBatch] = React.useState<BatchState>(BATCH_IDLE);
   const [batchErrors, setBatchErrors] = React.useState<BatchError[]>([]);
-  // The Rust side fetches on a blocking thread, so 取消 stops waiting rather
-  // than the fetch itself: a late result is dropped and the article, if it
-  // did land, shows up on the next refresh.
-  const addCancelled = React.useRef(false);
-  const batchCancelled = React.useRef(false);
   const [busy, setBusy] = React.useState<Set<string>>(() => new Set());
   const [open, setOpen] = React.useState<ReadingArticleDetail | null>(null);
   const [opening, setOpening] = React.useState<string | null>(null);
@@ -70,6 +65,21 @@ export function useReading() {
 
   React.useEffect(() => {
     void refresh();
+    // 上次退出时还在解析的条目在这里续跑，避免「解析中」永远停住。
+    void reading.resumePending().catch(() => {});
+  }, [refresh]);
+
+  // 后台解析完成（成功或失败）后刷新列表，让状态徽标与正文一起更新。
+  React.useEffect(() => {
+    let stop: (() => void) | undefined;
+    void reading
+      .onParsed(() => {
+        void refresh();
+      })
+      .then((unlisten) => {
+        stop = unlisten;
+      });
+    return () => stop?.();
   }, [refresh]);
 
   const mark = React.useCallback((id: string, on: boolean) => {
@@ -87,7 +97,6 @@ export function useReading() {
   }, []);
 
   const importBrowserPage = React.useCallback(async (url: string, html: string): Promise<boolean> => {
-    addCancelled.current = false;
     setAdding(true);
     setAddError(null);
     setAddNotice(null);
@@ -107,73 +116,75 @@ export function useReading() {
   }, []);
 
   const cancelAdd = React.useCallback(() => {
-    addCancelled.current = true;
-    setAdding(false);
-    setAddNotice('已取消等待。抓取可能仍在后台进行，若成功文章会稍后出现在列表中。');
-  }, []);
-
-  const cancelBatch = React.useCallback(() => {
-    batchCancelled.current = true;
+    setAddNotice(null);
+    setAddError(null);
   }, []);
 
   const addBatch = React.useCallback(async (urls: string[]): Promise<void> => {
     if (urls.length === 0) return;
-    batchCancelled.current = false;
     setBatchErrors([]);
     setBatch({ running: true, total: urls.length, done: 0, ok: 0, failed: 0, current: urls[0] });
-    let ok = 0;
-    let failed = 0;
-    let done = 0;
+    const added: ReadingArticle[] = [];
     const failures: BatchError[] = [];
     for (const url of urls) {
-      if (batchCancelled.current) break;
-      setBatch((current) => ({ ...current, current: url, done, ok, failed, running: true }));
       try {
-        const detail = await reading.add(url);
-        if (batchCancelled.current) break;
-        setArticles((current) => {
-          const { content_html: _h, markdown: _m, image_dir: _d, annotations: _a, ...summary } = detail;
-          return [summary, ...current.filter((article) => article.id !== summary.id)];
-        });
-        ok += 1;
+        added.push(await reading.quickAdd(url));
       } catch (caught) {
         failures.push({ url, message: caught instanceof Error ? caught.message : String(caught) });
-        setBatchErrors([...failures]);
-        failed += 1;
       }
-      done += 1;
-      setBatch((current) => ({ ...current, done, ok, failed }));
     }
-    setBatch((current) => ({ ...current, running: false, current: null, done, ok, failed }));
+    setArticles((current) => {
+      const fresh = new Set(added.map((article) => article.id));
+      // 后加入的 added_at 更大，排在前面。
+      return [...added.slice().reverse(), ...current.filter((article) => !fresh.has(article.id))];
+    });
+    setBatchErrors(failures);
+    setBatch({
+      running: false,
+      total: urls.length,
+      done: urls.length,
+      ok: added.length,
+      failed: failures.length,
+      current: null,
+    });
   }, []);
 
+  /** 秒回：先把链接放进列表，正文由 Rust 后台抓取，解析状态随事件更新。 */
   const add = React.useCallback(async (raw: string): Promise<boolean> => {
     const url = normalizeInputUrl(raw);
     if (!url) {
       setAddError('请输入完整的 http/https 链接');
       return false;
     }
-    addCancelled.current = false;
     setAdding(true);
     setAddError(null);
     setAddNotice(null);
     try {
-      const detail = await reading.add(url);
-      if (addCancelled.current) return false;
-      setArticles((current) => {
-        const { content_html: _h, markdown: _m, image_dir: _d, annotations: _a, ...summary } = detail;
-        const without = current.filter((article) => article.id !== summary.id);
-        return [summary, ...without];
-      });
+      const article = await reading.quickAdd(url);
+      setArticles((current) => [article, ...current.filter((item) => item.id !== article.id)]);
       return true;
     } catch (caught) {
-      if (addCancelled.current) return false;
       setAddError(caught instanceof Error ? caught.message : String(caught));
       return false;
     } finally {
-      if (!addCancelled.current) setAdding(false);
+      setAdding(false);
     }
   }, []);
+
+  /** 解析失败后重试：行立即回到「解析中」，结果由 reading://parsed 事件带回。 */
+  const retryParse = React.useCallback(
+    async (id: string) => {
+      mark(id, true);
+      try {
+        replaceSummary(await reading.retryParse(id));
+      } catch (caught) {
+        setError(caught instanceof Error ? caught.message : String(caught));
+      } finally {
+        mark(id, false);
+      }
+    },
+    [mark, replaceSummary],
+  );
 
   const openArticle = React.useCallback(async (id: string) => {
     setOpening(id);
@@ -292,7 +303,7 @@ export function useReading() {
     add,
     importBrowserPage,
     addBatch,
-    cancelBatch,
+    retryParse,
     batch,
     batchErrors,
     openArticle,

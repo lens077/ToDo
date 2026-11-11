@@ -1052,6 +1052,24 @@
   .reading-chip { display: inline-flex; align-items: center; gap: 4px; min-height: 26px; padding: 0 10px; border-radius: 999px; font-size: 12px; }
   .reading-chip svg { width: 13px; height: 13px; }
   .reading-chip--read { color: var(--teal-text); background: var(--teal-wash); }
+  .reading-chip--pending { color: var(--ink-2); background: var(--panel-2); }
+  .reading-card.is-unparsed .reading-card__title { color: var(--ink-2); }
+  /* 解析状态紧贴标题行：解析中给个呼吸点，失败给危险色。 */
+  .reading-card__parse { display: inline-flex; align-items: center; gap: 4px; font-size: 11.5px; }
+  .reading-card__parse--pending { color: var(--ink-3); }
+  .reading-card__parse--pending::before {
+    content: '';
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--accent);
+    animation: reading-parse-pulse 1.2s ease-in-out infinite;
+  }
+  .reading-card__parse--failed { color: var(--danger); }
+  @keyframes reading-parse-pulse {
+    0%, 100% { opacity: 0.25; }
+    50% { opacity: 1; }
+  }
   .reading-card__progress { position: absolute; right: 0; bottom: 0; left: 0; height: 3px; background: var(--panel-2); }
   .reading-card__progress > span { display: block; height: 100%; background: var(--primary-fill); transition: width 0.4s var(--ease-out); }
   .reading-card--read .reading-card__progress > span { background: var(--teal-text); }

@@ -28,6 +28,8 @@ export interface ReadingArticle {
   progress_anchor: string | null;
   read_at: number | null;
   annotation_count: number;
+  /** `pending` 时正文还在后台抓取；`failed` 时保留链接、可重试。 */
+  parse_status: string;
 }
 
 export interface ReadingAnnotation {
@@ -353,6 +355,7 @@ const mockArticles: ReadingArticleDetail[] = [
     progress_anchor: 'idx:4',
     read_at: null,
     annotation_count: 1,
+    parse_status: 'ok',
     content_html: MOCK_BODY,
     markdown: null,
     image_dir: '',
@@ -386,6 +389,7 @@ const mockArticles: ReadingArticleDetail[] = [
     progress_anchor: null,
     read_at: null,
     annotation_count: 0,
+    parse_status: 'ok',
     content_html: MOCK_BODY,
     markdown: null,
     image_dir: '',
@@ -446,6 +450,7 @@ export const reading = {
       progress_anchor: null,
       read_at: null,
       annotation_count: 0,
+      parse_status: 'ok',
       content_html: MOCK_BODY,
       markdown: null,
       image_dir: '',
@@ -454,6 +459,36 @@ export const reading = {
     };
     mockArticles.unshift(detail);
     return detail;
+  },
+
+  /** 毫秒级入列，正文在后台解析；连续添加不会被上一次抓取阻塞。 */
+  async quickAdd(url: string): Promise<ReadingArticle> {
+    if (isTauriRuntime()) return call<ReadingArticle>('reading_quick_add', { url });
+    return mockSummary(await this.add(url));
+  },
+
+  async retryParse(id: string): Promise<ReadingArticle> {
+    if (isTauriRuntime()) return call<ReadingArticle>('reading_retry_parse', { id });
+    const found = mockFind(id);
+    found.parse_status = 'ok';
+    return mockSummary(found);
+  },
+
+  /** 恢复被 App 重启打断的解析；返回重新入队的条数。 */
+  async resumePending(): Promise<number> {
+    if (isTauriRuntime()) return call<number>('reading_resume_pending');
+    return 0;
+  },
+
+  /** 后台解析完成的通知；浏览器 mock 没有后台线程，返回空订阅。 */
+  async onParsed(
+    handler: (event: { id: string; status: string; error: string | null }) => void,
+  ): Promise<() => void> {
+    if (!isTauriRuntime()) return () => {};
+    const { listen } = await import('@tauri-apps/api/event');
+    return listen<{ id: string; status: string; error: string | null }>('reading://parsed', (event) =>
+      handler(event.payload),
+    );
   },
 
   async get(id: string): Promise<ReadingArticleDetail> {

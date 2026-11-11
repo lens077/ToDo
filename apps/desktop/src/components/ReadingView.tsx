@@ -54,29 +54,40 @@ interface ReadingCardProps {
   onOpen: (id: string) => void;
   onSetRead: (id: string, read: boolean) => void;
   onRemove: (id: string) => void;
+  onRetry: (id: string) => void;
 }
 
-function ReadingCard({ article, busy, opening, onOpen, onSetRead, onRemove }: ReadingCardProps) {
+function ReadingCard({ article, busy, opening, onOpen, onSetRead, onRemove, onRetry }: ReadingCardProps) {
   const state = readingState(article);
   const percent = state === 'read' ? 100 : article.progress_percent;
+  const parsing = article.parse_status === 'pending';
+  const failed = article.parse_status === 'failed';
+  const unavailable = parsing || failed;
   const action =
     state === 'read' ? '重读' : state === 'reading' ? `继续阅读 · ${article.progress_percent}%` : '开始阅读';
   return (
     <article
-      className={`reading-card reading-card--${state}${busy ? ' is-busy' : ''}`}
+      className={`reading-card reading-card--${state}${busy ? ' is-busy' : ''}${unavailable ? ' is-unparsed' : ''}`}
       data-testid="reading-card"
       data-article={article.id}
+      data-parse-status={article.parse_status}
       aria-label={article.title}
     >
-      <button type="button" className="reading-card__open" onClick={() => onOpen(article.id)} disabled={busy || opening} aria-label={`打开：${article.title}`}>
+      <button type="button" className="reading-card__open" onClick={() => onOpen(article.id)} disabled={busy || opening || unavailable} aria-label={`打开：${article.title}`}>
         <Cover article={article} />
         <span className="reading-card__body">
           <span className="reading-card__title">{article.title}</span>
           {article.excerpt && <span className="reading-card__excerpt">{article.excerpt}</span>}
           <span className="reading-card__meta">
+            {parsing && <span className="reading-card__parse reading-card__parse--pending">解析中…</span>}
+            {failed && <span className="reading-card__parse reading-card__parse--failed">解析失败</span>}
             <span title={article.url}>{article.site_name || hostOf(article.url)}</span>
-            <span aria-hidden="true">·</span>
-            <span>{article.reading_minutes} 分钟</span>
+            {article.word_count > 0 && (
+              <>
+                <span aria-hidden="true">·</span>
+                <span>{article.reading_minutes} 分钟</span>
+              </>
+            )}
             <span aria-hidden="true">·</span>
             <time dateTime={new Date(article.added_at).toISOString()} title={absoluteTime(article.added_at)}>
               {relativeTime(article.added_at)}
@@ -91,7 +102,15 @@ function ReadingCard({ article, busy, opening, onOpen, onSetRead, onRemove }: Re
         </span>
       </button>
       <div className="reading-card__side">
-        {state === 'read' ? (
+        {unavailable ? (
+          failed ? (
+            <button type="button" className="text-action text-action--primary" disabled={busy} onClick={() => onRetry(article.id)}>
+              重试解析
+            </button>
+          ) : (
+            <span className="reading-chip reading-chip--pending">解析中…</span>
+          )
+        ) : state === 'read' ? (
           <span className="reading-chip reading-chip--read"><Icon name="check" />已读</span>
         ) : (
           <button type="button" className={`text-action${state === 'reading' ? ' text-action--primary' : ''}`} disabled={busy || opening} onClick={() => onOpen(article.id)}>
@@ -197,15 +216,9 @@ export function ReadingView({ model }: ReadingViewProps) {
             if (model.addError) model.clearAddError();
           }}
         />
-        {model.adding ? (
-          <button type="button" onClick={model.cancelAdd}>
-            取消
-          </button>
-        ) : (
-          <button type="submit" disabled={!draft.trim()}>
-            添加
-          </button>
-        )}
+        <button type="submit" disabled={model.adding || !draft.trim()}>
+          {model.adding ? '添加中…' : '添加'}
+        </button>
         <span className="reading-add__actions">
           <button type="button" className="reading-add__browser" disabled={model.adding || model.batch.running} onClick={() => void importCurrentBrowserPage()}>
             从浏览器保存
@@ -220,16 +233,6 @@ export function ReadingView({ model }: ReadingViewProps) {
         )}
         {model.addNotice && (
           <p className="reading-add__status" role="status">{model.addNotice}</p>
-        )}
-        {model.adding && (
-          <div className="reading-preview reading-preview--loading" role="status">
-            <span className="reading-preview__thumb reading-preview__thumb--loading"><Icon name="capture" /></span>
-            <span className="reading-preview__copy"><strong>正在抓取正文…</strong><span>标题、正文与图片会保存到本机</span></span>
-            <span className="reading-preview__tools">
-              <button type="button" className="text-action" onClick={model.cancelAdd}>取消等待</button>
-              <span className="reading-preview__spinner" aria-hidden="true" />
-            </span>
-          </div>
         )}
       </form>
 
@@ -259,34 +262,24 @@ export function ReadingView({ model }: ReadingViewProps) {
             ))}
             <span className="reading-batch__hint">全部类型同时支持普通网页文章</span>
             <span className="reading-batch__spacer" />
-            {model.batch.running ? (
-              <button type="button" onClick={model.cancelBatch}>
-                取消
-              </button>
-            ) : (
-              <>
-                <button
-                  type="button"
-                  disabled={batchUrls.length === 0}
-                  onClick={() => void model.addBatch(batchUrls)}
-                >
-                  开始导入
-                </button>
-                <button type="button" className="reading-add__browser" onClick={() => setBatchOpen(false)}>
-                  关闭
-                </button>
-              </>
-            )}
+            <button
+              type="button"
+              disabled={batchUrls.length === 0 || model.batch.running}
+              onClick={() => void model.addBatch(batchUrls).then(() => {
+                setBatchDraft('');
+                setBatchOpen(false);
+              })}
+            >
+              {model.batch.running ? '正在放入列表…' : '导入'}
+            </button>
+            <button type="button" className="reading-add__browser" onClick={() => setBatchOpen(false)}>
+              关闭
+            </button>
           </div>
-          {model.batch.running && (
+          {model.batch.total > 0 && !model.batch.running && (
             <p className="reading-add__status" role="status">
-              正在导入 {model.batch.done + 1}/{model.batch.total} · 成功 {model.batch.ok} · 失败 {model.batch.failed}
-              {model.batch.current && <span title={model.batch.current}>（{hostOf(model.batch.current)}）</span>}
-            </p>
-          )}
-          {!model.batch.running && model.batch.total > 0 && (
-            <p className="reading-add__status" role="status">
-              {model.batch.done < model.batch.total ? '已取消。' : '导入完成。'}成功 {model.batch.ok} · 失败 {model.batch.failed}
+              已放入 {model.batch.ok} 条，正文在后台解析；可直接继续添加。
+              {model.batch.failed > 0 && ` 另有 ${model.batch.failed} 条链接无法识别。`}
             </p>
           )}
           {model.batchErrors.length > 0 && (
@@ -343,6 +336,7 @@ export function ReadingView({ model }: ReadingViewProps) {
               onOpen={(id) => void model.openArticle(id)}
               onSetRead={(id, read) => void model.setRead(id, read)}
               onRemove={(id) => void model.remove(id)}
+              onRetry={(id) => void model.retryParse(id)}
             />
           ))}
         </div>
