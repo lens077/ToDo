@@ -999,4 +999,17 @@ Session 存为项目内 Markdown（`<project>/.virgo/sessions/s-<ts>.md`），�
 2. 角标：`MobileTabBar` 接收与侧栏一致的计数（阅读 / 目标 / 随记 / 象限 / AI），只有对应视图入栏时才渲染；「我的」固定槽永不显示角标。
 3. E2E 新增：AI 入栏后出现数字角标、移除后角标随视图一起消失。移动端 11 项通过，全量 161 passed（16 skipped）。
 4. `make check-quick` 绿；`pnpm tauri android build --apk --debug --target aarch64` 构建通过（486MB）。
-5. 待补真机项：3 / 5 / 7 三种数量截图对比、拖拽在 Android WebView 内不触发页面滚动、9 个视图全部可达。APK 构建完成后设备断开，重连后补测。
+5. 真机项见下一条记录。设备在首次构建后断开，重连后补测完成。
+
+## 2026-11-11 移动端底部导航 M4 真机验收（c947n8，通过）
+
+1. 设备：vivo V2425A（序列号 `10AEB72BCN000EJ`，Android 17）。覆盖安装 universal debug APK 后通过 `adb forward tcp:9222 localabstract:webview_devtools_remote_<pid>` 接 CDP，用 Playwright `connectOverCDP` 驱动真实 WebView（含 `Input.dispatchTouchEvent` 触摸事件），截图用 `adb exec-out screencap`。
+2. 默认五槽：目标 / 阅读 / 随记 / 总览 / 我的，`grid-template-columns` 为 `45px ×4 56px`；角标在无计数时不渲染。
+3. 加到上限：编辑器逐项「＋」到 6 个视图后底栏 7 槽（`45px ×6 56px`），视图池 3 个按钮全部禁用，提示「最多 6 个视图，其余收纳在『我的』」；「更多视图」同步只剩 AI / 扫描与历史 / 规范。
+4. 首次真机截图发现并修复：6 槽时 10.5px 标签在 45px 列宽内折成两行（「工作空间」），把底栏撑高。改为标签 `white-space: nowrap` + 省略号，并按 `data-count` 把 5 / 6 槽字号降到 10 / 9px；重建安装后 6 槽标签单行、底栏高度与 4 槽一致。
+5. 减到下限：逐项「−」到 2 个视图后底栏 3 槽（`141px ×2 56px`），两个移除按钮禁用，提示「至少保留 2 个视图」，池中 7 个视图可加入。
+6. 触摸拖拽：CDP `touchStart` → 450ms → 8 次 `touchMove` → `touchEnd`，把「目标」从第 1 槽拖到第 4 槽。拖动期间 `body.is-tab-dragging` 为真，`window.scrollY` 与 `.settings-body.scrollTop` 全程 0（Android WebView 内拖拽不带动页面滚动），松手后偏好落盘为 `["reading","overview","workspaces","goal"]`，底栏顺序与之一致。
+7. 长按入口：底栏「目标」按住 600ms 后设置打开并停在「底部导航栏」分区，当前视图未被切换（仍是 AI）。
+8. 全部 9 个视图可达：「我的」→「更多视图」列出未入栏的 5 个视图，点 AI 后设置关闭、AI 视图渲染。
+9. 观察（不阻塞）：AI 视图在未选项目时顶部显示红色「AI 会话存储不可用：无法确定主目录」，是既有行为，与本次改动无关。
+10. 收尾：验收后把设备偏好复位为默认 4 视图，便于人工复看。
