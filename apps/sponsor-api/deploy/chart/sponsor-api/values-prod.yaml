@@ -1,8 +1,10 @@
 # 生产环境（hosting 集群，namespace virgo）。ArgoCD Application
 # sponsor-api-prod 叠加 values.yaml + 本文件渲染。
 #
-# image.tag 由 CI（或手工 `make sponsor-image-push` 后回写）更新为
-# "<git sha>@sha256:<digest>"。手工回滚：改回旧值提交即可，ArgoCD 自动同步。
+# image.tag 更新为 "<git sha>@sha256:<digest>"。目前手工回写：make
+# sponsor-image（裸 sha tag）推送后用 imagetools 抓 digest 回写到这里；
+# CI 自动回写只覆盖 virgo 站图，未覆盖本图。手工回滚：改回旧值提交即可，
+# ArgoCD 自动同步。
 
 api:
   image:

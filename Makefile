@@ -25,6 +25,7 @@ SYNC_NAMESPACE ?= todo
 .PHONY: help install dev icon check check-quick hooks build bundle-macos package-macos package-macos-signed \
         comm-build other-build build-mac-arm64 build-mac-x64 build-win-x64 build-win-arm64 build-linux-x64 \
         site-build pages-deploy pages-deploy-eo site-image k8s-deploy argo-apply site-deploy \
+        sponsor-image sponsor-k8s-deploy sponsor-argo-apply \
         sync-secret sync-image sync-k8s-deploy sync-argo-apply
 
 help: ## List available build and packaging targets
@@ -164,14 +165,18 @@ argo-apply: ## Register the ArgoCD project and application
 	kubectl apply -f deploy/argocd/project.yaml
 	kubectl apply -f deploy/argocd/application.yaml
 
-# 赞助收款 API（沙箱凭据起步）。镜像构建上下文是 apps/sponsor-api/。
+# 赞助收款 API（生产凭据，见 verification-log 2026-11-12）。镜像构建
+# 上下文是 apps/sponsor-api/。buildx 的 tag 不允许带 digest，所以回写
+# values-prod 用 "<sha>@sha256:<digest>" 时不要把整个值传给本目标。
 sponsor-image:
 	docker buildx build --platform linux/amd64 -f apps/sponsor-api/deploy/Dockerfile \
 	  -t $(SPONSOR_IMAGE):$(SPONSOR_TAG) --push apps/sponsor-api
 
-# 立即部署（bootstrap / 回滚用）。日常发布与 virgo 站一样走 Git：回写
-# values-prod.yaml 的 tag，ArgoCD 自动同步。
-sponsor-k8s-deploy: sponsor-image
+# helm 安装/升级（bootstrap / 回滚用），只改集群不构建镜像：SPONSOR_TAG
+# 允许 "<sha>@sha256:<digest>"，但镜像必须已经推送到 TCR。日常发布与
+# virgo 站一样走 Git：回写 values-prod.yaml 的 tag，ArgoCD 自动同步
+# （deploy.yml 的 gitops job 会把 main 镜像到 GitLab）。
+sponsor-k8s-deploy:
 	helm upgrade --install sponsor-api $(SPONSOR_CHART_DIR) -n virgo \
 	  -f $(SPONSOR_CHART_DIR)/values.yaml -f $(SPONSOR_CHART_DIR)/values-prod.yaml \
 	  --set api.image.tag=$(SPONSOR_TAG) --wait --timeout 5m
