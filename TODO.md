@@ -37,6 +37,8 @@ columns:
 - [x] desktop-sync C2：桌面阅读库与 todo-sync 服务器双向对账（全量对账 + SSE 触发） <!--t:dj9w2g--> #sync #desktop !2
 - [x] Android 分享接收真机验收（装机后 am start 模拟 SEND intent，验服务器收到） <!--t:51swhk--> #mobile #manual !2
       ↳ 2026-11-11 真机验收通过：V2425A 分享唯一 URL 后服务器 /articles 4→5，见 docs/verification-log.md <!--n:51swhk-->
+- [x] todo-sync 纳入 ArgoCD + 桌面自动对账（SSE/离线重试） <!--t:se88bl--> #sync #backend #desktop
+      ↳ todo-sync 已由 ArgoCD todo-sync-prod 纳管（Synced/Healthy）；桌面端改为 SSE 常驻自动对账 + 5→60s 退避，离线期间写入在重连首跑补推；见 docs/verification-log.md <!--n:se88bl-->
 
 ## Doing
 - [ ] 人工验收看板任务写回 TODO.md <!--t:h4m9zc--> #desktop #manual !1 ^3000

@@ -195,7 +195,9 @@ sync-image: ## Build & push the virgo-sync image to TCR (amd64)
 	docker buildx build --platform linux/amd64 -f crates/sync-server/deploy/Dockerfile \
 	  -t $(SYNC_IMAGE):$(SYNC_TAG) --push .
 
-sync-k8s-deploy: sync-image ## Build image and deploy todo-sync to the k1 cluster now
+# 一次性回归用：todo-sync 已由 ArgoCD 管理，日常发布改 values-prod 的
+# api.image.tag 并推 GitLab main；这里再跑 helm 会和 Argo 互相覆盖。
+sync-k8s-deploy: sync-image ## Emergency only: helm deploy (ArgoCD owns it now)
 	helm upgrade --install todo-sync $(SYNC_CHART_DIR) -n $(SYNC_NAMESPACE) --create-namespace \
 	  -f $(SYNC_CHART_DIR)/values.yaml -f $(SYNC_CHART_DIR)/values-prod.yaml \
 	  --set api.image.tag=$(SYNC_TAG) --wait --timeout 5m

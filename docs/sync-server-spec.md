@@ -45,13 +45,16 @@
 
 **同步模型（v1 = 全量对账 + SSE 触发）**：客户端连上/收到 SSE ping → `GET /articles` 全量拉取 → 以服务端为准按 id 集合 diff 出增删改。删除靠 id 集合差集推断，不需要墓碑表。个人库数百条时 payload 可控；>5k 条再考虑 cursor 增量（触发条件记录于此）。
 
-**离线写入（v1 不做）**：客户端离线期间的保存/备注暂不入队；Android 分享接收在无网时提示重试。
+**桌面端自动对账（2026-11-11）**：桌面常驻线程保持 `/stream` 长连接（`Authorization: Bearer`），连上/重连上先跑一次全量对账，之后每个 `data:` 事件触发一次；1s 内的事件合并成一次，避免「保存 + 解析完成」连推导致重复对账。断线按 5s→10s→20s→40s→60s 退避，状态经 `reading://link` 推给界面；手动「立即对账」仍保留。
+
+**离线写入**：v1 不另建写入队列——本地 SQLite 就是队列，全部本地写入先落盘；对账是全量幂等的，所以离线期间的保存/备注会在下一次连上（重连首跑）时自动补推。界面用「离线，Ns 后重试」表达这个状态，而不是提示失败。注意：离线期间 Android 分享接收仍要求网络（服务端负责抓正文），这一点未变。
 
 ## 4. 鉴权与部署
 
 - `Authorization: Bearer <VIRGO_SYNC_TOKEN>`，环境变量注入（k8s Secret），缺失直接拒启；`/healthz` 豁免。
 - 环境变量：`VIRGO_SYNC_DATA_DIR`（必填）、`VIRGO_SYNC_TOKEN`（必填）、`VIRGO_SYNC_BIND`（默认 `127.0.0.1:8090`，k8s 里由 Service 暴露）。
-- 部署（2026-11-11 拍板）：`todo-sync.apikv.com`，k1 集群 `todo` namespace，PVC 落库，随机 token 走 `todo-sync-token` Secret。chart 在 `apps/sync-server/deploy/chart/todo-sync`（沿用 sponsor-api 模式：HTTPRoute→cilium-gateway、NetworkPolicy、非 root）；Makefile 目标 `sync-secret` / `sync-image` / `sync-k8s-deploy`。ArgoCD 注册待首跑稳定后补。
+- 部署（2026-11-11 拍板）：`todo-sync.apikv.com`，k1 集群 `todo` namespace，PVC 落库，随机 token 走 `todo-sync-token` Secret。chart 在 `apps/sync-server/deploy/chart/todo-sync`（沿用 sponsor-api 模式：HTTPRoute→cilium-gateway、NetworkPolicy、非 root）；Makefile 目标 `sync-secret` / `sync-image` / `sync-k8s-deploy`。
+- GitOps（2026-11-11）：已注册 ArgoCD Application `todo-sync-prod`（`deploy/argocd/application-todo-sync.yaml`，project `virgo`，目标命名空间 `todo`），`make sync-argo-apply` 一次性注册。之后只改 `values-prod.yaml` 的 `api.image.tag` 并推到 GitLab main，ArgoCD 自动同步；**不要再跑 `make sync-k8s-deploy`**，否则 helm 与 Argo 会互相覆盖。
 
 ## 5. 实施切分
 

@@ -1013,3 +1013,21 @@ Session 存为项目内 Markdown（`<project>/.virgo/sessions/s-<ts>.md`），�
 8. 全部 9 个视图可达：「我的」→「更多视图」列出未入栏的 5 个视图，点 AI 后设置关闭、AI 视图渲染。
 9. 观察（不阻塞）：AI 视图在未选项目时顶部显示红色「AI 会话存储不可用：无法确定主目录」，是既有行为，与本次改动无关。
 10. 收尾：验收后把设备偏好复位为默认 4 视图，便于人工复看。
+
+## 2026-11-11 todo-sync 纳入 ArgoCD + 桌面自动对账（通过）
+
+### ArgoCD（集群实测）
+
+1. 新增 `deploy/argocd/application-todo-sync.yaml`（Application `todo-sync-prod`，project `virgo`，路径 `apps/sync-server/deploy/chart/todo-sync`，目标 `todo` ns），`virgo` AppProject 放开 `todo` 命名空间与 PersistentVolumeClaim / NetworkPolicy 两类资源。
+2. `values-prod.yaml` 的 `api.image.tag` 先钉到当时在跑的 `6cd8c5c@sha256:6e6566…`，避免纳管瞬间换镜像。
+3. `make sync-argo-apply` 后：`Synced Healthy`，纳管 7 个资源（Deployment / Service / PVC / 2×HTTPRoute / CiliumNetworkPolicy），PVC `todo-sync-data` 保留、数据未动。
+4. 纳管的首次同步触发了一次 rev 7→8 滚动（chart 渲染与 helm 手工部署的注解有差），镜像 digest 不变；`kubectl rollout status` 通过，单副本先杀后起（RWO）。
+5. 服务实测：`/healthz` 200；`Authorization: Bearer` 后 `/articles` 200；`/stream` 200 长连接；无 token 的 `/stream` 401。
+
+### 桌面自动对账
+
+6. 新增 `apps/desktop/src-tauri/src/sync_watch.rs`：常驻线程保持 `/stream`，连上先全量对账（补推离线期间写入），之后每个 `data:` 事件触发一次；1s 内事件合并；断线 5s→10s→20s→40s→60s 退避。命令 `reading_sync_watch_start/stop/status`，事件 `reading://link` `reading://sync-start` `reading://synced` `reading://sync-error`。
+7. 前端 `lib/readingSync.ts` + `ReadingView`：有配置时 App 启动即拉起常驻连接，面板显示「自动同步已连接 / 离线，Ns 后重试」，保留「立即对账」与「断开自动同步」。
+8. 单元测试：`backoff_doubles_until_the_cap`、`only_sse_data_lines_trigger_a_sync` 通过；`cargo test -p todo-desktop` 全绿。
+9. 门禁：`make check-quick` 绿（rust fmt+clippy+test / web build+静态站）。
+10. 未在本次自动化的部分：桌面 GUI 内实际观察到「服务器变更 → 列表自动刷新」需要 App 运行，留作人工验收第 3 条。
