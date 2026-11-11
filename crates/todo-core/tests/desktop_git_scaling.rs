@@ -476,24 +476,33 @@ fn existing_evidence_starts_are_verified_in_one_batch_and_cached() {
 #[test]
 fn snapshot_skips_the_history_read_when_no_task_needs_an_introduction() {
     // All git setup happens before the spy records, so the window holds only the
-    // snapshot's own subprocesses.
-    let repository = repository_with_history(3);
-    let root = repository.path();
-    let commits: Vec<String> = git(root, &["log", "--reverse", "--format=%H", "--", "TODO.md"])
-        .lines()
-        .map(str::to_string)
-        .collect();
+    // snapshot's own subprocesses. The fixture block holds the PATH lock: a
+    // concurrent test's `record` swaps the process-global `PATH` to its own
+    // shim and deletes that directory when it ends, so an unlocked fixture
+    // `git` call can hit a dangling shim path (seen on CI).
+    let (repository, text) = {
+        let _serial = path_lock();
+        let repository = repository_with_history(3);
+        let root = repository.path();
+        let commits: Vec<String> = git(root, &["log", "--reverse", "--format=%H", "--", "TODO.md"])
+            .lines()
+            .map(str::to_string)
+            .collect();
 
-    let mut text =
-        String::from("---\ntodo-spec: 1\ncolumns:\n  - {id: todo, name: Todo}\n---\n\n## Todo\n");
-    for index in 0..3 {
-        text.push_str(&format!(
-            "- [ ] task {index} <!--t:{}--> 🔗{}..{}\n",
-            task_id(index),
-            commits[0],
-            commits[2],
-        ));
-    }
+        let mut text = String::from(
+            "---\ntodo-spec: 1\ncolumns:\n  - {id: todo, name: Todo}\n---\n\n## Todo\n",
+        );
+        for index in 0..3 {
+            text.push_str(&format!(
+                "- [ ] task {index} <!--t:{}--> 🔗{}..{}\n",
+                task_id(index),
+                commits[0],
+                commits[2],
+            ));
+        }
+        (repository, text)
+    };
+    let root = repository.path();
     fs::write(root.join("TODO.md"), text).unwrap();
 
     let spy = GitSpy::install();
