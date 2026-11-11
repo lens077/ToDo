@@ -318,7 +318,7 @@ export function ReadingView({ model }: ReadingViewProps) {
         </div>
       </div>
 
-      {model.error && <p className="ai-notice" role="alert">{model.error}</p>}
+      {model.error && <p className="reading-notice" role="alert">{model.error}</p>}
 
       {model.loading ? (
         <p className="ai-loading" role="status">正在读取阅读库…</p>

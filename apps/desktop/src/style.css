@@ -1196,6 +1196,14 @@
 
 @media (max-width: 760px) {
   .reading-add, .reading-toolbar, .reading-list, .reading-empty { margin-inline: 18px; }
+  .reading-notice { margin-inline: 18px; }
+  /* 三个动作按钮等宽排成一行：否则最右侧「同步」会被裁掉，挂在它下面的
+     同步面板也跟着飘出屏幕。面板改挂到整个输入框下方，不再钉在按钮右侧。 */
+  .reading-add__actions { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+  .reading-add__actions > button, .reading-add .reading-sync > button { width: 100%; min-width: 0 !important; padding-inline: 4px; }
+  /* 提高一级选择器：基础样式里的 position: relative 在文件后面，同权重会赢。 */
+  .reading-add .reading-sync { position: static; display: block; min-width: 0; }
+  .reading-add .reading-sync__panel { left: 6px; right: auto; top: calc(100% + 6px); width: min(340px, calc(100vw - 36px)); min-width: 0; }
   .reading-card { grid-template-columns: minmax(0, 1fr); }
   .reading-card__open { grid-template-columns: 56px minmax(0, 1fr); padding-right: 12px; }
   .reading-card__cover { width: 56px; height: 56px; }
@@ -2278,3 +2286,5 @@
 .reading-sync__state { color: var(--ink-3); font-size: 12px; }
 .reading-sync__state[data-state='online'] { color: var(--ok, #3f7d4f); }
 .reading-sync__state[data-state='offline'] { color: var(--danger); }
+/* 阅读库级别的错误（目录不可用、读库失败）：一行提示，不要套 AI 卡片栏的三栏网格。 */
+.reading-notice { margin: 0 28px 14px; padding: 9px 12px; color: var(--ink); background: var(--danger-wash); border: 1px solid var(--danger); border-radius: var(--radius-control); font-size: 12.5px; }
