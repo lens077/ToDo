@@ -1060,3 +1060,13 @@ Session 存为项目内 Markdown（`<project>/.virgo/sessions/s-<ts>.md`），�
 6. **失败原因可查**：新增 `parse_error` 列并显示在卡片上（过长省略，title 里有全文），`mark_failed` 同时把原因落库，logcat 也有 `reading parse failed: <id>: <reason>`。
 7. **真机复测**（V2425A）：三条微信链接现在都是 `ok`（马斯克/南宁日报/办税小知识）；一次粘贴三条会拆成三条入列、输入框清空；用户库里的失败测试链接已清理。
 8. 门禁：`make check-quick` 绿；`playwright test e2e/reading.spec.ts` 10 passed（新增「多链接一次粘贴」用例）。
+
+## 2026-11-11 同步 v2：复用服务器正文 + 解析退避 + 进度/取消（通过）
+
+1. **现象**：一次无变更的同步在手机上要 60.5–66.9s；PC 显示 23 条、移动端显示 16 条。前者是同步把「解析」也带上了：每轮对 `word_count == 0` 的失败条目重新抓整页（单请求 30s 超时、图片最多 60 张、串行）；后者是后台对账拉到的新条目没有刷新列表，不是上传不完整。
+2. **下行改造（A）**：`sync.rs` 不再调用 `store.refetch`。对「本地没有」或「本地空壳且服务器已有正文」的条目，`GET /articles/{id}` 取回服务器已解析的 `content_html`，由 `ReadingStore::save_pulled` 直接落库；图片从 `GET /images/<id>/<file>` 以 6 路并发复制到本地，失败的引用保留为服务器绝对 URL（在线可看，不会出现碎图）。服务器 id 作为本地 id，图片目录与正文引用天然一致。
+3. **退避改造（B）**：新增 `parse_attempts` / `parse_retry_at`。失败后 1 分钟、5 分钟各重试一次，第 3 次失败即终态；`reading_resume_pending` 只补跑到期的行（每次最多 3 条），同步路径完全不触发解析。手动「重试解析」把计数清零。
+4. **进度与取消（C）**：`run_with_progress` 在阶段切换与每篇下行前回调，经 `reading://sync-progress` 显示「正在取 3/5：标题」；面板忙时出现「取消」，`reading_sync_cancel` 在当前这一篇结束后停下并保留已完成条目。同步加进程内单实例闸门，SSE 与手动对账不会并发。
+5. **实测**（真实服务器 `todo-sync.apikv.com`，空目录，23 条 / 79 张图）：首次下行 `11.7s`；紧接着无变更再跑 `168ms`，`pulled=0 pushed=0 errors=[]`。旧实现同一场景空转 60–67s。
+6. **单测**：`pulled_articles_reuse_the_server_body_without_refetching`、`a_bodyless_pull_is_filled_in_when_the_server_finishes`、`failed_parses_back_off_and_stop_after_the_cap`、`pulled_images_are_copied_from_the_sync_server`、`pulled_images_fall_back_to_the_server_url_when_the_copy_fails`、`a_second_sync_is_skipped_while_one_is_running` 全绿；`cargo test -p todo-core --lib reading` 32 passed。
+7. **门禁**：`cargo check -p todo-desktop`、`tsc --noEmit` 通过。
