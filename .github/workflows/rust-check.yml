@@ -17,13 +17,18 @@ jobs:
           toolchain: "1.98.1"
       - uses: Swatinem/rust-cache@v2
       # workspace 含 Tauri 2 桌面端，Linux CI 需 GTK/WebKit 系统库才能编译
+      # apt 偶发 DNS 解析失败且会长时间挂起，加重试并限时
       - name: Install Tauri Linux dependencies
         run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            libglib2.0-dev libgtk-3-dev \
-            libwebkit2gtk-4.1-dev libsoup-3.0-dev libjavascriptcoregtk-4.1-dev \
-            librsvg2-dev libayatana-appindicator3-dev
+          for i in 1 2 3; do
+            timeout 300 sudo apt-get update && \
+            timeout 300 sudo apt-get install -y \
+              libglib2.0-dev libgtk-3-dev \
+              libwebkit2gtk-4.1-dev libsoup-3.0-dev libjavascriptcoregtk-4.1-dev \
+              librsvg2-dev libayatana-appindicator3-dev && break
+            echo "apt attempt $i failed, retrying..."; sleep 15
+          done
+          test -f /usr/lib/x86_64-linux-gnu/pkgconfig/glib-2.0.pc
       - name: fmt
         run: cargo fmt --all -- --check
       - name: clippy
