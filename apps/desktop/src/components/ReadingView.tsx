@@ -15,6 +15,11 @@ import {
 } from '../lib/reading';
 import { Icon } from './Icon';
 import {
+  markClipboardHandled,
+  readClipboardLinks,
+  type ClipboardCandidate,
+} from '../lib/clipboardLinks';
+import {
   clearSyncConfig,
   formatSyncReport,
   isTauriRuntime,
@@ -155,8 +160,34 @@ export function ReadingView({ model }: ReadingViewProps) {
   const [batchOpen, setBatchOpen] = React.useState(false);
   const [batchScope, setBatchScope] = React.useState<BatchScope>('all');
   const [batchDraft, setBatchDraft] = React.useState('');
+  const [clipboard, setClipboard] = React.useState<ClipboardCandidate | null>(null);
   const counts = React.useMemo(() => countByState(model.articles), [model.articles]);
   const batchUrls = React.useMemo(() => extractBatchUrls(batchDraft, batchScope), [batchDraft, batchScope]);
+
+  // 每次进阅读视图看一眼剪贴板；同一段内容只在第一次提示（指纹写在 localStorage）。
+  React.useEffect(() => {
+    let cancelled = false;
+    void readClipboardLinks().then((candidate) => {
+      if (!cancelled) setClipboard(candidate);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const dismissClipboard = () => {
+    if (clipboard) markClipboardHandled(clipboard.fingerprint);
+    setClipboard(null);
+  };
+
+  const importClipboard = async () => {
+    if (!clipboard) return;
+    markClipboardHandled(clipboard.fingerprint);
+    const urls = clipboard.urls;
+    setClipboard(null);
+    if (urls.length === 1) await model.add(urls[0]);
+    else await model.addBatch(urls);
+  };
 
   const submit = async () => {
     if (model.adding || model.batch.running || !draft.trim()) return;
@@ -310,6 +341,29 @@ export function ReadingView({ model }: ReadingViewProps) {
           ))}
         </div>
       </div>
+
+      {clipboard && (
+        <div className="reading-clipboard" role="status" aria-label="剪贴板链接">
+          <span className="reading-clipboard__icon" aria-hidden="true"><Icon name="link" /></span>
+          <span className="reading-clipboard__copy">
+            {clipboard.urls.length === 1 ? (
+              <>
+                剪贴板里有链接 <strong>{hostOf(clipboard.urls[0])}</strong>，要导入吗？
+              </>
+            ) : (
+              <>剪贴板里有 {clipboard.urls.length} 条链接，要全部导入吗？</>
+            )}
+          </span>
+          <span className="reading-clipboard__actions">
+            <button type="button" className="text-action text-action--primary" onClick={() => void importClipboard()}>
+              {clipboard.urls.length === 1 ? '导入' : '批量导入'}
+            </button>
+            <button type="button" className="text-action" onClick={dismissClipboard}>
+              忽略
+            </button>
+          </span>
+        </div>
+      )}
 
       {model.error && <p className="reading-notice" role="alert">{model.error}</p>}
 

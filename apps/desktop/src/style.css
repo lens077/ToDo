@@ -1215,6 +1215,7 @@
 @media (max-width: 760px) {
   .reading-add, .reading-toolbar, .reading-list, .reading-empty { margin-inline: 18px; }
   .reading-notice { margin-inline: 18px; }
+  .reading-clipboard { margin-inline: 18px; }
   /* 三个动作按钮等宽排成一行：否则最右侧「同步」会被裁掉，挂在它下面的
      同步面板也跟着飘出屏幕。面板改挂到整个输入框下方，不再钉在按钮右侧。 */
   .reading-add__actions { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
@@ -2306,3 +2307,10 @@
 .reading-sync__state[data-state='offline'] { color: var(--danger); }
 /* 阅读库级别的错误（目录不可用、读库失败）：一行提示，不要套 AI 卡片栏的三栏网格。 */
 .reading-notice { margin: 0 28px 14px; padding: 9px 12px; color: var(--ink); background: var(--danger-wash); border: 1px solid var(--danger); border-radius: var(--radius-control); font-size: 12.5px; }
+/* 剪贴板里有链接时的轻提示：贴在上传框下方，可一键导入或忽略。 */
+.reading-clipboard { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin: 0 28px 14px; padding: 9px 12px; color: var(--ink); background: var(--accent-wash); border: 1px solid var(--accent); border-radius: var(--radius-control); font-size: 12.5px; }
+.reading-clipboard__icon { display: inline-flex; color: var(--accent); }
+.reading-clipboard__icon svg { width: 16px; height: 16px; }
+.reading-clipboard__copy { flex: 1; min-width: 160px; }
+.reading-clipboard__copy strong { font-weight: 600; }
+.reading-clipboard__actions { display: inline-flex; gap: 6px; }

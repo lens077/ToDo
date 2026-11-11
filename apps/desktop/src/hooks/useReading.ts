@@ -115,11 +115,6 @@ export function useReading() {
     }
   }, []);
 
-  const cancelAdd = React.useCallback(() => {
-    setAddNotice(null);
-    setAddError(null);
-  }, []);
-
   const addBatch = React.useCallback(async (urls: string[]): Promise<void> => {
     if (urls.length === 0) return;
     setBatchErrors([]);
@@ -291,7 +286,6 @@ export function useReading() {
     adding,
     addError,
     addNotice,
-    cancelAdd,
     clearAddError: () => {
       setAddError(null);
       setAddNotice(null);

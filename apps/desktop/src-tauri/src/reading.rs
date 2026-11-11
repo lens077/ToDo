@@ -122,6 +122,14 @@ fn spawn_parse(app: AppHandle, store: ReadingStore, id: String) {
     });
 }
 
+/// 读取系统剪贴板纯文本。Android 只允许前台应用读剪贴板（我们正好在前台），
+/// 权限被拒或内容不是文本时返回 None，不打断阅读视图。
+#[tauri::command]
+pub fn reading_clipboard_text(app: AppHandle) -> Option<String> {
+    use tauri_plugin_clipboard_manager::ClipboardExt;
+    app.clipboard().read_text().ok()
+}
+
 /// 收藏优先：先把链接放进列表（毫秒级，`pending`），正文在后台抓取。
 /// 连续添加不会被上一次的抓取阻塞。
 #[tauri::command]

@@ -694,7 +694,9 @@ pub fn run() {
     if let Some(store) = ai_store {
         ops = ops.with_ai_store(store);
     }
-    let builder = tauri::Builder::default().plugin(tauri_plugin_dialog::init());
+    let builder = tauri::Builder::default()
+        .plugin(tauri_plugin_clipboard_manager::init())
+        .plugin(tauri_plugin_dialog::init());
     // The global-shortcut plugin is desktop-only; on mobile it compiles to an
     // empty stub with none of these types exported.
     #[cfg(desktop)]
@@ -770,6 +772,7 @@ pub fn run() {
             reading::reading_quick_add,
             reading::reading_retry_parse,
             reading::reading_resume_pending,
+            reading::reading_clipboard_text,
             sync_watch::reading_sync_watch_start,
             sync_watch::reading_sync_watch_stop,
             sync_watch::reading_sync_watch_status,
