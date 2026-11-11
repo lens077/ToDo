@@ -22,9 +22,9 @@ columns:
 - [ ] 产出可分发的桌面端 release 构建 <!--t:d3l8hn--> #desktop #release !3 ^9000 ◐80
       ↳ release workflow、打包脚本与发布文档已完成；待真实 Developer ID 签名与 Apple 公证凭据验收 <!--n:d3l8hn-->
 - [ ] 落地「目前免费 + 赞助」：赞助屏与收款入口 <!--t:aiw1hs--> #product #site !1
-      ↳ 2026-10-26 已定：下载与使用免费、功能不阉割、不做授权校验与试用；赞助 ¥1/¥6/¥18/¥30/¥68/¥88 + 自定义，国内支付宝与爱发电，国际 Ko-fi/GitHub Sponsors 只入计划不实施；回报仅致谢与自愿名单。原买断方案（$19/¥88、半价续费、12 个月窗口、30 天试用、联网校验、停服保障）全部作废，代码里从未实现，无需回退。待办：赞助屏文案（见 docs/site-copy.md 第 5 屏）、爱发电与支付宝入口、致谢区、隐私政策（只覆盖 Umami 统计） <!--n:aiw1hs-->
-- [ ] 拍板首次运行 onboarding 方案（见 docs/onboarding-spec.md） <!--t:jrnlos--> #product #onboarding !2
-      ↳ 待定（4）：不做向导方向、todo scan 作为首次价值证明、对账揭示时机、agent 接入提示阈值 <!--n:jrnlos-->
+      ↳ 2026-10-26 已定：下载与使用免费、功能不阉割、不做授权校验与试用；赞助 ¥1/¥6/¥18/¥30/¥68/¥88 + 自定义，国际 Ko-fi/GitHub Sponsors 只入计划不实施。2026-11-12 支付宝入口已上线（生产网关 + ¥1 端到端实测，6 档位按钮三端生效，见 verification-log）。剩：赞助屏文案打磨（docs/site-copy.md 第 5 屏）、致谢区、隐私政策（只覆盖 Umami 统计）、爱发电入口（7gi5ls，前置已满足） <!--n:aiw1hs-->
+- [x] 拍板首次运行 onboarding 方案（见 docs/onboarding-spec.md） <!--t:jrnlos--> #product #onboarding !2
+      ↳ 2026-11-12 拍板：默认无向导 + 设置显眼位置放可选「引导向导」按钮（点击进入传统向导，默认不启用）；主推 todo scan；对账延迟到首条 finding；agent 提示阈值 3 个任务。详见 DECISIONS.md 决策⑤与 docs/onboarding-spec.md §7 <!--n:jrnlos-->
 - [ ] 接入爱发电赞助入口（支付宝完成后再做） <!--t:7gi5ls--> #product #site !2
 - [x] 签约通过后切生产：切网关 + 回写镜像 tag + make sponsor-k8s-deploy + 生产实测异步通知（等用户指令执行） <!--t:3nd6da--> #sponsor #alipay #release !2
       ↳ 2026-11-12 全链路完成：正式凭据入 OpenBao（PKCS#8→PKCS#1 转换+配对校验）、helm bootstrap + ArgoCD Synced Healthy、公网 healthz 200 sandbox:false、¥1 真实支付验签/金额/trade_no/账本全绿、官网三端 sponsor-api meta 已注入。退款无 API（产品决策保持最小），测试款商家平台手动退。详见 docs/verification-log.md 2026-11-12 条目 <!--n:3nd6da-->
