@@ -1306,7 +1306,17 @@
   .mobile-tab-bar button.is-active { color: var(--accent); background: var(--accent-wash); }
   .mobile-tab-bar svg { width: 19px; height: 19px; color: var(--ink-3); }
   .mobile-tab-bar button.is-active svg { color: var(--accent); }
-  .mobile-tab-bar span { font-size: 10.5px; line-height: 1; }
+  /* Six slots leave ~45px per label: shrink the type instead of wrapping. */
+  .mobile-tab-bar button > span:not(.mobile-tab-bar__count) {
+    max-width: 100%;
+    overflow: hidden;
+    font-size: 10.5px;
+    line-height: 1;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .mobile-tab-bar[data-count='5'] button > span:not(.mobile-tab-bar__count) { font-size: 10px; }
+  .mobile-tab-bar[data-count='6'] button > span:not(.mobile-tab-bar__count) { font-size: 9px; }
   .mobile-tab-bar button .mobile-tab-bar__count {
     position: absolute;
     top: 3px;
