@@ -10,7 +10,7 @@
 //! 已有条目的备注/进度互不覆盖（v1 冲突策略：创建时随行，之后各自独立）。
 
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Mutex, TryLockError};
 use std::time::Duration;
 
@@ -22,6 +22,9 @@ use todo_core::{ReadingArticle, ReadingArticleDetail, ReadingStore};
 static SYNC_LOCK: Mutex<()> = Mutex::new(());
 /// 取消标记：界面上的「取消」让当前这一轮在下一个安全点停下。
 static CANCEL: AtomicBool = AtomicBool::new(false);
+/// 下行详情的并发数。图片复制在 `save_pulled` 内部另有自己的并发池
+/// （`MAX_IMAGE_WORKERS`），这里只把「请求-等正文」的网络往返重叠起来。
+const MAX_PULL_WORKERS: usize = 4;
 
 pub fn cancel() {
     CANCEL.store(true, Ordering::SeqCst);
@@ -73,7 +76,8 @@ pub fn run(store: &ReadingStore, base: &str, token: &str) -> Result<SyncReport, 
     run_with_progress(store, base, token, &|_| {})
 }
 
-/// 与 [`run`] 相同，但在阶段切换和每篇下行前回调一次进度。
+/// 与 [`run`] 相同，但在阶段切换和每篇下行前后回调进度；下行是并发的，
+/// 回调可能从多个 worker 线程触发（`F` 需为 `Sync`）。
 pub fn run_with_progress<F>(
     store: &ReadingStore,
     base: &str,
@@ -81,7 +85,7 @@ pub fn run_with_progress<F>(
     on_progress: &F,
 ) -> Result<SyncReport, String>
 where
-    F: Fn(SyncProgress) + ?Sized,
+    F: Fn(SyncProgress) + Sync + ?Sized,
 {
     let _guard = match SYNC_LOCK.try_lock() {
         Ok(guard) => guard,
@@ -172,7 +176,9 @@ where
     }
 
     // 下行：服务器有、本地没有；或本地只有空壳而服务器已经解析出正文。
-    // 正文与图片直接取自服务器，本地不再重抓原站。
+    // 正文与图片直接取自服务器，本地不再重抓原站。详情请求用一个小
+    // worker 池并发跑（冷同步时大头是网络往返），入库各自开连接、由
+    // SQLite 的 WAL + busy_timeout 兜底串行化。
     let mut pending: Vec<&ReadingArticle> = server
         .values()
         .filter(|article| match local.get(&article.url) {
@@ -181,53 +187,82 @@ where
         })
         .collect();
     pending.sort_by_key(|article| std::cmp::Reverse(article.added_at));
-    for (index, article) in pending.iter().enumerate() {
-        if report.cancelled || cancelled() {
-            report.cancelled = true;
-            break;
-        }
-        on_progress(SyncProgress {
-            stage: "pull",
-            done: index,
-            total: pending.len(),
-            label: if article.title.is_empty() {
-                article.url.clone()
-            } else {
-                article.title.clone()
-            },
-        });
-        let url = &article.url;
-        let detail: ReadingArticleDetail = match client
-            .get(format!("{base}/articles/{}", article.id))
-            .header(reqwest::header::AUTHORIZATION, format!("Bearer {token}"))
-            .send()
-        {
-            Ok(response) => match response.error_for_status() {
-                Ok(response) => match response.json() {
-                    Ok(detail) => detail,
+
+    let pulled = AtomicUsize::new(0);
+    let completed = AtomicUsize::new(0);
+    let next = AtomicUsize::new(0);
+    let stopped = AtomicBool::new(false);
+    let pull_errors = Mutex::new(Vec::new());
+    let workers = pending.len().min(MAX_PULL_WORKERS);
+    std::thread::scope(|scope| {
+        for _ in 0..workers {
+            scope.spawn(|| loop {
+                if cancelled() {
+                    stopped.store(true, Ordering::SeqCst);
+                    return;
+                }
+                let index = next.fetch_add(1, Ordering::Relaxed);
+                let Some(article) = pending.get(index) else {
+                    return;
+                };
+                let url = &article.url;
+                on_progress(SyncProgress {
+                    stage: "pull",
+                    done: completed.load(Ordering::Relaxed),
+                    total: pending.len(),
+                    label: if article.title.is_empty() {
+                        article.url.clone()
+                    } else {
+                        article.title.clone()
+                    },
+                });
+                let detail: ReadingArticleDetail = match client
+                    .get(format!("{base}/articles/{}", article.id))
+                    .header(reqwest::header::AUTHORIZATION, format!("Bearer {token}"))
+                    .send()
+                {
+                    Ok(response) => match response.error_for_status() {
+                        Ok(response) => match response.json() {
+                            Ok(detail) => detail,
+                            Err(error) => {
+                                pull_errors
+                                    .lock()
+                                    .unwrap()
+                                    .push(format!("下行 {url}：{error}"));
+                                continue;
+                            }
+                        },
+                        Err(error) => {
+                            pull_errors.lock().unwrap().push(format!(
+                                "下行 {url}：{}",
+                                error.status().unwrap_or_default()
+                            ));
+                            continue;
+                        }
+                    },
                     Err(error) => {
-                        report.errors.push(format!("下行 {url}：{error}"));
+                        pull_errors
+                            .lock()
+                            .unwrap()
+                            .push(format!("下行 {url}：{error}"));
                         continue;
                     }
-                },
-                Err(error) => {
-                    report.errors.push(format!(
-                        "下行 {url}：{}",
-                        error.status().unwrap_or_default()
-                    ));
+                };
+                if let Err(error) = store.save_pulled(&detail, base) {
+                    pull_errors
+                        .lock()
+                        .unwrap()
+                        .push(format!("入库 {url}：{error}"));
                     continue;
                 }
-            },
-            Err(error) => {
-                report.errors.push(format!("下行 {url}：{error}"));
-                continue;
-            }
-        };
-        match store.save_pulled(&detail, base) {
-            Ok(_) => report.pulled += 1,
-            Err(error) => report.errors.push(format!("入库 {url}：{error}")),
+                pulled.fetch_add(1, Ordering::Relaxed);
+                completed.fetch_add(1, Ordering::Relaxed);
+            });
         }
-    }
+    });
+    report.pulled = pulled.load(Ordering::Relaxed);
+    report.cancelled = stopped.load(Ordering::SeqCst);
+    report.errors.extend(pull_errors.into_inner().unwrap());
 
     if !report.cancelled {
         on_progress(SyncProgress {
@@ -260,6 +295,125 @@ mod tests {
         assert_eq!(report.pulled, 0);
         assert_eq!(report.pushed, 0);
         drop(guard);
+    }
+
+    fn server_article_json(index: usize) -> serde_json::Value {
+        serde_json::json!({
+            "id": format!("srv{index:05}"),
+            "url": format!("https://example.com/pull/{index}"),
+            "title": format!("并发 {index}"),
+            "site_name": "example",
+            "excerpt": "",
+            "byline": null,
+            "cover_path": null,
+            "word_count": 100,
+            "reading_minutes": 1,
+            "added_at": 1_700_000_000_000i64 + index as i64,
+            "last_opened_at": null,
+            "progress_percent": 0,
+            "progress_anchor": null,
+            "read_at": null,
+            "annotation_count": 0,
+            "parse_status": "ok",
+            "parse_error": ""
+        })
+    }
+
+    fn server_detail_json(index: usize) -> serde_json::Value {
+        serde_json::json!({
+            "id": format!("srv{index:05}"),
+            "url": format!("https://example.com/pull/{index}"),
+            "title": format!("并发 {index}"),
+            "site_name": "example",
+            "excerpt": "",
+            "byline": null,
+            "cover_path": null,
+            "word_count": 100,
+            "reading_minutes": 1,
+            "added_at": 1_700_000_000_000i64 + index as i64,
+            "last_opened_at": null,
+            "progress_percent": 0,
+            "progress_anchor": null,
+            "read_at": null,
+            "annotation_count": 0,
+            "parse_status": "ok",
+            "parse_error": "",
+            "content_html": format!("<p>正文 {index}</p>"),
+            "markdown": null,
+            "image_dir": "",
+            "annotations": []
+        })
+    }
+
+    /// 并发下拉：worker 池必须把每篇详情拉且只拉一次，第二轮零变更。
+    #[test]
+    fn concurrent_pull_fetches_each_detail_exactly_once() {
+        use std::io::{Read, Write};
+
+        const COUNT: usize = 6;
+        let detail_hits: &'static AtomicUsize = Box::leak(Box::new(AtomicUsize::new(0)));
+
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = listener.local_addr().unwrap();
+        std::thread::spawn(move || {
+            for stream in listener.incoming() {
+                let Ok(mut stream) = stream else { return };
+                let mut buffer = [0u8; 2048];
+                let Ok(read) = stream.read(&mut buffer) else {
+                    return;
+                };
+                let request = String::from_utf8_lossy(&buffer[..read]);
+                let path = request.split_whitespace().nth(1).unwrap_or_default();
+                let (status, body) = if path == "/articles" {
+                    let items: Vec<String> = (0..COUNT)
+                        .map(|index| server_article_json(index).to_string())
+                        .collect();
+                    ("200 OK", format!(r#"{{"articles":[{}]}}"#, items.join(",")))
+                } else if let Some(id) = path.strip_prefix("/articles/") {
+                    match id.trim_start_matches("srv").parse::<usize>() {
+                        Ok(index) => {
+                            detail_hits.fetch_add(1, Ordering::Relaxed);
+                            ("200 OK", server_detail_json(index).to_string())
+                        }
+                        Err(_) => ("404 Not Found", r#"{"error":"not found"}"#.to_string()),
+                    }
+                } else {
+                    ("404 Not Found", r#"{"error":"not found"}"#.to_string())
+                };
+                let header = format!(
+                    "HTTP/1.1 {status}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                    body.len()
+                );
+                let _ = stream.write_all(header.as_bytes());
+                let _ = stream.write_all(body.as_bytes());
+            }
+        });
+
+        let dir = tempfile::tempdir().unwrap();
+        let store = ReadingStore::new(dir.path().join("reading"));
+        let base = format!("http://{address}");
+
+        let cold = run(&store, &base, "token").unwrap();
+        assert_eq!(cold.pulled, COUNT, "冷同步应拉完全部：{:?}", cold.errors);
+        assert_eq!(cold.errors.len(), 0);
+        assert_eq!(
+            detail_hits.load(Ordering::Relaxed),
+            COUNT,
+            "每篇详情拉且只拉一次"
+        );
+        let rows = store.list().unwrap();
+        assert_eq!(rows.len(), COUNT);
+        assert!(rows
+            .iter()
+            .all(|row| row.word_count > 0 && row.parse_status == "ok"));
+
+        let warm = run(&store, &base, "token").unwrap();
+        assert_eq!(warm.pulled, 0, "第二轮不该再下行");
+        assert_eq!(
+            detail_hits.load(Ordering::Relaxed),
+            COUNT,
+            "第二轮零详情请求"
+        );
     }
 
     /// 对着真实服务器跑两轮：第一轮把远端库拉进空目录，第二轮应该零变更且

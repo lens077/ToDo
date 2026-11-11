@@ -32,7 +32,8 @@
    - 本地没有该 URL；
    - 本地 `word_count == 0` 且服务器 `word_count > 0`（空壳补正文）。
    → `GET /articles/{id}` → `store.save_pulled(&detail, base)`。
-6. 每个阶段/每篇前回调进度；每篇前检查取消；错误最多保留 5 条。
+6. 每个阶段/每篇前回调进度；每篇前检查取消；错误最多保留 5 条。下行详情请求 4 路并发
+   （`MAX_PULL_WORKERS`），进度里的 `done` 是已完成数；入库由 SQLite WAL + busy_timeout 串行兜底。
 
 **不变量**：已有正文的本地行永不重拉；已有行的备注/进度不被服务器覆盖（v1 冲突策略）。
 
@@ -76,7 +77,7 @@
 | 位置 | 内容 |
 | --- | --- |
 | `crates/todo-core/src/reading.rs` | 新列、退避/上限、`save_pulled`、`due_retry_ids`、远端图片复制 |
-| `apps/desktop/src-tauri/src/sync.rs` | v2 对账、`run_with_progress`、`SYNC_LOCK`、`cancel()`、`SyncReport`/`SyncProgress` |
+| `apps/desktop/src-tauri/src/sync.rs` | v2 对账、`run_with_progress`、详情 4 路并发（`MAX_PULL_WORKERS`）、`SYNC_LOCK`、`cancel()`、`SyncReport`/`SyncProgress` |
 | `apps/desktop/src-tauri/src/sync_watch.rs` | SSE 常驻；对账时转发 `reading://sync-progress` |
 | `apps/desktop/src-tauri/src/reading.rs` | `reading_sync_now`（带 AppHandle 发进度）、`reading_sync_cancel`、`reading_resume_pending`（pending + 每次最多 3 条到期失败） |
 | `apps/desktop/src-tauri/src/lib.rs` | 注册 `reading_sync_cancel` |
@@ -94,8 +95,10 @@
 ## 6. 验收证据
 
 - 真实服务器（`https://todo-sync.apikv.com`，空目录，23 条 / 79 张图）：
-  - 首次下行 **11.7s**，`pulled=23 pushed=0 errors=[]`
-  - 紧接着无变更再跑 **168ms**，`pulled=0 pushed=0 errors=[]`
+  - 详情串行时首次下行 **11.7s**（2026-11-11）；改 4 路并发后 **9.15s**（2026-11-12），
+    `pulled=23 pushed=0 errors=[]`
+  - 紧接着无变更再跑 `pulled=0 pushed=0 errors=[]`，秒级内（当时 168ms，后续复测受网络
+    波动约 1–2s）
 - 单测：
   - `pulled_articles_reuse_the_server_body_without_refetching`
   - `a_bodyless_pull_is_filled_in_when_the_server_finishes`
@@ -103,6 +106,7 @@
   - `pulled_images_are_copied_from_the_sync_server`
   - `pulled_images_fall_back_to_the_server_url_when_the_copy_fails`
   - `a_second_sync_is_skipped_while_one_is_running`
+  - `concurrent_pull_fetches_each_detail_exactly_once`（mock 服务器验证并发下拉拉且只拉一次）
 - `cargo test -p todo-core --lib reading`：32 passed；`cargo test -p todo-desktop --lib`：15 passed
 - `make check-quick`：绿（rust fmt+clippy+test / web build，228s）
 - 用户已完成界面验收。
@@ -135,7 +139,7 @@
 1. 清理测试脏数据：服务器 23 条里含 `example.com/*`、`/s/quick-1..3`、`clip-a/b`、
    `dbg-one`、`rust-lang/cargo` 等；PC/手机本地仍持有，会再次推回。
 2. Android APK 重新构建与真机复验（本批尚未包含在已装包里）。
-3. 可选优化：冷启动 11.7s 可把详情拉取改成并发；删除加墓碑；进度上行；同步失败条目统计进报告。
+3. 可选优化：~~冷启动详情并发拉取~~（已完成，11.7s → 9.15s）；删除加墓碑；进度上行；同步失败条目统计进报告。
 4. 旧待办：`d3l8hn` 桌面 release 签名、CI 回写 image tag、`p7v2ld`/`w8s5rt`/`h4m9zc` 人工验收。
 
 ## 10. 常用命令

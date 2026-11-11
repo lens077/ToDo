@@ -1070,3 +1070,11 @@ Session 存为项目内 Markdown（`<project>/.virgo/sessions/s-<ts>.md`），�
 5. **实测**（真实服务器 `todo-sync.apikv.com`，空目录，23 条 / 79 张图）：首次下行 `11.7s`；紧接着无变更再跑 `168ms`，`pulled=0 pushed=0 errors=[]`。旧实现同一场景空转 60–67s。
 6. **单测**：`pulled_articles_reuse_the_server_body_without_refetching`、`a_bodyless_pull_is_filled_in_when_the_server_finishes`、`failed_parses_back_off_and_stop_after_the_cap`、`pulled_images_are_copied_from_the_sync_server`、`pulled_images_fall_back_to_the_server_url_when_the_copy_fails`、`a_second_sync_is_skipped_while_one_is_running` 全绿；`cargo test -p todo-core --lib reading` 32 passed。
 7. **门禁**：`cargo check -p todo-desktop`、`tsc --noEmit` 通过。
+
+## 2026-11-12 同步 v2 优化：下行详情 4 路并发（通过）
+
+1. **背景**：交接文档（docs/handoff-2026-11-11-sync-v2.md §9.3）列出的可选优化——冷同步 11.7s 的大头是逐篇串行等详情请求的网络往返。
+2. **改动**：`sync.rs` 下行循环改为 `MAX_PULL_WORKERS = 4` 的 worker 池（`AtomicUsize` 取号 + `thread::scope`，与 todo-core 图片复制池同一模式）；`run_with_progress` 增加 `F: Sync` 约束，进度回调可能从多个 worker 触发，`done` 为已完成数。取消语义不变：worker 每篇前检查 `CANCEL`，停止时置 `report.cancelled`。入库由 SQLite WAL + busy_timeout(5s) 兜底串行化，无需应用层写锁。
+3. **实测**（真实服务器，23 条 / 79 张图）：首次下行 11.7s → **9.15s**（`pulled=23 pushed=0 errors=[]`）；无变更热同步秒级内（本轮复测 1.88s，受网络波动影响，热路径代码未变）。提升幅度有限的原因：图片复制仍在 `save_pulled` 内逐篇 6 路执行，且 23 篇基数小。
+4. **单测**：新增 `concurrent_pull_fetches_each_detail_exactly_once`（本地 mock HTTP 服务器，6 篇并发下拉，断言每篇详情拉且只拉一次、第二轮零请求、落库 6 行均带正文）；`cargo test -p todo-desktop --lib` 16 passed。
+5. **门禁**：`cargo fmt` / `cargo clippy --all-targets` 干净。
