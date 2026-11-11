@@ -6,7 +6,7 @@
 
 web:
   image:
-    tag: "36773ee42cb95f2298e9f87d5395a5f968986848@sha256:1cbbaf426bc528393b991970a4a1376d98a0f2dab0ab825f705a1a7117b4206d"
+    tag: "2b35dd862c2850a0e8fcd2665b2f65b659fd3fd3@sha256:119e7214a2a6c149610f3e90a0192783d2381979f4ecc292cbee981d6f173357"
   # TCR 拉取凭据由 OpenBao 的 k8s/hosting/virgo 经 ESO 生成，不再手工维护 Secret。
   imagePullSecret: virgo-tcr
   externalSecret:
