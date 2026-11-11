@@ -392,6 +392,13 @@ export function App() {
 
       <MobileTabBar
         activeView={activeView}
+        counts={{
+          reading: readingModel.badge,
+          goal: goalCount,
+          capture: model.captures.length,
+          quadrant: unrankedCount,
+          ai: aiFeed.attention,
+        }}
         onChangeView={setActiveView}
         onOpenSettings={() => {
           setSettingsSection(null);

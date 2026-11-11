@@ -206,6 +206,24 @@ test('dragging a chip reorders the bar and persists the order', async ({ page })
   expect(stored.mobileTabBar.order.slice(0, 2)).toEqual(['reading', 'goal']);
 });
 
+test('badges only appear on views that are in the bar', async ({ page }) => {
+  await page.goto('/');
+  const bar = page.getByRole('navigation', { name: '底部导航' });
+  // AI has waiting sessions, but it is not in the default bar so it shows nothing.
+  await expect(bar.getByRole('button', { name: 'AI' })).toHaveCount(0);
+
+  await page.getByRole('button', { name: '我的' }).click();
+  await page.locator('.settings-tabs').getByRole('button', { name: '加入AI' }).click();
+  await page.getByRole('button', { name: '关闭设置' }).click();
+  await expect(bar.getByRole('button', { name: 'AI' }).locator('.mobile-tab-bar__count')).toHaveText(/^\d+$/);
+
+  // Removing the view takes its badge with it.
+  await page.getByRole('button', { name: '我的' }).click();
+  await page.locator('.settings-tabs').getByRole('button', { name: '移除AI' }).click();
+  await page.getByRole('button', { name: '关闭设置' }).click();
+  await expect(bar.getByRole('button', { name: 'AI' })).toHaveCount(0);
+});
+
 test('goal regions stack without horizontal scrolling', async ({ page }) => {
   await page.goto('/');
 

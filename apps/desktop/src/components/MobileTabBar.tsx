@@ -8,6 +8,8 @@ const HOLD_TO_EDIT_MS = 400;
 
 interface MobileTabBarProps {
   activeView: MainView;
+  /** Badge numbers keyed by view; only views actually in the bar show one. */
+  counts: Partial<Record<MainView, number>>;
   onChangeView: (view: MainView) => void;
   onOpenSettings: () => void;
   /** Long-press on any non-fixed tab: open settings at the tab editor. */
@@ -19,7 +21,7 @@ interface MobileTabBarProps {
  * slot on the far right, which is the way into settings and every view that
  * did not fit in the bar.
  */
-export function MobileTabBar({ activeView, onChangeView, onOpenSettings, onEditTabs }: MobileTabBarProps) {
+export function MobileTabBar({ activeView, counts, onChangeView, onOpenSettings, onEditTabs }: MobileTabBarProps) {
   const [settings] = useAppSettings();
   const tabs = settings.mobileTabBar.order;
   const holdRef = React.useRef<{ x: number; y: number; timer: number } | null>(null);
@@ -71,6 +73,7 @@ export function MobileTabBar({ activeView, onChangeView, onOpenSettings, onEditT
         const item = navItems.find((candidate) => candidate.id === id);
         if (!item) return null;
         const active = activeView === id;
+        const count = counts[id] ?? 0;
         return (
           <button
             type="button"
@@ -87,6 +90,7 @@ export function MobileTabBar({ activeView, onChangeView, onOpenSettings, onEditT
           >
             <Icon name={item.icon} />
             <span>{item.label}</span>
+            {count > 0 && <span className="mobile-tab-bar__count">{count}</span>}
           </button>
         );
       })}

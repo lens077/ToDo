@@ -1287,6 +1287,7 @@
     border-top: 1px solid var(--hairline);
   }
   .mobile-tab-bar button {
+    position: relative;
     display: grid;
     grid-template-columns: 1fr;
     grid-template-rows: 22px auto;
@@ -1306,6 +1307,22 @@
   .mobile-tab-bar svg { width: 19px; height: 19px; color: var(--ink-3); }
   .mobile-tab-bar button.is-active svg { color: var(--accent); }
   .mobile-tab-bar span { font-size: 10.5px; line-height: 1; }
+  .mobile-tab-bar button .mobile-tab-bar__count {
+    position: absolute;
+    top: 3px;
+    left: 50%;
+    min-width: 16px;
+    margin-left: 5px;
+    padding: 0 4px;
+    color: var(--accent);
+    background: var(--accent-wash);
+    border-radius: 999px;
+    font-size: 10px;
+    font-variant-numeric: tabular-nums;
+    line-height: 16px;
+    text-align: center;
+  }
+  .mobile-tab-bar button.is-active .mobile-tab-bar__count { color: var(--accent); background: var(--panel); }
   .mobile-tab-bar__me { border-left: 1px solid var(--hairline) !important; }
 
   .settings-views { display: grid; }
