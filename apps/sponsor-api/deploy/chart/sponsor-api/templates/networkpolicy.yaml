@@ -1,38 +1,45 @@
 {{- if .Values.networkPolicy.enabled -}}
 {{- $name := include "sponsor.fullname" . -}}
-# 入向：来自网关（支付下单/回跳/通知）；出向：支付宝网关 + DNS + TCR 拉取。
-apiVersion: networking.k8s.io/v1
-kind: NetworkPolicy
+# 只允许 Cilium Gateway 与 kubelet 探针进入；出站放 DNS + 全部 IPv4
+# （解析目标站：openapi.alipay.com 生产网关）。必须用 CiliumNetworkPolicy：
+# Cilium Gateway 的流量身份是 ingress entity（envoy 在 cilium-agent 内）——
+# k8s NetworkPolicy 的 namespaceSelector 拦不到它（本图原来的 `io.cilium/k8s`
+# 写法匹配不到任何 namespace，首次上线时表现为公网 503 connection timeout，
+# 与 todo-sync 图当年踩过的坑相同，模式从 virgo/sync 图验证过的写法搬来）。
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
 metadata:
   name: {{ $name }}
   labels:
     {{- include "sponsor.labels" . | nindent 4 }}
 spec:
-  podSelector:
+  endpointSelector:
     matchLabels:
       {{- include "sponsor.selector" . | nindent 6 }}
-  policyTypes: ["Ingress", "Egress"]
+  enableDefaultDeny:
+    ingress: true
+    egress: true
   ingress:
-    - from:
-        - namespaceSelector:
-            matchLabels:
-              io.cilium/k8s: default
-      ports:
-        - { port: 8791, protocol: TCP }
+    - fromEntities:
+        - ingress
+        - host
+        - remote-node
+      toPorts:
+        - ports:
+            - { port: "8791", protocol: TCP }
   egress:
-    - to:
-        - ipBlock:
-            # 支付宝沙箱与生产网关（openapi-sandbox.dl.alipaydev.com /
-            # openapi.alipay.com），按需收敛；k8s egress 对域名做 CIDR
-            # 控制不可行，这里先放行全部 IPv4 出向，依赖 HTTPS 出口审计。
-            cidr: 0.0.0.0/0
-            except:
-              - 10.0.0.0/8
-              - 172.16.0.0/12
-              - 192.168.0.0/16
-    - to:
-        - namespaceSelector: {}
-      ports:
-        - { port: 53, protocol: UDP }
-        - { port: 53, protocol: TCP }
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: kube-system
+            k8s-app: kube-dns
+      toPorts:
+        - ports:
+            - { port: "53", protocol: UDP }
+            - { port: "53", protocol: TCP }
+    - toCIDRSet:
+        - cidr: 0.0.0.0/0
+          except:
+            - 10.0.0.0/8
+            - 172.16.0.0/12
+            - 192.168.0.0/16
 {{- end }}
