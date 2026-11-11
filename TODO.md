@@ -44,8 +44,8 @@ columns:
 - [x] 阅读：修复多链接粘贴与无正文文章解析 <!--t:3571gu--> #sync #desktop
       ↳ 根因是多行粘贴折行拼成畸形 URL；已拆条入队并在两端拒绝脏链接，无正文文章改为仅链接收藏，失败原因落库并显示；真机三条微信链接均 ok，见 docs/verification-log.md <!--n:3571gu-->
 - [x] 清理 sync-server 测试脏数据（example.com/*、/s/quick-1..3、clip-a/b、dbg-one、rust-lang/cargo） <!--t:t4gfbx--> #sync #backend !2
-- [ ] Android APK 重打并真机复验同步 v2（进度/取消/热同步） <!--t:0x16fl--> #mobile #sync !2
-      ↳ 2026-11-12：新 debug APK 已构建（含同步 v2 + 详情并发）并经 adb 安装（vivo 需手机端确认弹窗），手机本地数据已清；待用户打开 App 首次同步并复验进度/取消/热同步 <!--n:0x16fl-->
+- [x] Android APK 重打并真机复验同步 v2（进度/取消/热同步） <!--t:0x16fl--> #mobile #sync !2
+      ↳ 2026-11-12 三端复验通过：手机首次同步拉 14 条（含进度）、PC 重启 dev 后热同步零变更；服务器/PC/手机 URL 集合 diff 为空。手机 3 条 failed 系服务器端 wc=0 的 3 条按设计转本机退避解析（save_pulled 第 4 分支），非缺陷。「取消」按钮未单独验证 <!--n:0x16fl-->
 
 ## Doing
 - [ ] 人工验收看板任务写回 TODO.md <!--t:h4m9zc--> #desktop #manual !1 ^3000

@@ -2,7 +2,7 @@
 
 > 日期：2026-11-11
 > 关联：`docs/sync-server-spec.md`（§3 同步模型 v2）、`docs/verification-log.md`（2026-11-11 同步 v2 条目）、`docs/handoff-2026-11-11.md`（整体交接）
-> 状态：代码完成、真实服务器验收通过、**尚未提交**
+> 状态：已提交；后续收尾（并发优化、脏数据清理、APK 重装、三端复验）见 `docs/handoff-2026-11-12-sync-closeout.md`
 
 ## 1. 一句话现状
 

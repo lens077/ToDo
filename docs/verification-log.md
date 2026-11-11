@@ -1086,3 +1086,10 @@ Session 存为项目内 Markdown（`<project>/.virgo/sessions/s-<ts>.md`），�
 3. **复验**：`GET /articles` 剩 14 条且无脏数据残留；PC 本地 14 行（0 空壳 / 0 失败）；服务器与 PC 的 URL 集合 diff 为空。手机装好后未打开，首次打开将拉到同一 14 条。
 4. **构建备注**：`pnpm tauri android build` 需要 `.zshrc` 里的 `ANDROID_HOME=$HOME/android/sdk`、`NDK_HOME`（ndk/30.0.16138531）与 `JAVA_HOME`（Android Studio JBR）；裸跑会报 "Skipping Android Studio command line tools installation" 且管道会让 exit code 假绿。
 5. **待办**：用户打开手机 App 首次同步（应拉 14 条）并复验进度/取消/热同步（TODO 0x16fl）；重启 `tauri dev` 后 PC 同步应零变更。
+
+## 2026-11-12 同步 v2 三端闭环复验（通过）
+
+1. 用户执行人工步骤后取证：手机（新 debug APK，已 pm clear）首次同步拉 14 条并显示进度；PC 重启 `tauri dev` 后热同步零变更。
+2. 三端一致性：服务器 14 条、PC 14 行（0 空壳 / 0 失败）、手机 14 行，三端 URL 集合 diff 为空（`adb exec-out run-as com.sumery.virgo cat files/.todo/reading/reading.sqlite` 提取手机库比对）。
+3. 手机 3 条 `failed` 与服务器 3 条 `word_count=0` 的文章一一对应（`learnharness.git`、`diagram-design`、微信 `XDF7S4hJPJMM3Y37wVtRig`），错误信息「服务器还没有解析出正文」，即 `save_pulled` 第 4 分支按设计转本机退避解析，非同步缺陷；PC 本地对这 3 条已有真实正文。
+4. TODO 0x16fl 关闭；「取消」按钮本轮未单独重复验证（v2 验收已覆盖）。收尾记录见 docs/handoff-2026-11-12-sync-closeout.md。
