@@ -1093,3 +1093,10 @@ Session 存为项目内 Markdown（`<project>/.virgo/sessions/s-<ts>.md`），�
 2. 三端一致性：服务器 14 条、PC 14 行（0 空壳 / 0 失败）、手机 14 行，三端 URL 集合 diff 为空（`adb exec-out run-as com.sumery.virgo cat files/.todo/reading/reading.sqlite` 提取手机库比对）。
 3. 手机 3 条 `failed` 与服务器 3 条 `word_count=0` 的文章一一对应（`learnharness.git`、`diagram-design`、微信 `XDF7S4hJPJMM3Y37wVtRig`），错误信息「服务器还没有解析出正文」，即 `save_pulled` 第 4 分支按设计转本机退避解析，非同步缺陷；PC 本地对这 3 条已有真实正文。
 4. TODO 0x16fl 关闭；「取消」按钮本轮未单独重复验证（v2 验收已覆盖）。收尾记录见 docs/handoff-2026-11-12-sync-closeout.md。
+
+## 2026-11-12 CI rust-check 修复（通过）
+
+1. **根因**：`cargo clippy --workspace` 编译 Tauri 2 桌面端时，ubuntu-latest 缺 GTK/WebKit 系统库，`glib-sys` pkg-config 找不到 `glib-2.0`（exit 101），连续多日失败；fmt 之后的 test/contract check 从未在 CI 真正执行过。
+2. **修复**：`.github/workflows/rust-check.yml` 在 cargo 步骤前安装 Tauri 2 Linux 依赖（libglib2.0/libgtk-3/libwebkit2gtk-4.1/libsoup-3.0/libjavascriptcoregtk-4.1/librsvg2/libayatana-appindicator3-dev），并对 apt 加 3 次重试 + 300s 超时（首次安装步曾因 runner DNS 抖动挂起 1h14m）。
+3. **复验**：run 43064834592 中 Install deps/fmt/clippy 首次全绿；test 步暴露 `session::tests::interrupt_unblocks_new_session` 撞名——`session.rs` 的 id 取毫秒时间戳，CI 上同一毫秒内两次 `begin_active` 生成相同 `file_name`。已在测试的两次 begin 之间加 2ms sleep（不动 id 生成逻辑，避免牵连 registry/spec）。本地 `cargo test -p todo-core --lib session::tests` 13 通过，`cargo fmt --check` 绿。
+4. **遗留**：run 43064834592 的 test 步仅此一个失败；修复推送后需确认 CI 全绿（含首次执行的 test/contract check 步）。

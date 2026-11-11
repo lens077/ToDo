@@ -673,6 +673,8 @@ mod tests {
         begin_active(root.path(), "被中断的工作");
         let interrupted = interrupt(root.path()).unwrap();
         assert_eq!(interrupted.status, "interrupted");
+        // file_name 取自毫秒时间戳；同一毫秒内两次 begin 会撞名
+        std::thread::sleep(std::time::Duration::from_millis(2));
         let second = begin_active(root.path(), "重新开始");
         assert_ne!(second.file_name, interrupted.file_name);
     }
