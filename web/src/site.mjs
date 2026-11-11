@@ -14,11 +14,12 @@ export const SITE = {
   /**
    * Sponsorship payments (Alipay 电脑网站支付). `api` is the base URL of the
    * sponsor-api service ("" = same origin, e.g. when sponsor-api also serves
-   * the site in local E2E). Keep `api` unset until the production service is
-   * deployed — tier amounts are then rendered as plain text, not pay buttons.
+   * the site in local E2E). 2026-11-12: production service verified end to
+   * end (healthz + a real ¥1 payment with async notify), tiers render as pay
+   * buttons.
    */
   sponsor: {
-    api: "",
+    api: "https://sponsor-api.apikv.com",
     /** Amounts in CNY, positionally matched to `free.sponsor.tiers` in both content files. */
     tiers: [1, 6, 18, 30, 68, 88],
   },
