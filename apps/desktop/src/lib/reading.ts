@@ -30,6 +30,8 @@ export interface ReadingArticle {
   annotation_count: number;
   /** `pending` 时正文还在后台抓取；`failed` 时保留链接、可重试。 */
   parse_status: string;
+  /** 上次解析失败的原因，成功时为空。 */
+  parse_error: string;
 }
 
 export interface ReadingAnnotation {
@@ -152,11 +154,16 @@ export function hostOf(url: string): string {
 export function normalizeInputUrl(raw: string): string | null {
   const trimmed = raw.trim();
   if (!trimmed) return null;
+  // 一次粘贴多行链接时，单行输入框会把换行折成空格；这种值必须拆开逐条入队，
+  // 否则 `new URL` 会把空格编码进路径，拼出一个永远抓不到的地址。
+  if (/\s/.test(trimmed)) return null;
   const candidate = /^[a-z][a-z0-9+.-]*:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
   try {
     const url = new URL(candidate);
     if (url.protocol !== 'http:' && url.protocol !== 'https:') return null;
     if (!url.hostname.includes('.') && url.hostname !== 'localhost') return null;
+    // 防御：路径里再出现 scheme，说明是两条链接被拼在了一起。
+    if (/https?:\/\//i.test(url.pathname)) return null;
     return url.toString();
   } catch {
     return null;
@@ -356,6 +363,7 @@ const mockArticles: ReadingArticleDetail[] = [
     read_at: null,
     annotation_count: 1,
     parse_status: 'ok',
+    parse_error: '',
     content_html: MOCK_BODY,
     markdown: null,
     image_dir: '',
@@ -390,6 +398,7 @@ const mockArticles: ReadingArticleDetail[] = [
     read_at: null,
     annotation_count: 0,
     parse_status: 'ok',
+    parse_error: '',
     content_html: MOCK_BODY,
     markdown: null,
     image_dir: '',
@@ -451,6 +460,7 @@ export const reading = {
       read_at: null,
       annotation_count: 0,
       parse_status: 'ok',
+      parse_error: '',
       content_html: MOCK_BODY,
       markdown: null,
       image_dir: '',

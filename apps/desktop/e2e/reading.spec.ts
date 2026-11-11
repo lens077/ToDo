@@ -50,6 +50,17 @@ test.describe('阅读', () => {
     await expect(nav(page)).toContainText('3');
   });
 
+  test('pasting several links at once queues each of them', async ({ page }) => {
+    await openReading(page);
+    const input = page.getByLabel('要添加的链接');
+    // 多行粘贴在单行输入框里会被折成空格，这曾经拼成一条永远抓不到的坏链接。
+    await input.fill('https://example.net/a https://example.net/b');
+    await page.locator('.reading-add').getByRole('button', { name: '添加' }).click();
+    await expect(page.getByTestId('reading-card')).toHaveCount(4);
+    await expect(page.getByTestId('reading-card').filter({ hasText: 'example.net' })).toHaveCount(2);
+    await expect(input).toHaveValue('');
+  });
+
   test('reopening restores the last position, offers 从头开始, and shows the marker', async ({ page }) => {
     await openReading(page);
     await page.getByRole('button', { name: '继续阅读 · 42%' }).click();

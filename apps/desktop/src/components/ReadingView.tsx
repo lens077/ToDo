@@ -83,6 +83,9 @@ function ReadingCard({ article, busy, opening, onOpen, onSetRead, onRemove, onRe
         <span className="reading-card__body">
           <span className="reading-card__title">{article.title}</span>
           {article.excerpt && <span className="reading-card__excerpt">{article.excerpt}</span>}
+          {failed && article.parse_error && (
+            <span className="reading-card__parse-reason" title={article.parse_error}>{article.parse_error}</span>
+          )}
           <span className="reading-card__meta">
             {parsing && <span className="reading-card__parse reading-card__parse--pending">解析中…</span>}
             {failed && <span className="reading-card__parse reading-card__parse--failed">解析失败</span>}
@@ -191,7 +194,15 @@ export function ReadingView({ model }: ReadingViewProps) {
 
   const submit = async () => {
     if (model.adding || model.batch.running || !draft.trim()) return;
-    if (await model.add(draft)) {
+    // 一次粘进多条（多行会被输入框折成空格）：逐条入队，而不是拼成一条坏链接。
+    const pasted = extractBatchUrls(draft, 'all');
+    if (pasted.length > 1) {
+      setDraft('');
+      inputRef.current?.focus();
+      await model.addBatch(pasted);
+      return;
+    }
+    if (await model.add(pasted[0] ?? draft)) {
       setDraft('');
       inputRef.current?.focus();
     }

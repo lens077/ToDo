@@ -1066,6 +1066,8 @@
     animation: reading-parse-pulse 1.2s ease-in-out infinite;
   }
   .reading-card__parse--failed { color: var(--danger); }
+  /* 失败原因单独一行，过长时省略，完整原因在 title 里。 */
+  .reading-card__parse-reason { max-width: 100%; overflow: hidden; color: var(--danger); font-size: 11.5px; text-overflow: ellipsis; white-space: nowrap; }
   @keyframes reading-parse-pulse {
     0%, 100% { opacity: 0.25; }
     50% { opacity: 1; }
