@@ -1,4 +1,5 @@
-# ArgoCD AppProject：只允许从本仓库部署到 virgo 命名空间，且只放行 chart 用到的资源类型。
+# ArgoCD AppProject：只允许从本仓库部署到 virgo / todo 命名空间，且只放行
+# chart 用到的资源类型。
 apiVersion: argoproj.io/v1alpha1
 kind: AppProject
 metadata:
@@ -8,19 +9,25 @@ metadata:
     app.kubernetes.io/part-of: virgo
     app.kubernetes.io/managed-by: git
 spec:
-  description: virgo.apikv.com Helm GitOps project
+  description: virgo.apikv.com / todo-sync.apikv.com Helm GitOps project
   sourceRepos:
     - https://gitlab.com/sumery/virgo.git
   destinations:
     - name: in-cluster
       server: https://kubernetes.default.svc
       namespace: virgo
+    # todo-sync 的数据盘与令牌都在 todo 命名空间，单用户服务不跨命名空间。
+    - name: in-cluster
+      server: https://kubernetes.default.svc
+      namespace: todo
   clusterResourceWhitelist: []
   namespaceResourceWhitelist:
     - { group: "", kind: ConfigMap }
     - { group: "", kind: Service }
+    - { group: "", kind: PersistentVolumeClaim }
     - { group: apps, kind: Deployment }
     - { group: policy, kind: PodDisruptionBudget }
+    - { group: networking.k8s.io, kind: NetworkPolicy }
     - { group: external-secrets.io, kind: ExternalSecret }
     - { group: gateway.networking.k8s.io, kind: HTTPRoute }
     - { group: gateway.networking.k8s.io, kind: TLSRoute }

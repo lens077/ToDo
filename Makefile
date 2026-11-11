@@ -25,7 +25,7 @@ SYNC_NAMESPACE ?= todo
 .PHONY: help install dev icon check check-quick hooks build bundle-macos package-macos package-macos-signed \
         comm-build other-build build-mac-arm64 build-mac-x64 build-win-x64 build-win-arm64 build-linux-x64 \
         site-build pages-deploy pages-deploy-eo site-image k8s-deploy argo-apply site-deploy \
-        sync-secret sync-image sync-k8s-deploy
+        sync-secret sync-image sync-k8s-deploy sync-argo-apply
 
 help: ## List available build and packaging targets
 	@printf '%s\n' \
@@ -48,6 +48,11 @@ help: ## List available build and packaging targets
 	  'make pages-deploy-eo      EdgeOne Pages（virgo-site）' \
 	  'make k8s-deploy           virgo.apikv.com（k1 集群，立即 helm 部署）' \
 	  'make argo-apply           注册 ArgoCD Application（GitOps）' \
+	  '' \
+	  '链接库同步服务：' \
+	  'make sync-secret          创建 todo 命名空间与随机 token Secret' \
+	  'make sync-k8s-deploy      构建镜像并立即 helm 部署' \
+	  'make sync-argo-apply      注册 todo-sync 的 ArgoCD Application' \
 	  '' \
 	  'Override the local package output directory with:' \
 	  '  make package-macos OUTPUT_DIR=target/my-release'
@@ -195,5 +200,11 @@ sync-k8s-deploy: sync-image ## Build image and deploy todo-sync to the k1 cluste
 	  -f $(SYNC_CHART_DIR)/values.yaml -f $(SYNC_CHART_DIR)/values-prod.yaml \
 	  --set api.image.tag=$(SYNC_TAG) --wait --timeout 5m
 	kubectl -n $(SYNC_NAMESPACE) rollout status deploy/todo-sync --timeout=180s
+
+# 注册 ArgoCD Application；之后 main 的 values-prod.yaml 变化由 ArgoCD 自动同步。
+# 前置：make sync-secret 已建好 todo-sync-token。
+sync-argo-apply: ## Register the todo-sync ArgoCD application
+	kubectl apply -f deploy/argocd/project.yaml
+	kubectl apply -f deploy/argocd/application-todo-sync.yaml
 
 site-deploy: pages-deploy pages-deploy-eo k8s-deploy ## Deploy the landing site to all three origins

@@ -6,7 +6,8 @@
 
 api:
   image:
-    tag: ""   # 首次部署前回写，如 "abc1234@sha256:..."
+    # 2026-11-11 首次纳管时的在跑镜像（与 helm rev 12 一致）。
+    tag: "6cd8c5c@sha256:6e656694b6a6d76b3eb35c37c5f3614d50385c143534cd200fb8e09ae2076a36"
 
 route:
   hostnames:
