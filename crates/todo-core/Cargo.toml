@@ -28,3 +28,9 @@ regex.workspace = true
 [dev-dependencies]
 proptest.workspace = true
 tempfile.workspace = true
+
+# 仅 Android 需要：绕开 rustls-platform-verifier（缺 Kotlin 组件）。桌面端继续
+# 用系统根证书，企业自签代理的用户不受影响。
+[target.'cfg(target_os = "android")'.dependencies]
+rustls.workspace = true
+webpki-roots.workspace = true

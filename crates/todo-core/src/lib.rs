@@ -24,6 +24,7 @@ mod reading;
 mod reconcile;
 mod scan;
 mod session;
+mod tls;
 mod workspace;
 mod write;
 
@@ -81,5 +82,6 @@ pub use session::{
     interrupt as session_interrupt, list as session_list, resume as session_resume, DocsFinding,
     DocsSeverity, SessionFinishInput, SessionResume, SessionSummary, ValidationEntry,
 };
+pub use tls::http_client_builder;
 pub use workspace::{AddedProject, ProjectSummary, WorkspaceStore, WorkspaceSummary};
 pub use write::{apply_changes, atomic_write, Change, Edit, InsertPosition, OptimisticLock};

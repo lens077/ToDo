@@ -167,7 +167,7 @@ fn run(
     mine: u64,
     status: Arc<Mutex<LinkStatus>>,
 ) {
-    let client = match reqwest::blocking::Client::builder()
+    let client = match todo_core::http_client_builder()
         .connect_timeout(Duration::from_secs(10))
         .build()
     {

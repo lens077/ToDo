@@ -1099,7 +1099,7 @@ fn url_is_private(url: &reqwest::Url) -> bool {
 }
 
 fn http_client() -> Result<reqwest::blocking::Client> {
-    reqwest::blocking::Client::builder()
+    crate::http_client_builder()
         .user_agent(USER_AGENT)
         .timeout(Duration::from_secs(30))
         .redirect(reqwest::redirect::Policy::custom(|attempt| {

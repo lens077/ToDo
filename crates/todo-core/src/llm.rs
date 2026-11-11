@@ -150,7 +150,7 @@ impl LlmSemanticReconciler {
                 "request timeout must be greater than zero".into(),
             ));
         }
-        let mut builder = Client::builder()
+        let mut builder = crate::http_client_builder()
             .connect_timeout(timeout.min(Duration::from_secs(10)))
             .timeout(timeout);
         // A loopback endpoint is a local model (or a test double) and is

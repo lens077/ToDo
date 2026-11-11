@@ -13,6 +13,10 @@ use todo_core::{
 
 /// `TODO_READING_STORE` overrides the global directory so tests and the
 /// desktop can share a fixture, the same convention the AI feed uses.
+///
+/// `dirs::home_dir()` is `None` inside the Android sandbox, so on mobile we
+/// fall back to the app-private data dir: saving a link needs no project or
+/// user-chosen folder, it just lands in the app's own store.
 pub fn runtime_reading_store() -> Option<ReadingStore> {
     if let Some(path) = std::env::var_os("TODO_READING_STORE").filter(|value| !value.is_empty()) {
         return Some(ReadingStore::new(std::path::PathBuf::from(path)));
@@ -20,6 +24,10 @@ pub fn runtime_reading_store() -> Option<ReadingStore> {
     match ReadingStore::global() {
         Ok(store) => Some(store),
         Err(error) => {
+            #[cfg(mobile)]
+            if let Some(dir) = crate::mobile_data_dir() {
+                return Some(ReadingStore::new(dir.join(".todo").join("reading")));
+            }
             eprintln!("reading store unavailable: {error}");
             None
         }

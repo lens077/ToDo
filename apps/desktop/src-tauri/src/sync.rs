@@ -72,7 +72,7 @@ fn context_json(input: &todo_core::ReadingContext) -> serde_json::Value {
 
 pub fn run(store: &ReadingStore, base: &str, token: &str) -> Result<SyncReport, String> {
     let base = base.trim().trim_end_matches('/');
-    let client = reqwest::blocking::Client::builder()
+    let client = todo_core::http_client_builder()
         .timeout(Duration::from_secs(30))
         .build()
         .map_err(|error| error.to_string())?;

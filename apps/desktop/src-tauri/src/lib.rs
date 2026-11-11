@@ -653,6 +653,21 @@ fn mobile_writable_dir() -> Option<PathBuf> {
     std::env::var_os("TMPDIR").map(PathBuf::from)
 }
 
+/// Directory that should hold long-lived app data on mobile. `TMPDIR` points
+/// at `…/cache`, a sibling of `…/files`; the system may clear the cache, so
+/// prefer `files` and only fall back to the cache when it is missing.
+#[cfg(mobile)]
+pub(crate) fn mobile_data_dir() -> Option<PathBuf> {
+    if let Some(cache) = std::env::var_os("TMPDIR").map(PathBuf::from) {
+        if let Some(files) = cache.parent().map(|parent| parent.join("files")) {
+            if files.is_dir() {
+                return Some(files);
+            }
+        }
+    }
+    mobile_writable_dir()
+}
+
 /// The AI feed store: `TODO_AI_STORE` overrides the global path, the same
 /// convention the CLI uses so tests and the desktop can share a fixture.
 fn runtime_ai_store(lock_timeout: Duration) -> Option<AiStore> {
