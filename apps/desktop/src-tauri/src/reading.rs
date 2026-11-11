@@ -5,8 +5,9 @@
 
 use crate::sync;
 use crate::workspace::WorkspaceState;
-use serde::Deserialize;
-use tauri::State;
+use serde::{Deserialize, Serialize};
+use std::sync::{Condvar, Mutex, OnceLock};
+use tauri::{AppHandle, Emitter, State};
 use todo_core::{
     ReadingAnnotation, ReadingAnnotationInput, ReadingArticle, ReadingArticleDetail, ReadingStore,
 };
@@ -49,6 +50,122 @@ impl ReadingState {
 #[tauri::command]
 pub fn reading_list(state: State<'_, ReadingState>) -> Result<Vec<ReadingArticle>, String> {
     state.store()?.list().map_err(|error| error.to_string())
+}
+
+/// How many pages are fetched and extracted at the same time. Batch imports
+/// queue everything at once; this keeps the phone and the sites from being
+/// hammered while every row already shows as「解析中」.
+const MAX_PARSE_WORKERS: usize = 3;
+
+static PARSE_GATE: OnceLock<(Mutex<usize>, Condvar)> = OnceLock::new();
+
+fn parse_gate() -> &'static (Mutex<usize>, Condvar) {
+    PARSE_GATE.get_or_init(|| (Mutex::new(0), Condvar::new()))
+}
+
+fn acquire_slot() {
+    let (lock, cond) = parse_gate();
+    let mut active = match lock.lock() {
+        Ok(guard) => guard,
+        Err(poisoned) => poisoned.into_inner(),
+    };
+    while *active >= MAX_PARSE_WORKERS {
+        active = match cond.wait(active) {
+            Ok(guard) => guard,
+            Err(poisoned) => poisoned.into_inner(),
+        };
+    }
+    *active += 1;
+}
+
+fn release_slot() {
+    let (lock, cond) = parse_gate();
+    let mut active = match lock.lock() {
+        Ok(guard) => guard,
+        Err(poisoned) => poisoned.into_inner(),
+    };
+    *active = active.saturating_sub(1);
+    cond.notify_one();
+}
+
+#[derive(Clone, Serialize)]
+pub struct ParsedEvent {
+    pub id: String,
+    /// `ok` or `failed`.
+    pub status: &'static str,
+    pub error: Option<String>,
+}
+
+/// Fetches the body off the UI thread and reports the outcome. The row is
+/// already in the library, so a failure only flips its badge — the link stays.
+fn spawn_parse(app: AppHandle, store: ReadingStore, id: String) {
+    tauri::async_runtime::spawn_blocking(move || {
+        acquire_slot();
+        let payload = match store.refetch(&id) {
+            Ok(_) => ParsedEvent {
+                id: id.clone(),
+                status: "ok",
+                error: None,
+            },
+            Err(error) => {
+                let message = error.to_string();
+                let _ = store.mark_failed(&id);
+                ParsedEvent {
+                    id: id.clone(),
+                    status: "failed",
+                    error: Some(message),
+                }
+            }
+        };
+        release_slot();
+        let _ = app.emit("reading://parsed", payload);
+    });
+}
+
+/// 收藏优先：先把链接放进列表（毫秒级，`pending`），正文在后台抓取。
+/// 连续添加不会被上一次的抓取阻塞。
+#[tauri::command]
+pub fn reading_quick_add(
+    state: State<'_, ReadingState>,
+    app: AppHandle,
+    url: String,
+) -> Result<ReadingArticle, String> {
+    let store = state.store()?;
+    let detail = store.add_pending(&url).map_err(|error| error.to_string())?;
+    if detail.article.parse_status == "pending" {
+        spawn_parse(app, store, detail.article.id.clone());
+    }
+    Ok(detail.article)
+}
+
+/// Retries a failed parse: the row goes back to「解析中」immediately.
+#[tauri::command]
+pub fn reading_retry_parse(
+    state: State<'_, ReadingState>,
+    app: AppHandle,
+    id: String,
+) -> Result<ReadingArticle, String> {
+    let store = state.store()?;
+    store.mark_pending(&id).map_err(|error| error.to_string())?;
+    let article = store.get(&id).map_err(|error| error.to_string())?.article;
+    spawn_parse(app, store, id);
+    Ok(article)
+}
+
+/// Resumes parses that an app restart cut short. Called when the reading view
+/// mounts, so「解析中」never sticks forever.
+#[tauri::command]
+pub fn reading_resume_pending(
+    state: State<'_, ReadingState>,
+    app: AppHandle,
+) -> Result<u32, String> {
+    let store = state.store()?;
+    let ids = store.pending_ids().map_err(|error| error.to_string())?;
+    let count = ids.len() as u32;
+    for id in ids {
+        spawn_parse(app.clone(), store.clone(), id);
+    }
+    Ok(count)
 }
 
 #[tauri::command]

@@ -50,6 +50,14 @@ pub struct ReadingArticle {
     pub progress_anchor: Option<String>,
     pub read_at: Option<i64>,
     pub annotation_count: u32,
+    /// `pending` while the body is still being fetched, `ok` when it is in the
+    /// library, `failed` when the last parse attempt did not produce content.
+    #[serde(default = "default_parse_status")]
+    pub parse_status: String,
+}
+
+fn default_parse_status() -> String {
+    "ok".to_string()
 }
 
 /// The article with its body, as the reader needs it.
@@ -307,7 +315,8 @@ impl ReadingStore {
         let mut statement = connection.prepare(
             "SELECT a.id, a.url, a.title, a.site_name, a.excerpt, a.byline, a.cover_file, a.word_count,
                     a.reading_minutes, a.added_at, a.last_opened_at, a.progress_percent, a.progress_anchor,
-                    a.read_at, (SELECT COUNT(*) FROM annotations n WHERE n.article_id = a.id)
+                    a.read_at, (SELECT COUNT(*) FROM annotations n WHERE n.article_id = a.id),
+                    a.parse_status
              FROM articles a
              ORDER BY a.added_at DESC",
         )?;
@@ -322,7 +331,8 @@ impl ReadingStore {
             .query_row(
                 "SELECT a.id, a.url, a.title, a.site_name, a.excerpt, a.byline, a.cover_file, a.word_count,
                         a.reading_minutes, a.added_at, a.last_opened_at, a.progress_percent, a.progress_anchor,
-                        a.read_at, (SELECT COUNT(*) FROM annotations n WHERE n.article_id = a.id)
+                        a.read_at, (SELECT COUNT(*) FROM annotations n WHERE n.article_id = a.id),
+                        a.parse_status
                  FROM articles a WHERE a.id = ?1",
                 params![id],
                 |row| self.article_from_row(row),
@@ -456,6 +466,59 @@ impl ReadingStore {
         )?;
         drop(connection);
         self.get(&id)
+    }
+
+    /// 收藏优先：先以 `pending` 入列，返回毫秒级；正文由调用方在后台线程抓取，
+    /// 成功后用 `refetch` 写入正文，失败则 `mark_failed`。保存链接本身不该等网络。
+    pub fn add_pending(&self, url: &str) -> Result<ReadingArticleDetail> {
+        let url = normalize_url(url)?;
+        if let Some(existing) = self.find_by_url(&url)? {
+            return self.get(&existing);
+        }
+        let id = new_id();
+        let connection = self.connect()?;
+        connection.execute(
+            "INSERT INTO articles (id, url, title, content_html, added_at, parse_status)
+             VALUES (?1, ?2, ?3, '', ?4, 'pending')",
+            params![id, url, host_of(&url), now_ms()],
+        )?;
+        drop(connection);
+        self.get(&id)
+    }
+
+    /// Records that the background parse did not produce content. The record
+    /// stays in the library so the person can still keep the link.
+    pub fn mark_failed(&self, id: &str) -> Result<()> {
+        let connection = self.connect()?;
+        connection.execute(
+            "UPDATE articles SET parse_status = 'failed' WHERE id = ?1",
+            params![id],
+        )?;
+        Ok(())
+    }
+
+    /// Puts a record back into the queue (retry of a failed parse).
+    pub fn mark_pending(&self, id: &str) -> Result<()> {
+        let connection = self.connect()?;
+        let changed = connection.execute(
+            "UPDATE articles SET parse_status = 'pending' WHERE id = ?1",
+            params![id],
+        )?;
+        if changed == 0 {
+            return Err(Error::ReadingArticleNotFound(id.to_string()));
+        }
+        Ok(())
+    }
+
+    /// Every article still waiting for its body, oldest first. Used to resume
+    /// parses that were cut short by an app restart.
+    pub fn pending_ids(&self) -> Result<Vec<String>> {
+        let connection = self.connect()?;
+        let mut statement = connection
+            .prepare("SELECT id FROM articles WHERE parse_status = 'pending' ORDER BY added_at")?;
+        let rows = statement.query_map([], |row| row.get::<_, String>(0))?;
+        rows.collect::<std::result::Result<Vec<_>, _>>()
+            .map_err(Error::from)
     }
 
     /// Re-fetches the article and replaces only the source metadata and body.
@@ -1011,6 +1074,7 @@ type: reading
             progress_anchor: row.get(12)?,
             read_at: row.get(13)?,
             annotation_count: row.get::<_, i64>(14)? as u32,
+            parse_status: row.get(15)?,
         })
     }
 }
@@ -2684,6 +2748,45 @@ mod reading_context_tests {
             .add_failed("https://unreachable.invalid/post")
             .unwrap();
         assert_eq!(again.article.id, detail.article.id);
+    }
+
+    #[test]
+    fn pending_capture_enters_the_list_before_the_body_arrives() {
+        let (_d, store) = store();
+        let detail = store.add_pending("https://example.com/later").unwrap();
+        assert_eq!(detail.article.parse_status, "pending");
+        // The list shows it right away, titled by host, with no body.
+        let listed = store.list().unwrap();
+        assert_eq!(listed.len(), 1);
+        assert_eq!(listed[0].title, "example.com");
+        assert_eq!(listed[0].parse_status, "pending");
+        assert_eq!(
+            store.pending_ids().unwrap(),
+            vec![detail.article.id.clone()]
+        );
+
+        // A failed attempt keeps the row and flips the badge.
+        store.mark_failed(&detail.article.id).unwrap();
+        assert_eq!(store.list().unwrap()[0].parse_status, "failed");
+        assert!(store.pending_ids().unwrap().is_empty());
+
+        // Retry puts it back in the queue; success clears the badge.
+        store.mark_pending(&detail.article.id).unwrap();
+        assert_eq!(store.list().unwrap()[0].parse_status, "pending");
+        let done = store
+            .replace_content(&detail.article.id, &fixture_page("补好了", "正文"))
+            .unwrap();
+        assert_eq!(done.article.parse_status, "ok");
+        assert_eq!(done.article.title, "补好了");
+    }
+
+    #[test]
+    fn adding_a_pending_url_twice_returns_the_first_row() {
+        let (_d, store) = store();
+        let first = store.add_pending("https://example.com/once").unwrap();
+        let second = store.add_pending("https://example.com/once").unwrap();
+        assert_eq!(first.article.id, second.article.id);
+        assert_eq!(store.list().unwrap().len(), 1);
     }
 
     #[test]
