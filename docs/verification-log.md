@@ -1040,3 +1040,12 @@ Session 存为项目内 Markdown（`<project>/.virgo/sessions/s-<ts>.md`），�
 4. **错误提示布局**：原来借用了 `.ai-notice`（三栏网格：图标 / 文本 / 操作），单段文字被挤进 18px 首列，出现一字一行的竖排。改用 `.reading-notice` 单行样式，窄屏左右留 18px。
 5. **同步面板溢出**：≤760px 时三个动作按钮改成等宽一行（`repeat(3, minmax(0,1fr))`），不再把最右侧「同步」挤出屏幕；同步面板从「钉在按钮右侧」改为挂到输入框下方（`left:6px; width:min(340px, 100vw-36px)`）。实测面板 x=24.9、右缘 348.8（视口 360），左右均无溢出，且不再遮挡「同步」按钮。
 6. 门禁：`make check-quick` 绿；`playwright test e2e/reading.spec.ts e2e/mobile.spec.ts` 20 passed。
+
+## 2026-11-11 阅读：秒回入列 + 后台解析状态 + 剪贴板导入（通过）
+
+1. 添加改走 `reading_quick_add`：链接以 `pending` 入列（标题先取域名），正文由后台线程抓取（并发上限 3），完成后经 `reading://parsed` 回传 `ok` / `failed`；失败保留链接并给「重试解析」，App 重启后由 `reading_resume_pending` 续跑，`pending` 不会永久卡住。
+2. 前端：点「添加」后输入框立即清空、按钮恢复可用，可以连续添加；卡片显示「解析中…（呼吸点）」或「解析失败」，「解析中/失败」的行不能进阅读器；批量导入改为一次入队后关闭面板，不再逐条等待。
+3. 真机（V2425A，360×800）：三连加每次输入框都立即清空；新链接 5 秒内保持 `pending`（GitHub 页面较重），最终抓取超时转 `failed`，卡片状态与「重试解析」正确；失败的示例链接同样留在列表里。
+4. 剪贴板：新增 `reading_clipboard_text`（`tauri-plugin-clipboard-manager`，Rust 侧读取，Android 前台可读）。进入阅读视图时若有 http(s) 链接：1 条提示「剪贴板里有链接 example.com，要导入吗？」，多条提示「剪贴板里有 2 条链接，要全部导入吗？」，提供「导入 / 批量导入」与「忽略」。
+5. 去重：按整段剪贴板文本算指纹写入 localStorage；实测导入后切到目标再回阅读，提示不再出现，新复制一段才会再问。
+6. 门禁：`make check-quick` 绿；reading + mobile E2E 20 passed。

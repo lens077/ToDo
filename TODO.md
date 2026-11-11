@@ -39,6 +39,8 @@ columns:
       ↳ 2026-11-11 真机验收通过：V2425A 分享唯一 URL 后服务器 /articles 4→5，见 docs/verification-log.md <!--n:51swhk-->
 - [x] todo-sync 纳入 ArgoCD + 桌面自动对账（SSE/离线重试） <!--t:se88bl--> #sync #backend #desktop
       ↳ todo-sync 已由 ArgoCD todo-sync-prod 纳管（Synced/Healthy）；桌面端改为 SSE 常驻自动对账 + 5→60s 退避，离线期间写入在重连首跑补推；见 docs/verification-log.md <!--n:se88bl-->
+- [x] 阅读：秒回入列 + 后台解析状态 + 剪贴板导入 <!--t:n0fz2h--> #sync #desktop
+      ↳ 粘贴链接秒回入列，正文后台解析（解析中/失败/重试），剪贴板单条/多条提示并按内容指纹去重；真机验收见 docs/verification-log.md <!--n:n0fz2h-->
 
 ## Doing
 - [ ] 人工验收看板任务写回 TODO.md <!--t:h4m9zc--> #desktop #manual !1 ^3000
