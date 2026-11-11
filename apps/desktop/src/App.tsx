@@ -14,6 +14,7 @@ import { QuadrantView } from './components/QuadrantView';
 import { ReaderView } from './components/ReaderView';
 import { ReadingView } from './components/ReadingView';
 import { MobileTabBar } from './components/MobileTabBar';
+import { OnboardingWizard } from './components/OnboardingWizard';
 import { ProviderSettings } from './components/ProviderSettings';
 import { ReviewView } from './components/ReviewView';
 import { SettingsDialog } from './components/SettingsDialog';
@@ -33,6 +34,7 @@ import { SourceEnrollmentDialog } from './components/SourceEnrollmentDialog';
 import { BatchAdoptDialog } from './components/BatchAdoptDialog';
 import { commitSourceEnrollment, filterSnapshotBySources, useSourceEnrollment } from './lib/sourceEnrollment';
 import { readSyncConfig, startSyncWatcher } from './lib/readingSync';
+import { markAgentHintDismissed, wasAgentHintDismissed } from './lib/onboardingHints';
 
 interface PriorityRequest {
   task: DesktopTask;
@@ -55,6 +57,9 @@ export function App() {
   const [settingsSection, setSettingsSection] = React.useState<'tabs' | null>(null);
   const [projectPickerOpen, setProjectPickerOpen] = React.useState(false);
   const [providerSettingsOpen, setProviderSettingsOpen] = React.useState(false);
+  const [wizardOpen, setWizardOpen] = React.useState(false);
+  // Onboarding-spec §4: 完成 3 个任务后一次性提到 agent 接入，之后不再出现。
+  const [agentHintDismissed, setAgentHintDismissed] = React.useState(wasAgentHintDismissed);
   const [completionRequest, setCompletionRequest] = React.useState<CompletionRequest | null>(null);
   const completionRequestRef = React.useRef<CompletionRequest | null>(null);
   const [priorityRequest, setPriorityRequest] = React.useState<PriorityRequest | null>(null);
@@ -153,6 +158,10 @@ export function App() {
   const goalCount = snapshot
     ? snapshot.today.overdue.length + snapshot.today.today.length
     : 0;
+  const completedCount = model.snapshot
+    ? model.snapshot.tasks.filter((task) => task.completed).length
+    : 0;
+  const showAgentHint = completedCount >= 3 && !agentHintDismissed;
   // The AI feed is global and read independently of the project; the scope
   // toggle inside the view narrows it to sessions under the open root.
   const aiFeed = useAiFeed({ projectPath: model.snapshot?.project_path ?? null, onSnapshot: model.applySnapshot });
@@ -276,7 +285,7 @@ export function App() {
         }}
       />
 
-      <div className={`workspace${readOnly ? ' is-read-only' : ''}`}>
+      <div className={`workspace${readOnly ? ' is-read-only' : ''}${showAgentHint ? ' has-agent-hint' : ''}`}>
         <CommandBar
           snapshot={snapshot}
           projectBusy={model.busyKeys.has('project')}
@@ -292,6 +301,26 @@ export function App() {
             if (path && snapshot?.selected_source && path !== snapshot.selected_source) void model.selectSource(path);
           }}
         />
+
+        {showAgentHint && (
+          <div className="agent-hint" role="note">
+            <div className="agent-hint__copy">
+              <strong>让 agent 自动读到这份清单？</strong>
+              <span>安装会话钩子后，agent 每次开始工作都会先读任务清单，不必手工粘贴。命令会检测本机已有的 claude / codex 等配置，并在修改前备份。</span>
+            </div>
+            <code>todo hooks install</code>
+            <button
+              type="button"
+              className="text-action"
+              onClick={() => {
+                markAgentHintDismissed();
+                setAgentHintDismissed(true);
+              }}
+            >
+              知道了
+            </button>
+          </div>
+        )}
 
         {readOnly && (
           <div className="read-only-notice" role="status" data-testid="read-only-notice">
@@ -361,7 +390,7 @@ export function App() {
             sourceBoundUnavailable ? <p className="source-unavailable">扫描、历史与对齐提示词依赖单个来源。请先在「任务来源」选择已管理文件。</p> :
             <ReviewView snapshot={snapshot} readOnly={readOnly || Boolean(selected && !selected.writable)} onApplied={model.applySnapshot} />
           ) : activeView === 'contract' ? (
-            <ContractView readOnly={readOnly} />
+            <ContractView readOnly={readOnly} hasCompletedTask={completedCount > 0} />
           ) : selected && selected.status !== 'managed' ? (
             <SourcePreview key={`${sourceContextKey}:${selected.revision}:${selected.loose ? 'loose' : ''}`} source={selected} readOnly={serverReadOnly || model.sourceBusy} onAdopt={model.adoptSource} onSetLoose={setLoose} />
           ) : activeView === 'quadrant' && snapshot ? (
@@ -390,12 +419,14 @@ export function App() {
               onSetPriority={(id, priority) => { const task = model.snapshot?.tasks.find((item) => item.id === id); if (task) requestPriority(task, priority); }}
               onSetLoose={readOnly ? undefined : setLoose}
               onConfigureColumns={configureColumns}
+              onOpenScan={() => setActiveView('review')}
             />
           ) : (
             <EmptyState
               phase={model.phase === 'ready' ? 'load-error' : model.phase}
               onChooseProject={chooseProject}
               onRetry={() => void model.refreshSnapshot()}
+              onCreateTodoMd={model.createProject}
             />
           )}
           </div>
@@ -509,9 +540,24 @@ export function App() {
             setSettingsOpen(false);
             setProviderSettingsOpen(true);
           }}
+          onOpenWizard={() => {
+            setSettingsOpen(false);
+            setWizardOpen(true);
+          }}
         />
       )}
       {providerSettingsOpen && <ProviderSettings onClose={() => setProviderSettingsOpen(false)} />}
+      {wizardOpen && (
+        <OnboardingWizard
+          projectPath={model.snapshot?.project_path ?? null}
+          onChooseProject={chooseProject}
+          onOpenScan={() => {
+            setWizardOpen(false);
+            setActiveView('review');
+          }}
+          onClose={() => setWizardOpen(false)}
+        />
+      )}
     </div>
   );
 }

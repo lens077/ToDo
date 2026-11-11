@@ -26,6 +26,8 @@ interface GoalViewProps extends Omit<TaskCardActions, 'onSetCompleted' | 'onMove
   onSetCompleted: (id: string, completed: boolean) => Promise<boolean>;
   onMove: (id: string, column: string) => Promise<boolean>;
   onSetPriority: (id: string, priority: TaskPriority) => void;
+  /** Onboarding-spec §3.2: the first-screen action when the project has no tasks. */
+  onOpenScan?: () => void;
 }
 
 function storage(): Storage | null {
@@ -201,6 +203,7 @@ export function GoalView({
   onSetPriority,
   onSetLoose,
   onConfigureColumns,
+  onOpenScan,
 }: GoalViewProps) {
   const [layout, updateLayout] = useGoalLayout();
   const [{ density }] = useAppSettings();
@@ -271,9 +274,17 @@ export function GoalView({
           ? '未发现 TODO.md / TODO / TODO.txt，也没有 frontmatter 声明 todo-spec 的 Markdown。请放入任务文件后刷新；不会自动创建文件。'
           : onlyIndexFiles
             ? `${managedSources.map((source) => source.path).join('、')} 已接管，但任务只从「- [ ]」复选框行读取，这个文件里一行也没有。若清单拆在其他 Markdown 里，给那些文件加上 frontmatter「todo-spec: 1」即可被发现并录入；或从顶部新增第一项。`
-            : snapshot.sources
-              ? '请选择可写来源后新增第一项。未接管的清单需先预览接管差异。'
-              : '从顶部快速新增第一项。它会写回当前项目，而不是留在界面缓存里。'}</p>
+              : snapshot.sources
+                ? '请选择可写来源后新增第一项。未接管的清单需先预览接管差异。'
+                : '从顶部快速新增第一项。它会写回当前项目，而不是留在界面缓存里。'}</p>
+        {onOpenScan && (
+          <div className="view-empty__actions">
+            <button type="button" className="solid-action" onClick={onOpenScan}>
+              扫描这个仓库
+            </button>
+            <span>找出仓库里早已写下、却从未被跟踪的 TODO 注释与 checkbox；扫描只读，不会改任何文件。</span>
+          </div>
+        )}
         {onlyIndexFiles && looseCandidates.length > 0 && (
           <div className="loose-offer" role="note">
             <div className="loose-offer__copy">
@@ -481,7 +492,7 @@ export function GoalView({
                       ) : (
                         <div className="column-empty">
                           <span />
-                          <p>{total > 0 ? '当前筛选下没有任务。' : '把 Project Task 拖到这里'}</p>
+                          <p>{total > 0 ? '当前筛选下没有任务。' : dueFilter === 'today' ? '给任务加上截止日期，它们会出现在这里。' : '把 Project Task 拖到这里'}</p>
                         </div>
                       )}
                     </div>

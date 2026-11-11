@@ -51,7 +51,7 @@ pub enum Error {
     Sqlite(#[from] rusqlite::Error),
     #[error("timed out after {timeout_ms}ms waiting for advisory lock {path}")]
     LockTimeout { path: PathBuf, timeout_ms: u64 },
-    #[error("{path} already exists; use `todo init --adopt` to explicitly adopt it")]
+    #[error("{path} already exists; use `todo init --adopt` to take over the existing list and backfill stable IDs (a restore point is created first)")]
     FileAlreadyExists { path: PathBuf },
     #[error("operating system random source failed: {0}")]
     RandomSource(String),

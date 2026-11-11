@@ -298,6 +298,9 @@
 
   .workspace { position: relative; display: grid; grid-template-rows: auto minmax(0, 1fr); min-width: 0; min-height: 0; overflow: hidden; background: var(--bg); }
   .workspace.is-read-only { grid-template-rows: auto auto minmax(0, 1fr); }
+  /* One-time agent hint (onboarding-spec §4) sits between the bar and the board. */
+  .workspace.has-agent-hint { grid-template-rows: auto auto minmax(0, 1fr); }
+  .workspace.is-read-only.has-agent-hint { grid-template-rows: auto auto auto minmax(0, 1fr); }
   .workspace__content { min-width: 0; min-height: 0; overflow: auto; animation: rise-in 0.8s var(--ease-rise) both; }
 
   .read-only-notice {
@@ -312,6 +315,11 @@
     border-bottom: 1px solid var(--hairline);
   }
   .read-only-notice__mark { padding: 2px 6px; color: var(--accent-deep); background: var(--accent-wash-2); border-radius: 4px; font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.06em; }
+  .agent-hint { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 14px; min-height: 44px; padding: 8px 20px; background: var(--panel); border-bottom: 1px solid var(--hairline); }
+  .agent-hint__copy { display: grid; gap: 2px; min-width: 0; }
+  .agent-hint__copy strong { font-size: 13px; }
+  .agent-hint__copy span { color: var(--ink-2); font-size: 12.5px; line-height: 1.45; }
+  .agent-hint code { padding: 4px 8px; color: var(--ink); background: var(--bg); border: 1px solid var(--hairline); border-radius: 6px; font-family: var(--mono); font-size: 12px; white-space: nowrap; }
   .read-only-notice strong { font-size: 13px; }
   .read-only-notice > span:last-child { color: var(--ink-2); font-size: 12.5px; }
   .task-card.is-read-only .task-check { opacity: 0.55; }
@@ -796,7 +804,10 @@
   .view-empty { min-height: calc(100vh - 57px); padding: 12vh 12%; }
   .view-empty h2 { font-size: 30px; letter-spacing: -0.02em; }
   .view-empty h2 span { display: block; margin-top: 2px; color: var(--accent); }
-  .view-empty > p:last-child { max-width: 460px; margin-top: 14px; color: var(--ink-2); font-size: 15px; line-height: 1.6; }
+  .view-empty > p:last-of-type { max-width: 460px; margin-top: 14px; color: var(--ink-2); font-size: 15px; line-height: 1.6; }
+  /* First-screen action: 扫描这个仓库（onboarding-spec §3.2）. */
+  .view-empty__actions { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; max-width: 560px; margin-top: 18px; }
+  .view-empty__actions span { color: var(--ink-2); font-size: 12.5px; line-height: 1.5; }
 
   .task-card--compact { padding: 10px 12px 10px; }
   .task-card--compact .task-card__body { margin-top: 7px; font-size: 13px; }
@@ -947,6 +958,13 @@
   .project-empty--error h1 span { color: var(--danger); }
   .project-empty__copy > p { max-width: 520px; margin-top: 18px; color: var(--ink-2); font-size: 16px; line-height: 1.6; }
   .project-empty__actions { display: flex; gap: 10px; margin-top: 26px; }
+  .project-empty__actions + .project-empty__actions { margin-top: 10px; }
+  .project-empty__guide { max-width: 520px; margin-top: 16px; padding: 14px 16px; background: var(--panel); border: 1px dashed var(--hairline-2); border-radius: 10px; }
+  .project-empty__guide p { margin: 0; color: var(--ink-2); font-size: 13px; line-height: 1.55; }
+  .project-empty__guide p + p { margin-top: 8px; }
+  .project-empty__guide code { padding: 1px 5px; color: var(--ink); background: var(--panel-2); border-radius: 4px; font-family: var(--mono); font-size: 12px; }
+  .project-empty__guide strong { color: var(--ink); }
+  .project-empty__guide .line-action { margin-top: 12px; }
   .project-empty__copy > code { display: inline-block; margin-top: 30px; padding-top: 10px; color: var(--ink-3); border-top: 1px solid var(--hairline-2); font-size: 11.5px; }
   .loading-state { min-height: calc(100vh - 57px); padding: 50px 28px; }
   .loading-state__heading { display: grid; gap: 12px; width: 44%; }
@@ -1621,6 +1639,24 @@
   .settings-row__copy strong { font-size: 13.5px; }
   .settings-row__copy span { color: var(--ink-2); font-size: 12.5px; line-height: 1.5; }
   .settings-footnote { color: var(--ink-3); font-size: 12px; }
+
+  /* Onboarding wizard: optional, opened from Settings, nothing persisted. */
+  .onboarding-count { margin-top: 3px; color: var(--ink-3); font-size: 12px; font-variant-numeric: tabular-nums; }
+  .onboarding-body { display: grid; gap: 14px; padding: 18px 24px 20px; }
+  .onboarding-progress { display: flex; gap: 6px; margin: 0; padding: 0; list-style: none; }
+  .onboarding-progress li { width: 26px; height: 3px; background: var(--hairline-2); border-radius: 999px; }
+  .onboarding-progress li.is-done { background: var(--accent); opacity: 0.45; }
+  .onboarding-progress li.is-current { background: var(--accent); }
+  .onboarding-body h3 { margin: 0; font-size: 18px; letter-spacing: -0.01em; }
+  .onboarding-copy { display: grid; gap: 8px; color: var(--ink-2); font-size: 13.5px; line-height: 1.6; }
+  .onboarding-copy strong { color: var(--ink); }
+  .onboarding-copy code { padding: 1px 5px; color: var(--ink); background: var(--panel-2); border-radius: 4px; font-family: var(--mono); font-size: 12px; }
+  .onboarding-copy .onboarding-path { display: block; padding: 8px 10px; background: var(--bg); border: 1px solid var(--hairline); border-radius: 8px; overflow-wrap: anywhere; }
+  .onboarding-command { margin: 0; padding: 10px 12px; color: var(--ink); background: var(--bg); border: 1px solid var(--hairline); border-radius: 8px; font-family: var(--mono); font-size: 12.5px; overflow-x: auto; }
+  .onboarding-command code { padding: 0; background: none; }
+  .onboarding-inline-actions { display: flex; }
+  .onboarding-actions { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding-top: 12px; border-top: 1px solid var(--hairline); }
+  .onboarding-actions__nav { display: flex; gap: 8px; }
   /* Reachability for views that did not fit the narrow-screen tab bar. */
   .settings-views { display: none; }
   .settings-tabs { display: none; }
@@ -2113,6 +2149,24 @@
 }
 
 /* Project Contract 规范视图 */
+/* 对账首次揭示（onboarding-spec §3.3）：只出现一次，第一句就说清「只报告，不改写」。 */
+.reconcile-reveal {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 14px;
+  margin: 12px 0;
+  padding: 12px 14px;
+  background: var(--panel);
+  border: 1px solid var(--accent);
+  border-radius: 10px;
+}
+.reconcile-reveal__copy { display: grid; gap: 3px; }
+.reconcile-reveal__copy strong { color: var(--ink); font-size: 13.5px; }
+.reconcile-reveal__copy span { color: var(--ink-2); font-size: 12.5px; line-height: 1.5; }
+.reconcile-reveal__copy span strong { font-size: 12.5px; }
+@media (max-width: 719px) { .reconcile-reveal { grid-template-columns: 1fr; justify-items: start; } }
+
 .contract-status {
   display: flex;
   flex-wrap: wrap;

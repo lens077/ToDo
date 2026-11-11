@@ -1111,3 +1111,14 @@ Session 存为项目内 Markdown（`<project>/.virgo/sessions/s-<ts>.md`），�
 5. **¥1 真实支付**：`POST /api/sponsor/pay {amount:1}` → 生产收银台（app_id 2021007114640024）→ 用户支付成功回跳 thanks 页 → 异步通知验签通过、金额比对一致（amount_cents=100）、trade_no=2026111222001483611407952865 回填、订单 paid（SPN20261111181946ac7f91a4a6）。退款无 API 实现（产品决策），测试款由商家平台手动退。
 6. **官网切换**：site.mjs `sponsor.api` 指向 `https://sponsor-api.apikv.com`（commit 1509092），Deploy site 工作流三端发布（CF Pages / EdgeOne / k8s 镜像 + ArgoCD）。
 7. **遗留**：.env（原始 PKCS#8 凭据）在仓库根目录被 gitignore 覆盖，建议上线稳定后删除；`make sponsor-k8s-deploy` 的 digest-tag 与镜像依赖问题未修（bootstrap 后日常走 Git 回写，不受影响）。
+
+## 2026-11-12 onboarding 首次运行引导（自动门禁通过，人工验收待办）
+
+1. **背景**：按 2026-11-12 拍板结论（`DECISIONS.md` 决策⑤、`docs/onboarding-spec.md` §7）实施：默认不打扰、无开机向导；设置里放「引导向导」按钮；首个价值证明主推 `todo scan`；对账揭示延迟到首条 finding；完成 3 个任务后一次性提示 agent 接入。
+2. **CLI（已完成并人工验收）**：`todo init` 成功后的人类可读输出追加「下一步」（`todo scan` 排第二位），空清单 `todo list` 打印同一段提示；`--json` envelope 不变；重复 init 的错误文案改为指向 `todo init --adopt`（接管现有清单并补齐稳定 ID，会先建还原点）。
+3. **桌面端**：新增 `create_todo_md` 命令与 `chooseAndCreateProject`（目录对话框标题明示将写入 TODO.md，已存在则报错引导 `--adopt`；模板与 CLI 逐字一致，本轮用脚本比对确认字节相同）；`useDesktop.createProject` 照 `chooseProject` 的 contextSequence / snapshotEpoch / withBusy 三件套实现，失败留在 no-project 态由 banner 说明；`EmptyState` 增加「还没有 TODO.md？」展开说明与显式创建按钮；`GoalView` 无任务空态的主行动改为「扫描这个仓库」，今日筛选空文案改为提示加截止日期。
+4. **向导与一次性提示**：新增 `OnboardingWizard`（5 步：本地优先 / 项目 / 扫描 / agent 接入 / 对账；「第 n 步，共 5 步」、上一步 / 下一步 / 跳过，默认不启用、无持久化，只从设置打开）；`SettingsDialog` 顶部加「首次使用？」入口；`ContractView` 在 findings ≥1 且已完成 ≥1 任务时显示一次「只报告，不改写」说明；`CommandBar` 下方在完成 ≥3 任务时显示一次 agent 接入提示（只展示 `todo hooks install`，不展示 `todo hooks preview` 输出）。两个一次性旗标存 localStorage（`todo.onboarding.reconcile-revealed.v1`、`todo.onboarding.agent-hint.v1`），不写入用户仓库。
+5. **顺带修正**：WIP 里 `project-empty__guide`、`view-empty__actions` 缺样式，已补齐；`.view-empty > p:last-child` 改为 `:last-of-type`，避免新的动作区把空态段落挤出样式命中。
+6. **门禁（自动）**：`cargo check -p todo-desktop` 绿；`pnpm --filter @todo/desktop exec tsc --noEmit` 绿；`make check-quick` 绿（rust fmt + clippy + workspace test + contract check，web desktop build + 静态站点，245s）。未覆盖人工交互。
+7. **待人工验收**（需用户执行 `pnpm --filter @todo/desktop tauri dev`，改过 Rust 需重启）：设置 →「打开引导向导」走完 5 步；空状态显式创建 TODO.md 后在目标目录确认只新增该文件；完成第 3 个任务出现 agent 提示且关闭后重启不再出现；`contract` 视图首次揭示说明只出现一次。规格 §6 的「≤3 命令 / ≤2 点击 / 零非预期写盘」尚未实测。
+8. **已知偏差**：规格 §6 要求「老用户（已有配置）升级后看不到任何新增引导界面」，而 agent 提示的触发条件是「已完成 ≥3 个任务」——升级用户若已满足该条件会看到一次提示。当前按交接文档实现，未加「本次安装后新完成」的时间窗；如需严格满足该条，应在人工验收时定夺是否补充时间窗判定。

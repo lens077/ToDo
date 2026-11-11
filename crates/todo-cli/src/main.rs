@@ -626,6 +626,10 @@ fn run(cli: &Cli) -> Result<u8, Error> {
                 .collect();
             tasks.sort_by_key(|task| task.line);
             emit(cli, "todo.list.v1", ListData { tasks }, |data| {
+                if data.tasks.is_empty() {
+                    // 用户在哪里迷路，就在哪里给路标（onboarding-spec §2.3）。
+                    return format!("清单是空的（或没有未完成任务）。{NEXT_STEPS_HINT}");
+                }
                 data.tasks
                     .iter()
                     .map(human_task)
@@ -1442,10 +1446,15 @@ fn init(cli: &Cli, path: &Path, adopt: bool) -> Result<u8, Error> {
         Message {
             message: "initialized TODO.md".into(),
         },
-        |data| data.message.clone(),
+        |data| format!("{}{NEXT_STEPS_HINT}", data.message),
     );
     Ok(0)
 }
+
+/// 首次运行的下一步提示（spec: docs/onboarding-spec.md §2.1）。只出现在
+/// 人类可读输出里；`--json` 的 envelope 不受影响。`todo scan` 排第二位是
+/// 刻意的：它是本产品最快的「哇」时刻，且完全不写盘。
+const NEXT_STEPS_HINT: &str = "\n\n下一步：\n  todo add \"第一个任务\"     记一件事\n  todo scan                 扫描仓库里已经存在的 TODO 注释与 checkbox\n  todo hooks install        让 agent 每次会话自动读到任务清单";
 
 fn add(
     cli: &Cli,

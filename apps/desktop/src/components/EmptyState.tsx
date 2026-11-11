@@ -1,3 +1,4 @@
+import * as React from 'react';
 import type { LoadPhase } from '../hooks/useDesktop';
 import { Icon } from './Icon';
 import { Ribbon } from './Ribbon';
@@ -6,9 +7,12 @@ interface EmptyStateProps {
   phase: Extract<LoadPhase, 'loading' | 'no-project' | 'load-error'>;
   onChooseProject: () => void;
   onRetry: () => void;
+  /** Onboarding-spec §3.1: explicit TODO.md creation; undefined disables it. */
+  onCreateTodoMd?: () => void;
 }
 
-export function EmptyState({ phase, onChooseProject, onRetry }: EmptyStateProps) {
+export function EmptyState({ phase, onChooseProject, onRetry, onCreateTodoMd }: EmptyStateProps) {
+  const [createOpen, setCreateOpen] = React.useState(false);
   if (phase === 'loading') {
     return (
       <section className="loading-state" aria-label="正在载入桌面工作台">
@@ -40,6 +44,35 @@ export function EmptyState({ phase, onChooseProject, onRetry }: EmptyStateProps)
           </button>
           {failed && <button className="line-action" type="button" onClick={onRetry}>重新载入</button>}
         </div>
+        {!failed && (
+          <div className="project-empty__actions">
+            <button
+              className="line-action"
+              type="button"
+              aria-expanded={createOpen}
+              onClick={() => setCreateOpen((open) => !open)}
+            >
+              还没有 TODO.md？
+            </button>
+          </div>
+        )}
+        {createOpen && !failed && (
+          <div className="project-empty__guide" role="note">
+            <p>
+              在已有仓库里，推荐先跑 <code>todo scan</code>：它会找出仓库里早已写下、却从未被跟踪的
+              TODO 注释与 checkbox，且完全不写盘；或用 <code>todo init</code> 创建一份标准清单。
+            </p>
+            <p>
+              也可以由桌面端创建：下一步会打开目录选择框，<strong>将在所选目录写入一份空的 TODO.md</strong>
+              （列结构 Todo / Doing / Done）。这是显式动作，桌面端不会自行创建任何文件。
+            </p>
+            {onCreateTodoMd && (
+              <button className="line-action" type="button" onClick={onCreateTodoMd}>
+                选择目录并创建 TODO.md
+              </button>
+            )}
+          </div>
+        )}
         <code>Project Root → Task Source → Project Task</code>
       </div>
     </section>

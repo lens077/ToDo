@@ -46,6 +46,8 @@ columns:
 - [x] 清理 sync-server 测试脏数据（example.com/*、/s/quick-1..3、clip-a/b、dbg-one、rust-lang/cargo） <!--t:t4gfbx--> #sync #backend !2
 - [x] Android APK 重打并真机复验同步 v2（进度/取消/热同步） <!--t:0x16fl--> #mobile #sync !2
       ↳ 2026-11-12 三端复验通过：手机首次同步拉 14 条（含进度）、PC 重启 dev 后热同步零变更；服务器/PC/手机 URL 集合 diff 为空。手机 3 条 failed 系服务器端 wc=0 的 3 条按设计转本机退避解析（save_pulled 第 4 分支），非缺陷。「取消」按钮未单独验证 <!--n:0x16fl-->
+- [ ] 定位 make check-quick 耗时超标（实测 245s，目标 <120s） <!--t:xfayi6--> #perf #ci !3
+      ↳ 2026-11-12 实测：check-quick 245s（rust fmt+clippy+workspace test+contract check 约 190s，desktop web build + 静态站点约 40s）。目标 <120s；待定位耗时来源（疑似 clippy 全量 + 未命中增量缓存的 web 构建），不阻塞 onboarding。 <!--n:xfayi6-->
 
 ## Doing
 - [ ] 人工验收看板任务写回 TODO.md <!--t:h4m9zc--> #desktop #manual !1 ^3000

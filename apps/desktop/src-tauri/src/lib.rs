@@ -92,6 +92,34 @@ fn open_project(
     Ok(snapshot)
 }
 
+/// Explicit creation of TODO.md in a chosen directory (onboarding-spec §3.1):
+/// the desktop never creates files silently — the user picks the directory in
+/// the dialog and presses the button that says what will be written. Template
+/// must stay identical to `todo init`'s (crates/todo-cli/src/main.rs).
+const TODO_MD_TEMPLATE: &str = "---\ntodo-spec: 1\ncolumns:\n  - {id: todo, name: Todo}\n  - {id: doing, name: Doing}\n  - {id: done, name: Done, type: done}\n---\n\n# Project tasks\n\n## Todo\n\n## Doing\n\n## Done\n";
+
+#[tauri::command]
+fn create_todo_md(
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+    dir: String,
+) -> Result<ProjectSnapshot, String> {
+    let todo = PathBuf::from(&dir).join("TODO.md");
+    if todo.exists() {
+        return Err(
+            "该目录已有 TODO.md：直接选择这个项目即可；要接管现有清单请用 `todo init --adopt`。"
+                .into(),
+        );
+    }
+    std::fs::write(&todo, TODO_MD_TEMPLATE)
+        .map_err(|error| format!("TODO.md 无法创建：{error}"))?;
+    let snapshot = state.ops.open_project(&dir)?;
+    let project = PathBuf::from(&snapshot.project_path);
+    start_watcher(&app, &state, project.clone())?;
+    preferences::remember_project(state.preferences_path.as_deref(), &project);
+    Ok(snapshot)
+}
+
 /// Reopens the project from the previous launch, if it is still a task file.
 ///
 /// Failure is deliberately silent: a moved repository or a file that no longer
@@ -739,6 +767,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             open_project,
+            create_todo_md,
             snapshot,
             mutate,
             project_snapshot,

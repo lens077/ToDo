@@ -1,5 +1,6 @@
 import * as React from 'react';
 import { desktop, type ContractCheckReport } from '../lib/desktop';
+import { markReconcileRevealed, wasReconcileRevealed } from '../lib/onboardingHints';
 
 /**
  * Project Contract 规范视图：展示 `.virgo/project.yaml` 的确定性校验结果。
@@ -10,12 +11,16 @@ import { desktop, type ContractCheckReport } from '../lib/desktop';
  */
 interface ContractViewProps {
   readOnly: boolean;
+  /** Onboarding-spec §3.3: 对账的首次揭示要等用户真的完成过任务。 */
+  hasCompletedTask?: boolean;
 }
 
-export function ContractView({ readOnly: _readOnly }: ContractViewProps) {
+export function ContractView({ readOnly: _readOnly, hasCompletedTask = false }: ContractViewProps) {
   const [report, setReport] = React.useState<ContractCheckReport | null>(null);
   const [busy, setBusy] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
+  // 只有第一次有 finding 时说明一次「只报告，不改写」，之后不再出现。
+  const [revealDismissed, setRevealDismissed] = React.useState(wasReconcileRevealed);
 
   const refresh = React.useCallback(async () => {
     setBusy(true);
@@ -35,6 +40,8 @@ export function ContractView({ readOnly: _readOnly }: ContractViewProps) {
 
   const errors = report?.findings.filter((finding) => finding.severity === 'error') ?? [];
   const warnings = report?.findings.filter((finding) => finding.severity === 'warning') ?? [];
+  const findingsCount = report?.findings.length ?? 0;
+  const reveal = Boolean(report) && hasCompletedTask && findingsCount > 0 && !revealDismissed;
 
   return (
     <section className="contract-view" aria-label="Project Contract 规范">
@@ -52,6 +59,25 @@ export function ContractView({ readOnly: _readOnly }: ContractViewProps) {
       </header>
 
       {error && <p className="source-unavailable" role="alert">{error}</p>}
+
+      {reveal && (
+        <div className="reconcile-reveal" role="note">
+          <div className="reconcile-reveal__copy">
+            <strong>对账发现 {findingsCount} 处不一致。</strong>
+            <span>它用 Git 物证核对任务与代码的实际状态，<strong>只报告，不改写你的完成状态</strong>；每条建议都由你确认。</span>
+          </div>
+          <button
+            type="button"
+            className="text-action"
+            onClick={() => {
+              markReconcileRevealed();
+              setRevealDismissed(true);
+            }}
+          >
+            知道了
+          </button>
+        </div>
+      )}
 
       {report && (
         <>

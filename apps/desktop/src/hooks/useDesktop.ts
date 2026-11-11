@@ -390,6 +390,29 @@ export function useDesktop() {
     }
   }, [acceptWrite, refreshSnapshot, sourceBusy, withBusy]);
 
+  /// Onboarding-spec §3.1: explicit TODO.md creation. Mirrors `chooseProject`
+  /// but goes through the create command; failure stays on the no-project
+  /// state (the banner carries the reason) instead of flipping to load-error.
+  const createProject = React.useCallback(async () => {
+    const context = ++contextSequence.current;
+    ++snapshotReadSequence.current;
+    setSourceBusy(true);
+    try {
+      snapshotEpoch.current += 1;
+      const opened = await withBusy('project', () => desktop.chooseAndCreateProject());
+      if (!opened || context !== contextSequence.current) return;
+      selectedSourceRef.current = opened.selected_source ?? null;
+      applySnapshot(opened, true);
+      setBanner(null);
+      setPhase('ready');
+    } catch (error) {
+      if (context !== contextSequence.current) return;
+      setBanner(bannerFor(error));
+    } finally {
+      if (context === contextSequence.current) setSourceBusy(false);
+    }
+  }, [applySnapshot, withBusy]);
+
   const chooseProject = React.useCallback(async () => {
     const context = ++contextSequence.current;
     ++snapshotReadSequence.current;
@@ -624,6 +647,7 @@ export function useDesktop() {
     busyKeys,
     partialTriages,
     chooseProject,
+    createProject,
     openRegisteredProject,
     refreshSnapshot,
     // Adopts a snapshot from a write that bypassed `mutate`, such as a confirmed

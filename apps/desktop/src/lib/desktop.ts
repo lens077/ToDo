@@ -1121,6 +1121,17 @@ export const desktop = {
     return typeof selected === 'string' ? this.openProject(selected) : null;
   },
 
+  /// Onboarding-spec §3.1: explicit creation. The dialog title and the button
+  /// that opens it both say a TODO.md will be written; never called silently.
+  async chooseAndCreateProject(): Promise<DesktopSnapshot | null> {
+    if (!isTauriRuntime()) {
+      throw new DesktopBridgeError('浏览器不能创建本机文件，请使用桌面端或在仓库里运行 todo init。');
+    }
+    const selected = await open({ directory: true, multiple: false, title: '选择要创建 TODO.md 的目录（将写入 TODO.md）' });
+    if (typeof selected !== 'string') return null;
+    return normalizeSnapshot(await call<unknown>('create_todo_md', { dir: selected }));
+  },
+
   async mutate(intent: DesktopMutation, sourcePath: string | null = null, projectMode = false, projectPath?: string): Promise<DesktopSnapshot> {
     if (isTauriRuntime()) return normalizeSnapshot(await call<unknown>(projectMode || sourcePath !== null ? 'project_mutate' : 'mutate', projectMode || sourcePath !== null ? { sourcePath, intent, projectPath } : { intent }));
     if (useHttp() && projectMode) {

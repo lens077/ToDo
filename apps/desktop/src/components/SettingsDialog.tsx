@@ -8,6 +8,8 @@ import { navItems, type MainView } from './Sidebar';
 interface SettingsDialogProps {
   onClose: () => void;
   onOpenProviderSettings: () => void;
+  /** Onboarding-spec §7.1: the wizard is opt-in and only reachable from here. */
+  onOpenWizard?: () => void;
   /** Narrow screens only: every view that did not fit in the tab bar is listed here. */
   activeView?: MainView;
   onChangeView?: (view: MainView) => void;
@@ -15,7 +17,7 @@ interface SettingsDialogProps {
   initialSection?: 'tabs' | null;
 }
 
-export function SettingsDialog({ onClose, onOpenProviderSettings, activeView, onChangeView, initialSection }: SettingsDialogProps) {
+export function SettingsDialog({ onClose, onOpenProviderSettings, onOpenWizard, activeView, onChangeView, initialSection }: SettingsDialogProps) {
   const [settings, update] = useAppSettings();
   const provider = readProviderSettings();
   const panelRef = React.useRef<HTMLElement>(null);
@@ -50,6 +52,21 @@ export function SettingsDialog({ onClose, onOpenProviderSettings, activeView, on
         </header>
 
         <div className="settings-body">
+          {onOpenWizard && (
+            <section className="settings-group" aria-labelledby="settings-onboarding">
+              <h3 id="settings-onboarding">首次使用？</h3>
+              <div className="settings-row">
+                <span className="settings-row__copy">
+                  <strong>打开引导向导</strong>
+                  <span>用 5 步走一遍项目、扫描、agent 接入与对账。没有开机强推，随时可以跳过，也可以以后从这里再次打开。</span>
+                </span>
+                <button type="button" className="line-action" onClick={onOpenWizard}>
+                  打开引导向导
+                </button>
+              </div>
+            </section>
+          )}
+
           <section className="settings-group" aria-labelledby="settings-safety">
             <h3 id="settings-safety">操作确认</h3>
             <label className="settings-row">
