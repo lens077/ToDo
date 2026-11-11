@@ -34,7 +34,8 @@ columns:
 - [x] sync-server B2：k8s 部署（镜像+helm+Secret），等 B1 本地跑通后执行 <!--t:yfj0ol--> #sync #release !2
 - [x] 链接库 C 层：桌面同步模块 + 网页端独立小前端（待 B2） <!--t:u9lj4a--> #sync #desktop !2
 - [x] desktop-sync C2：桌面阅读库与 todo-sync 服务器双向对账（全量对账 + SSE 触发） <!--t:dj9w2g--> #sync #desktop !2
-- [ ] Android 分享接收真机验收（装机后 am start 模拟 SEND intent，验服务器收到） <!--t:51swhk--> #mobile #manual !2
+- [x] Android 分享接收真机验收（装机后 am start 模拟 SEND intent，验服务器收到） <!--t:51swhk--> #mobile #manual !2
+      ↳ 2026-11-11 真机验收通过：V2425A 分享唯一 URL 后服务器 /articles 4→5，见 docs/verification-log.md <!--n:51swhk-->
 
 ## Doing
 - [ ] 人工验收看板任务写回 TODO.md <!--t:h4m9zc--> #desktop #manual !1 ^3000

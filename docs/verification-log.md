@@ -959,3 +959,12 @@ Session 存为项目内 Markdown（`<project>/.virgo/sessions/s-<ts>.md`），�
 
 1. 新增 `ShareReceiverActivity`：注册 ACTION_SEND text/plain；从分享文本提取第一个 http(s) 链接，直接 `POST {base}/links`（不进 WebView 主界面）；token 存 SharedPreferences（首次分享出极简表单填一次，默认服务器 todo-sync.apikv.com）；成功/失败 Toast 并退出。
 2. `--debug --target aarch64` APK 构建通过（含新 activity）。真机验收待设备连接（本轮手机未连接）——验收步骤：安装 → 模拟 `am start -a android.intent.action.SEND --es android.intent.extra.TEXT "<url>" -n com.sumery.virgo/.ShareReceiverActivity` → 首次填 token → 服务器列表出现该 URL。
+
+## 2026-11-11 Android 分享接收真机验收（51swhk，通过）
+
+1. 设备：vivo V2425A（序列号 `10AEB72BCN000EJ`，Android 17）。覆盖安装 04:17 构建的 universal debug APK；`aapt2 dump xmltree` 确认清单含 `com.sumery.virgo.ShareReceiverActivity` 且 `exported=true`。
+2. 首次分享：`am start -n com.sumery.virgo/.ShareReceiverActivity -a android.intent.action.SEND -t text/plain --es android.intent.extra.TEXT "<url>"` 后出现极简表单（服务器默认 `https://todo-sync.apikv.com` + Token 输入 + 保存按钮），首次配置路径成立。
+3. 填 token 的坑：`adb shell input text` 会把 hex 打进 vivo 中文输入法的候选流程，实际落成中文字符；改用 `run-as` 写入 `shared_prefs/virgo-sync.xml`（键 `base`/`token`，与表单同源）绕过 IME。
+4. 验收结果：分享 `https://example.com/virgo-android-acceptance-20261111` 后 Activity 自动关闭回桌面，`ShareReceiver` 无 W/E 日志；`GET /articles` 条目数 4 → 5，新增记录的 url/title 与预期一致（stub 先回、后台解析），证明真机 → 公网 → 服务器写入链路通。
+5. 去重路径顺带验证：`https://github.com/rust-lang/rust` 已在库中，分享后未新增重复条目。
+6. 遗留：首次表单需手工输入 64 位 hex token，体验差；后续可考虑粘贴框或二维码导入，不在本卡范围。
