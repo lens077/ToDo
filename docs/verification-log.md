@@ -1031,3 +1031,12 @@ Session 存为项目内 Markdown（`<project>/.virgo/sessions/s-<ts>.md`），�
 8. 单元测试：`backoff_doubles_until_the_cap`、`only_sse_data_lines_trigger_a_sync` 通过；`cargo test -p todo-desktop` 全绿。
 9. 门禁：`make check-quick` 绿（rust fmt+clippy+test / web build+静态站）。
 10. 未在本次自动化的部分：桌面 GUI 内实际观察到「服务器变更 → 列表自动刷新」需要 App 运行，留作人工验收第 3 条。
+
+## 2026-11-11 移动端阅读库默认目录 + 阅读视图窄屏布局（通过）
+
+1. **默认目录**：Android 沙箱没有 `HOME`，`dirs::home_dir()` 返回 None，阅读视图此前直接报「阅读库不可用：无法确定用户主目录」。`runtime_reading_store()` 现在在移动端回退到应用私有 `files/.todo/reading`（`TMPDIR` 指向 cache，优先用其同级的 `files/`，避免被系统清缓存清掉）。
+2. **保存失败的第二个根因**：reqwest 0.13 的 `rustls` 特性固定使用 rustls-platform-verifier，Android 端缺配套 Kotlin 组件，首次 HTTPS 请求会在后台线程 panic（界面显示「抓取任务中断：task N panicked … event loop thread panicked」）。新增 `todo_core::http_client_builder()`：Android 用随包 webpki 公共根证书，桌面继续走系统根证书；reading / llm / sync / sync-watch 四处客户端统一改走它。
+3. **真机复测**（V2425A，360×800 视口，覆盖安装 debug APK）：打开阅读视图不再报错；不选项目、不选目录直接粘贴 `https://example.com` 保存成功，列表出现「Example Domain」，计数 `1 篇文章`，底栏阅读角标同步为 1。
+4. **错误提示布局**：原来借用了 `.ai-notice`（三栏网格：图标 / 文本 / 操作），单段文字被挤进 18px 首列，出现一字一行的竖排。改用 `.reading-notice` 单行样式，窄屏左右留 18px。
+5. **同步面板溢出**：≤760px 时三个动作按钮改成等宽一行（`repeat(3, minmax(0,1fr))`），不再把最右侧「同步」挤出屏幕；同步面板从「钉在按钮右侧」改为挂到输入框下方（`left:6px; width:min(340px, 100vw-36px)`）。实测面板 x=24.9、右缘 348.8（视口 360），左右均无溢出，且不再遮挡「同步」按钮。
+6. 门禁：`make check-quick` 绿；`playwright test e2e/reading.spec.ts e2e/mobile.spec.ts` 20 passed。
