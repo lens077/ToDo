@@ -1101,3 +1101,13 @@ Session 存为项目内 Markdown（`<project>/.virgo/sessions/s-<ts>.md`），�
 3. **复验**：run 43064834592 中 Install deps/fmt/clippy 首次全绿；test 步暴露 `session::tests::interrupt_unblocks_new_session` 撞名——`session.rs` 的 id 取毫秒时间戳，CI 上同一毫秒内两次 `begin_active` 生成相同 `file_name`。已在测试的两次 begin 之间加 2ms sleep（不动 id 生成逻辑，避免牵连 registry/spec）。本地 `cargo test -p todo-core --lib session::tests` 13 通过，`cargo fmt --check` 绿。
 4. **遗留**：run 43064834592 的 test 步仅此一个失败；修复推送后需确认 CI 全绿（含首次执行的 test/contract check 步）。
 5. **补充（run 43067304273）**：test 步再暴露 `desktop_git_scaling::snapshot_skips_the_history_read_when_no_task_needs_an_introduction` 竞态——该测试的 fixture `git` 调用在拿 `path_lock` 之前执行，而 `GitSpy::record` 会临时改进程全局 `PATH` 指向 shim 目录并在结束时删除，CI 并行下撞上悬空 shim（`/bin/sh: cannot open /tmp/.../bin/git`）。修复：fixture 段包进持锁块（install 前释放，避免重入死锁）。本地该测试文件 5 连跑全绿，fmt 绿。
+
+## 2026-11-12 支付宝切生产（通过，3nd6da）
+
+1. **前置核实（文档过期三处）**：TODO 笔记说「切网关」，实际集群里 sponsor-api 从未部署过——是首次 bootstrap；values-prod 注释提到的 `make sponsor-image-push` 目标不存在；CI 回写镜像 tag 未实现（仍是手工）。OpenBao `k8s/hosting/virgo` 里也没有支付宝凭据（10-30 笔记「用户完成」与现实不符，只有 tcr-dockerconfigjson）。
+2. **凭据入库**：用户提供 .env（appId 2021 开头正式应用 ✓、PID 2088 开头 16 位 ✓）；应用私钥为 PKCS#8，按 alipay-sdk v4 默认 PKCS#1 转换（node crypto），并校验「私钥推导公钥 == 应用公钥」配对一致后，经 port-forward + ESO token 只读检查 + 用户 root token 写入合并（保留 tcr-dockerconfigjson）。
+3. **镜像与部署**：`make sponsor-image`（注意 `| tail` 管道会吞 exit code 且 docker tag 不允许带 digest——回写 tag 用 `<sha>@sha256:<digest>` 但构建 tag 必须是裸 sha）；helm 直装（绕过 sponsor-k8s-deploy 的镜像重建依赖）+ `sponsor-argo-apply`（ArgoCD sponsor-api-prod Synced Healthy）。
+4. **公网入口排查**：Pod 内健康但公网 404 → Pangolin 无该域名路由（用户面板补配，同 virgo 模式）；补配后 503 connection timeout → 根因是 sponsor 图用 k8s NetworkPolicy 的 namespaceSelector 匹配不到 Cilium Gateway 的 ingress entity（todo-sync 图注释早有案底但 sponsor 未修），改写为 CiliumNetworkPolicy `fromEntities: ingress/host/remote-node`（commit f78d5f3）后公网 `healthz 200, sandbox:false`。
+5. **¥1 真实支付**：`POST /api/sponsor/pay {amount:1}` → 生产收银台（app_id 2021007114640024）→ 用户支付成功回跳 thanks 页 → 异步通知验签通过、金额比对一致（amount_cents=100）、trade_no=2026111222001483611407952865 回填、订单 paid（SPN20261111181946ac7f91a4a6）。退款无 API 实现（产品决策），测试款由商家平台手动退。
+6. **官网切换**：site.mjs `sponsor.api` 指向 `https://sponsor-api.apikv.com`（commit 1509092），Deploy site 工作流三端发布（CF Pages / EdgeOne / k8s 镜像 + ArgoCD）。
+7. **遗留**：.env（原始 PKCS#8 凭据）在仓库根目录被 gitignore 覆盖，建议上线稳定后删除；`make sponsor-k8s-deploy` 的 digest-tag 与镜像依赖问题未修（bootstrap 后日常走 Git 回写，不受影响）。
