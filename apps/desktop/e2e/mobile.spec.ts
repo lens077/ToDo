@@ -51,23 +51,24 @@ async function useReadOnlyBackend(page: Page) {
   );
 }
 
-test('mobile navigation stays reachable at the bottom', async ({ page }) => {
+test('mobile navigation uses a five-slot bottom tab bar', async ({ page }) => {
   await page.goto('/');
 
-  const sidebar = page.locator('.sidebar');
+  const bar = page.getByRole('navigation', { name: '底部导航' });
   const workspace = page.locator('.workspace');
-  await expect(page.getByRole('navigation', { name: '主要视图' })).toBeVisible();
+  await expect(bar).toBeVisible();
+  await expect(page.locator('.sidebar')).toBeHidden();
   expect(await page.evaluate(() => navigator.maxTouchPoints)).toBeGreaterThan(0);
 
-  const sidebarBox = await sidebar.boundingBox();
+  const barBox = await bar.boundingBox();
   const workspaceBox = await workspace.boundingBox();
-  expect(sidebarBox).not.toBeNull();
+  expect(barBox).not.toBeNull();
   expect(workspaceBox).not.toBeNull();
-  expect(sidebarBox!.y).toBeGreaterThanOrEqual(workspaceBox!.y + workspaceBox!.height - 1);
+  expect(barBox!.y).toBeGreaterThanOrEqual(workspaceBox!.y + workspaceBox!.height - 1);
 
-  const navButtons = page.getByRole('navigation', { name: '主要视图' }).getByRole('button');
-  // Sidebar.tsx 的 navItems 拥有这套导航；断言标签与顺序而不是一个会过期的固定数。
-  const expectedNavLabels = ['总览', '阅读', '工作空间', '目标', '象限', '随记', 'AI', '扫描与历史', '规范'];
+  const navButtons = bar.getByRole('button');
+  // MobileTabBar 的 DEFAULT_MOBILE_TABS 拥有这套导航：四个可自定义视图 + 固定「我的」。
+  const expectedNavLabels = ['目标', '阅读', '随记', '总览', '我的'];
   await expect(navButtons).toHaveCount(expectedNavLabels.length);
   const navLabels: Array<string | null> = [];
   for (const button of await navButtons.all()) {
@@ -79,8 +80,16 @@ test('mobile navigation stays reachable at the bottom', async ({ page }) => {
     expect(box?.height ?? 0).toBeGreaterThanOrEqual(44);
   }
 
-  await page.getByRole('button', { name: '目标', exact: true }).click();
+  await bar.getByRole('button', { name: '目标', exact: true }).click();
   await expect(page.getByRole('heading', { name: '目标' })).toBeVisible();
+
+  // Views that did not fit stay reachable: 「我的」 → 更多视图.
+  await bar.getByRole('button', { name: '我的' }).click();
+  const settings = page.getByRole('dialog', { name: '设置' });
+  await expect(settings).toBeVisible();
+  await settings.getByRole('button', { name: '工作空间' }).click();
+  await expect(settings).toBeHidden();
+  await expect(page.getByRole('heading', { name: '工作空间', exact: true })).toBeVisible();
 });
 
 test('goal regions stack without horizontal scrolling', async ({ page }) => {
@@ -162,7 +171,8 @@ test('read-only mode disables task, capture, import, and restore writes', async 
   await expect(page.getByRole('button', { name: /分拣为任务/ })).toHaveCount(0);
   expect(captureRequests).toEqual([]);
 
-  await page.getByRole('button', { name: '扫描与历史', exact: true }).click();
+  await page.getByRole('button', { name: '我的' }).click();
+  await page.getByRole('dialog', { name: '设置' }).getByRole('button', { name: '扫描与历史' }).click();
   const previewImport = page.getByRole('button', { name: '预览导入' });
   await expect(previewImport).toBeDisabled();
   await expect(previewImport).toHaveAttribute('title', '只读模式下不能导入');

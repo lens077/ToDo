@@ -289,6 +289,9 @@
   .status-light--watching { background: var(--teal); box-shadow: 0 0 0 3px var(--teal-wash); }
   .status-light--error { background: var(--danger); box-shadow: 0 0 0 3px var(--danger-wash); }
 
+  /* Paper-only until the narrow-screen breakpoint swaps it in for the sidebar. */
+  .mobile-tab-bar { display: none; }
+
   .workspace { position: relative; display: grid; grid-template-rows: auto minmax(0, 1fr); min-width: 0; min-height: 0; overflow: hidden; background: var(--bg); }
   .workspace.is-read-only { grid-template-rows: auto auto minmax(0, 1fr); }
   .workspace__content { min-width: 0; min-height: 0; overflow: auto; animation: rise-in 0.8s var(--ease-rise) both; }
@@ -1264,52 +1267,62 @@
     min-height: 0;
   }
 
-  /* The sidebar becomes a bottom tab bar. */
-  .sidebar {
+  /* The sidebar is replaced by a dedicated tab bar: four views plus a fixed
+     「我的」 slot, rather than nine icons squeezed into two rows. */
+  .sidebar { display: none; }
+  .mobile-tab-bar {
     grid-row: 2;
     grid-column: 1;
     display: grid;
-    grid-template-columns: minmax(0, 1fr) 56px;
+    grid-template-columns: repeat(4, minmax(0, 1fr)) 56px;
     align-items: stretch;
-    gap: 6px;
-    width: 100%;
-    padding: 6px calc(8px + env(safe-area-inset-right)) calc(6px + env(safe-area-inset-bottom)) calc(8px + env(safe-area-inset-left));
-    overflow: visible;
-    background: var(--panel);
-    border-top: 1px solid var(--hairline);
-    border-right: 0;
-  }
-  .sidebar__brand,
-  .project-switcher,
-  .sidebar-status__item,
-  .primary-nav__label,
-  .primary-nav__count { display: none; }
-  .sidebar-status { display: block; margin: 0; padding: 0; border: 0; }
-  .sidebar-settings { grid-template-columns: 1fr; grid-template-rows: 22px auto; gap: 2px; width: 100%; height: 100%; min-height: 52px; margin: 0; padding: 5px 2px 4px; place-items: center; color: var(--ink-2); background: transparent; border: 0; border-radius: var(--radius-control); }
-  .sidebar-settings svg { width: 19px; height: 19px; }
-  .sidebar-settings span { display: block; font-size: 10.5px; line-height: 1; }
-
-  .primary-nav {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(0, 1fr));
     gap: 3px;
     width: 100%;
-    margin: 0;
+    padding: 6px calc(8px + env(safe-area-inset-right)) calc(6px + env(safe-area-inset-bottom)) calc(8px + env(safe-area-inset-left));
+    background: var(--panel);
+    border-top: 1px solid var(--hairline);
   }
-  .primary-nav button {
+  .mobile-tab-bar button {
     display: grid;
     grid-template-columns: 1fr;
     grid-template-rows: 22px auto;
     gap: 2px;
-    width: 100%;
     min-height: 52px;
     margin: 0;
     padding: 5px 2px 4px;
     place-items: center;
+    color: var(--ink-2);
+    background: transparent;
     border: 0;
+    border-radius: var(--radius-control);
+    font: inherit;
+    transition: color 0.3s var(--ease-out), background 0.3s var(--ease-out);
   }
-  .primary-nav__text { display: block; font-size: 10.5px; line-height: 1; }
-  .primary-nav svg { width: 19px; height: 19px; }
+  .mobile-tab-bar button.is-active { color: var(--accent); background: var(--accent-wash); }
+  .mobile-tab-bar svg { width: 19px; height: 19px; color: var(--ink-3); }
+  .mobile-tab-bar button.is-active svg { color: var(--accent); }
+  .mobile-tab-bar span { font-size: 10.5px; line-height: 1; }
+  .mobile-tab-bar__me { border-left: 1px solid var(--hairline) !important; }
+
+  .settings-views { display: grid; }
+  .settings-views__hint { color: var(--ink-3); font-size: 12px; line-height: 1.5; }
+  .settings-views__grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+  .settings-views__grid button {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-height: 44px;
+    padding: 0 12px;
+    color: var(--ink-2);
+    text-align: left;
+    background: var(--bg);
+    border: 1px solid var(--hairline);
+    border-radius: var(--radius-control);
+    font: inherit;
+    font-size: 13px;
+  }
+  .settings-views__grid button.is-active { color: var(--accent); border-color: var(--accent); background: var(--accent-wash); }
+  .settings-views__grid svg { width: 16px; height: 16px; }
 
   .command-bar {
     min-height: calc(56px + env(safe-area-inset-top));
@@ -1502,6 +1515,8 @@
   .settings-row__copy strong { font-size: 13.5px; }
   .settings-row__copy span { color: var(--ink-2); font-size: 12.5px; line-height: 1.5; }
   .settings-footnote { color: var(--ink-3); font-size: 12px; }
+  /* Reachability for views that did not fit the narrow-screen tab bar. */
+  .settings-views { display: none; }
 
   .switch { position: relative; display: inline-block; width: 40px; height: 22px; flex: 0 0 auto; }
   .switch input { position: absolute; z-index: 1; inset: 0; width: 100%; height: 100%; margin: 0; opacity: 0; cursor: pointer; }

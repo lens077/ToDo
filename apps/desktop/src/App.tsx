@@ -13,6 +13,7 @@ import { ProjectPickerDialog } from './components/ProjectPickerDialog';
 import { QuadrantView } from './components/QuadrantView';
 import { ReaderView } from './components/ReaderView';
 import { ReadingView } from './components/ReadingView';
+import { MobileTabBar } from './components/MobileTabBar';
 import { ProviderSettings } from './components/ProviderSettings';
 import { ReviewView } from './components/ReviewView';
 import { SettingsDialog } from './components/SettingsDialog';
@@ -385,6 +386,12 @@ export function App() {
         </main>
       </div>
 
+      <MobileTabBar
+        activeView={activeView}
+        onChangeView={setActiveView}
+        onOpenSettings={() => setSettingsOpen(true)}
+      />
+
       {columnSetup && columnSetup.contextKey === sourceContextKey && !model.sourceBusy && (
         <ColumnSetupDialog
           key={JSON.stringify([columnSetup.projectPath, columnSetup.sourcePath, columnSetup.startTask?.localId])}
@@ -464,6 +471,8 @@ export function App() {
       )}
       {settingsOpen && (
         <SettingsDialog
+          activeView={activeView}
+          onChangeView={setActiveView}
           onClose={() => setSettingsOpen(false)}
           onOpenProviderSettings={() => {
             setSettingsOpen(false);

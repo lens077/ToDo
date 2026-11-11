@@ -24,7 +24,7 @@ interface SidebarProps {
 // 阅读 sits first: it is the personal shelf that feeds everything below it.
 // 目标 then holds what is in flight, what is queued, and what is finished, so
 // "what should I do now" never needs a second view.
-const navItems: Array<{ id: MainView; label: string; icon: IconName }> = [
+export const navItems: Array<{ id: MainView; label: string; icon: IconName }> = [
   { id: 'overview', label: '总览', icon: 'target' },
   { id: 'reading', label: '阅读', icon: 'book' },
   { id: 'workspaces', label: '工作空间', icon: 'board' },

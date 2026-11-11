@@ -968,3 +968,10 @@ Session 存为项目内 Markdown（`<project>/.virgo/sessions/s-<ts>.md`），�
 4. 验收结果：分享 `https://example.com/virgo-android-acceptance-20261111` 后 Activity 自动关闭回桌面，`ShareReceiver` 无 W/E 日志；`GET /articles` 条目数 4 → 5，新增记录的 url/title 与预期一致（stub 先回、后台解析），证明真机 → 公网 → 服务器写入链路通。
 5. 去重路径顺带验证：`https://github.com/rust-lang/rust` 已在库中，分享后未新增重复条目。
 6. 遗留：首次表单需手工输入 64 位 hex token，体验差；后续可考虑粘贴框或二维码导入，不在本卡范围。
+
+## 2026-11-11 移动端底部导航 M1（c947n8）
+
+1. 新增 `MobileTabBar`：窄屏（≤719px）专用底栏，4 个可自定义视图（目标 / 阅读 / 随记 / 总览）+ 最右固定「我的」；断点内 `.sidebar { display: none }`，桌面断点外组件默认 `display: none`，侧栏结构与行为不变。
+2. 「我的」打开现有 SettingsDialog，并新增「更多视图」分区（仅窄屏可见）：列出未入栏的 5 个视图，保证任何视图可达。该分区属于 M4 的「完整入口」，但 M1 若不提前落地，工作空间 / 象限 / AI / 扫描与历史 / 规范 会在移动端变为不可达。
+3. 测试：`mobile.spec` 重写为断言 5 个槽位与顺序、按钮高度 ≥44px、底栏贴底、`.sidebar` 隐藏、经「我的」进入工作空间；`ai.spec` 的 640px 场景改走「我的」→ AI。identity 8 项通过；全量 E2E 154 通过（16 skipped，1 项 AI 窄窗用例修复后通过）。
+4. `make check-quick` 绿。

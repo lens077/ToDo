@@ -208,7 +208,10 @@ test.describe('AI view', () => {
   test('narrow window: one card per row', async ({ page }) => {
     await page.setViewportSize({ width: 640, height: 900 });
     await page.goto('/');
-    await nav(page).click();
+    // Below the narrow-screen breakpoint AI is not in the default tab bar, so
+    // it is reached through 「我的」 → 更多视图.
+    await page.getByRole('button', { name: '我的' }).click();
+    await page.getByRole('dialog', { name: '设置' }).getByRole('button', { name: 'AI', exact: true }).click();
     const lefts = await page.evaluate(() =>
       Array.from(document.querySelectorAll<HTMLElement>('.ai-section--seen .ai-card')).map((card) => Math.round(card.getBoundingClientRect().left)));
     expect(lefts.length).toBeGreaterThan(1);

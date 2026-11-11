@@ -2,13 +2,18 @@ import * as React from 'react';
 import { LAYOUT_DENSITIES, OPEN_SESSION_MODES, defaultAppSettings, useAppSettings } from '../lib/appSettings';
 import { readProviderSettings } from '../lib/providerSettings';
 import { Icon } from './Icon';
+import { DEFAULT_MOBILE_TABS } from './MobileTabBar';
+import { navItems, type MainView } from './Sidebar';
 
 interface SettingsDialogProps {
   onClose: () => void;
   onOpenProviderSettings: () => void;
+  /** Narrow screens only: every view that did not fit in the tab bar is listed here. */
+  activeView?: MainView;
+  onChangeView?: (view: MainView) => void;
 }
 
-export function SettingsDialog({ onClose, onOpenProviderSettings }: SettingsDialogProps) {
+export function SettingsDialog({ onClose, onOpenProviderSettings, activeView, onChangeView }: SettingsDialogProps) {
   const [settings, update] = useAppSettings();
   const provider = readProviderSettings();
 
@@ -139,6 +144,30 @@ export function SettingsDialog({ onClose, onOpenProviderSettings }: SettingsDial
               </span>
             </label>
           </section>
+
+          {onChangeView && (
+            <section className="settings-group settings-views" aria-labelledby="settings-views">
+              <h3 id="settings-views">更多视图</h3>
+              <span className="settings-views__hint">底部导航栏只放最常用的几项，其余视图从这里进入。</span>
+              <div className="settings-views__grid">
+                {navItems.filter((item) => !DEFAULT_MOBILE_TABS.includes(item.id)).map((item) => (
+                  <button
+                    type="button"
+                    key={item.id}
+                    className={activeView === item.id ? 'is-active' : ''}
+                    aria-current={activeView === item.id ? 'page' : undefined}
+                    onClick={() => {
+                      onChangeView(item.id);
+                      onClose();
+                    }}
+                  >
+                    <Icon name={item.icon} />
+                    <span>{item.label}</span>
+                  </button>
+                ))}
+              </div>
+            </section>
+          )}
 
           <p className="settings-footnote">这些偏好只保存在本机，不会写入任何项目文件。</p>
         </div>
