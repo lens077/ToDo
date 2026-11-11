@@ -6,12 +6,12 @@
 
 api:
   image:
-    tag: ""   # 首次部署前回写，如 "abc1234@sha256:..."
+    tag: "9f8bd4e@sha256:92ba1fda2b2501a8948c1e6bd031e98093622e9dbe12c786fcd092078219d42b"
 
 route:
   hostnames:
     - sponsor-api.apikv.com
 
 config:
-  # 签约通过、拿到正式凭据后切换：
-  gateway: https://openapi-sandbox.dl.alipaydev.com/gateway.do
+  # 电脑网站支付签约已通过（2026-11-12），切生产网关；凭据为正式应用。
+  gateway: https://openapi.alipay.com/gateway.do
