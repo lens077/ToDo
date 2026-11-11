@@ -1,4 +1,5 @@
 import * as React from 'react';
+import { isMainView, type MainView } from './views';
 
 /**
  * How much room the interface gives each thing.
@@ -34,6 +35,23 @@ export const OPEN_SESSION_MODES: ReadonlyArray<{ value: OpenSessionMode; label: 
 ];
 
 /**
+ * Which views the narrow-screen tab bar shows, in order. Device-local: the
+ * mobile bar is a copy consumer, so this never enters the sync server.
+ */
+export interface MobileTabBarPreference {
+  order: MainView[];
+  version: 1;
+}
+
+export const MOBILE_TAB_MIN = 2;
+export const MOBILE_TAB_MAX = 6;
+
+export const defaultMobileTabBar: MobileTabBarPreference = {
+  order: ['goal', 'reading', 'capture', 'overview'],
+  version: 1,
+};
+
+/**
  * Per-machine interface preferences. Nothing here is product data: it never
  * enters TODO.md and a cleared browser profile only restores the defaults.
  */
@@ -51,6 +69,7 @@ export interface AppSettings {
    * the settings dialog; see lib/analytics.ts for exactly what is sent.
    */
   usageAnalytics: boolean;
+  mobileTabBar: MobileTabBarPreference;
 }
 
 export const APP_SETTINGS_STORAGE_KEY = 'todo.app-settings.v1';
@@ -60,6 +79,7 @@ export const defaultAppSettings: AppSettings = {
   density: 'normal',
   openSession: 'reuse',
   usageAnalytics: true,
+  mobileTabBar: defaultMobileTabBar,
 };
 
 function isDensity(value: unknown): value is LayoutDensity {
@@ -70,6 +90,24 @@ function isOpenSessionMode(value: unknown): value is OpenSessionMode {
   return value === 'reuse' || value === 'new-tab' || value === 'reuse-existing';
 }
 
+function normalizeMobileTabBar(value: unknown): MobileTabBarPreference {
+  const raw = value && typeof value === 'object' ? (value as { order?: unknown }) : {};
+  const seen = new Set<MainView>();
+  const order: MainView[] = [];
+  if (Array.isArray(raw.order)) {
+    for (const id of raw.order) {
+      // Unknown ids and repeats are dropped silently; only the first six stick.
+      if (!isMainView(id) || seen.has(id)) continue;
+      seen.add(id);
+      order.push(id);
+      if (order.length === MOBILE_TAB_MAX) break;
+    }
+  }
+  // Fewer than two views is not a usable bar: fall back rather than prompt.
+  if (order.length < MOBILE_TAB_MIN) return { order: [...defaultMobileTabBar.order], version: 1 };
+  return { order, version: 1 };
+}
+
 function normalize(value: unknown): AppSettings {
   const raw = value && typeof value === 'object' ? (value as Partial<AppSettings>) : {};
   return {
@@ -77,6 +115,7 @@ function normalize(value: unknown): AppSettings {
     density: isDensity(raw.density) ? raw.density : defaultAppSettings.density,
     openSession: isOpenSessionMode(raw.openSession) ? raw.openSession : defaultAppSettings.openSession,
     usageAnalytics: typeof raw.usageAnalytics === 'boolean' ? raw.usageAnalytics : defaultAppSettings.usageAnalytics,
+    mobileTabBar: normalizeMobileTabBar(raw.mobileTabBar),
   };
 }
 
@@ -115,7 +154,25 @@ export function writeAppSettings(patch: Partial<AppSettings>): AppSettings {
   return next;
 }
 
+/**
+ * Write the normalized form back when stored JSON is out of shape (unknown
+ * view ids, repeats, a bar below the minimum). Runs once per page, before the
+ * first subscription, so it never fights a live write.
+ */
+function repairStoredSettings(): void {
+  if (typeof window === 'undefined') return;
+  try {
+    const stored = window.localStorage.getItem(APP_SETTINGS_STORAGE_KEY);
+    if (!stored) return;
+    const serialized = JSON.stringify(normalize(JSON.parse(stored) as unknown));
+    if (serialized !== stored) window.localStorage.setItem(APP_SETTINGS_STORAGE_KEY, serialized);
+  } catch {
+    // Unreadable storage: the defaults already apply.
+  }
+}
+
 function subscribe(listener: () => void): () => void {
+  if (listeners.size === 0) repairStoredSettings();
   listeners.add(listener);
   return () => listeners.delete(listener);
 }

@@ -1,8 +1,9 @@
 import type { WorkspaceStatus } from '../hooks/useDesktop';
 import { shortProjectName } from '../lib/desktop';
+import type { MainView } from '../lib/views';
 import { Icon, type IconName } from './Icon';
 
-export type MainView = 'overview' | 'workspaces' | 'reading' | 'goal' | 'quadrant' | 'capture' | 'ai' | 'review' | 'contract';
+export type { MainView };
 
 interface SidebarProps {
   activeView: MainView;

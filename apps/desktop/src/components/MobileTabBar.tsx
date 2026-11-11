@@ -1,15 +1,15 @@
+import type * as React from 'react';
+import { useAppSettings } from '../lib/appSettings';
 import { navItems, type MainView } from './Sidebar';
 import { Icon } from './Icon';
 
 /**
- * Narrow-screen tab bar. Four customizable views plus a fixed 「我的」 slot on
- * the far right, which is the one way into settings and (later) every view
- * that does not fit in the bar.
+ * Narrow-screen tab bar. Two to six customizable views plus a fixed 「我的」
+ * slot on the far right, which is the way into settings and every view that
+ * did not fit in the bar.
  *
- * M1 hardcodes the default order; persistence and the editor land in M2/M3.
+ * The order comes from device-local preferences; M3 adds the drag editor.
  */
-export const DEFAULT_MOBILE_TABS: MainView[] = ['goal', 'reading', 'capture', 'overview'];
-
 interface MobileTabBarProps {
   activeView: MainView;
   onChangeView: (view: MainView) => void;
@@ -17,9 +17,16 @@ interface MobileTabBarProps {
 }
 
 export function MobileTabBar({ activeView, onChangeView, onOpenSettings }: MobileTabBarProps) {
+  const [settings] = useAppSettings();
+  const tabs = settings.mobileTabBar.order;
+
   return (
-    <nav className="mobile-tab-bar" aria-label="底部导航">
-      {DEFAULT_MOBILE_TABS.map((id) => {
+    <nav
+      className="mobile-tab-bar"
+      aria-label="底部导航"
+      style={{ '--mobile-tab-count': tabs.length } as React.CSSProperties}
+    >
+      {tabs.map((id) => {
         const item = navItems.find((candidate) => candidate.id === id);
         if (!item) return null;
         const active = activeView === id;

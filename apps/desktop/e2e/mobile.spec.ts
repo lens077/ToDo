@@ -92,6 +92,49 @@ test('mobile navigation uses a five-slot bottom tab bar', async ({ page }) => {
   await expect(page.getByRole('heading', { name: '工作空间', exact: true })).toBeVisible();
 });
 
+test('stored tab order is normalized before it drives the bar', async ({ page }) => {
+  await page.addInitScript(() => {
+    window.localStorage.setItem('todo.app-settings.v1', JSON.stringify({
+      confirmCompletion: true,
+      density: 'normal',
+      openSession: 'reuse',
+      usageAnalytics: true,
+      mobileTabBar: { version: 1, order: ['ai', 'capture', 'overview', 'nope', 'ai', 'reading', 'goal', 'quadrant', 'review', 'contract'] },
+    }));
+  });
+  await page.goto('/');
+
+  const bar = page.getByRole('navigation', { name: '底部导航' });
+  const labels: Array<string | null> = [];
+  for (const button of await bar.getByRole('button').all()) {
+    labels.push(await button.getAttribute('aria-label'));
+  }
+  // 未知 id 与重复项静默丢弃，最多 6 项，最右仍是固定「我的」。
+  expect(labels).toEqual(['AI', '随记', '总览', '阅读', '目标', '象限', '我的']);
+
+  const stored = await page.evaluate(() => JSON.parse(window.localStorage.getItem('todo.app-settings.v1') ?? '{}'));
+  expect(stored.mobileTabBar.order).toEqual(['ai', 'capture', 'overview', 'reading', 'goal', 'quadrant']);
+});
+
+test('a stored bar with fewer than two views falls back to the default four', async ({ page }) => {
+  await page.addInitScript(() => {
+    window.localStorage.setItem('todo.app-settings.v1', JSON.stringify({
+      confirmCompletion: true,
+      density: 'normal',
+      openSession: 'reuse',
+      usageAnalytics: true,
+      mobileTabBar: { version: 1, order: ['ai'] },
+    }));
+  });
+  await page.goto('/');
+
+  const labels: Array<string | null> = [];
+  for (const button of await page.getByRole('navigation', { name: '底部导航' }).getByRole('button').all()) {
+    labels.push(await button.getAttribute('aria-label'));
+  }
+  expect(labels).toEqual(['目标', '阅读', '随记', '总览', '我的']);
+});
+
 test('goal regions stack without horizontal scrolling', async ({ page }) => {
   await page.goto('/');
 

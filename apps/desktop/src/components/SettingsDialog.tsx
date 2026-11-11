@@ -2,7 +2,6 @@ import * as React from 'react';
 import { LAYOUT_DENSITIES, OPEN_SESSION_MODES, defaultAppSettings, useAppSettings } from '../lib/appSettings';
 import { readProviderSettings } from '../lib/providerSettings';
 import { Icon } from './Icon';
-import { DEFAULT_MOBILE_TABS } from './MobileTabBar';
 import { navItems, type MainView } from './Sidebar';
 
 interface SettingsDialogProps {
@@ -150,7 +149,7 @@ export function SettingsDialog({ onClose, onOpenProviderSettings, activeView, on
               <h3 id="settings-views">更多视图</h3>
               <span className="settings-views__hint">底部导航栏只放最常用的几项，其余视图从这里进入。</span>
               <div className="settings-views__grid">
-                {navItems.filter((item) => !DEFAULT_MOBILE_TABS.includes(item.id)).map((item) => (
+                {navItems.filter((item) => !settings.mobileTabBar.order.includes(item.id)).map((item) => (
                   <button
                     type="button"
                     key={item.id}

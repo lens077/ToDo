@@ -975,3 +975,11 @@ Session 存为项目内 Markdown（`<project>/.virgo/sessions/s-<ts>.md`），�
 2. 「我的」打开现有 SettingsDialog，并新增「更多视图」分区（仅窄屏可见）：列出未入栏的 5 个视图，保证任何视图可达。该分区属于 M4 的「完整入口」，但 M1 若不提前落地，工作空间 / 象限 / AI / 扫描与历史 / 规范 会在移动端变为不可达。
 3. 测试：`mobile.spec` 重写为断言 5 个槽位与顺序、按钮高度 ≥44px、底栏贴底、`.sidebar` 隐藏、经「我的」进入工作空间；`ai.spec` 的 640px 场景改走「我的」→ AI。identity 8 项通过；全量 E2E 154 通过（16 skipped，1 项 AI 窄窗用例修复后通过）。
 4. `make check-quick` 绿。
+
+## 2026-11-11 移动端底部导航 M2（c947n8）
+
+1. 偏好（localStorage `todo.app-settings.v1`）新增 device-local 字段 `mobileTabBar: { order, version: 1 }`，默认 `['goal','reading','capture','overview']`，与 M1 观感一致；不进 sync-server（决策③：移动端是副本消费者）。
+2. 规范化：未知 id 静默丢弃、重复去重、最多 6 项；不足 2 项回退默认 4 项，不弹恢复提示。首次订阅时 `repairStoredSettings` 把规范化结果回写存储（幂等，只跑一次）。
+3. 视图 id 的唯一事实源移到 `lib/views.ts`（`MAIN_VIEW_IDS` / `isMainView`），`Sidebar` 重新导出 `MainView`，偏好层不再依赖 React 组件。
+4. 底栏列数改由 `--mobile-tab-count` 驱动；「更多视图」列表随偏好变化，只列未入栏视图。
+5. E2E 新增 2 条：脏数据（未知 id / 重复 / 超 6 项）渲染 6 项并回写；仅 1 项时回退默认 4 项。移动端 7 项通过，全量 157 passed（16 skipped），`make check-quick` 绿。
