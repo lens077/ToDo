@@ -769,6 +769,7 @@ pub fn run() {
             desktop_status,
             reading::reading_list,
             reading::reading_sync_now,
+            reading::reading_sync_cancel,
             reading::reading_quick_add,
             reading::reading_retry_parse,
             reading::reading_resume_pending,

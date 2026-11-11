@@ -10,6 +10,7 @@ import {
   type ReadingArticleDetail,
   type ReadingFilter,
 } from '../lib/reading';
+import { onSyncEvents } from '../lib/readingSync';
 
 export interface BatchState {
   running: boolean;
@@ -79,6 +80,20 @@ export function useReading() {
       .then((unlisten) => {
         stop = unlisten;
       });
+    return () => stop?.();
+  }, [refresh]);
+
+  // SSE 自动对账拉到新条目时也要刷新：它可能发生在别的视图里，
+  // 那时阅读视图并未挂载，不能只依赖 SyncControl 的监听。
+  React.useEffect(() => {
+    let stop: (() => void) | undefined;
+    void onSyncEvents({
+      onSynced: (report) => {
+        if (report.pulled > 0) void refresh();
+      },
+    }).then((unlisten) => {
+      stop = unlisten;
+    });
     return () => stop?.();
   }, [refresh]);
 

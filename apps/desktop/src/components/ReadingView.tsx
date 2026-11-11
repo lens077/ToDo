@@ -20,7 +20,9 @@ import {
   type ClipboardCandidate,
 } from '../lib/clipboardLinks';
 import {
+  cancelSync,
   clearSyncConfig,
+  formatSyncProgress,
   formatSyncReport,
   isTauriRuntime,
   linkLabel,
@@ -30,6 +32,7 @@ import {
   stopSyncWatcher,
   writeSyncConfig,
   type LinkStatus,
+  type SyncProgress,
   type SyncReport,
 } from '../lib/readingSync';
 
@@ -427,6 +430,7 @@ function SyncControl({ disabled, onSynced }: { disabled: boolean; onSynced: () =
   const [base, setBase] = React.useState(stored?.base ?? 'https://todo-sync.apikv.com');
   const [token, setToken] = React.useState(stored?.token ?? '');
   const [busy, setBusy] = React.useState(false);
+  const [progress, setProgress] = React.useState<SyncProgress | null>(null);
   const [report, setReport] = React.useState<string | null>(null);
   const [error, setError] = React.useState<string | null>(null);
   const [link, setLink] = React.useState<LinkStatus>({ state: 'idle', retry_in: 0, error: null });
@@ -442,16 +446,22 @@ function SyncControl({ disabled, onSynced }: { disabled: boolean; onSynced: () =
         if (status.state === 'offline' && status.error) setError(status.error);
         if (status.state === 'online') setError(null);
       },
-      onStart: () => setBusy(true),
+      onStart: () => {
+        setBusy(true);
+        setProgress(null);
+      },
+      onProgress: (next) => setProgress(next),
       onSynced: (next) => {
         setBusy(false);
+        setProgress(null);
         setError(null);
         setReport(formatSyncReport(next));
         // 只有真的拉到了新条目才刷新列表，避免每次心跳都重排卡片。
-        if (next.pulled > 0 || next.refetched > 0) onSyncedRef.current();
+        if (next.pulled > 0) onSyncedRef.current();
       },
       onError: (message) => {
         setBusy(false);
+        setProgress(null);
         setError(message);
       },
     }).then((unlisten) => {
@@ -521,6 +531,11 @@ function SyncControl({ disabled, onSynced }: { disabled: boolean; onSynced: () =
             <button type="button" disabled={busy || !base.trim() || !token.trim()} onClick={() => void run()}>
               立即对账
             </button>
+            {busy && (
+              <button type="button" className="text-action" onClick={() => void cancelSync()}>
+                取消
+              </button>
+            )}
             {link.state !== 'idle' && (
               <button type="button" className="text-action" onClick={() => void disconnect()}>
                 断开自动同步
@@ -530,6 +545,9 @@ function SyncControl({ disabled, onSynced }: { disabled: boolean; onSynced: () =
           <span className="reading-sync__state" data-state={link.state}>
             {linkLabel(link)}
           </span>
+          {busy && progress && (
+            <span className="reading-sync__report" role="status">{formatSyncProgress(progress)}</span>
+          )}
           {report && <span className="reading-sync__report" role="status">{report}</span>}
           {error && <span className="reading-sync__error" role="alert">{error}</span>}
         </span>

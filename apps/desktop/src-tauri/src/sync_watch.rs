@@ -278,7 +278,9 @@ fn reconcile(app: &AppHandle, config: &Config) {
         return;
     };
     let _ = app.emit("reading://sync-start", ());
-    match sync::run(&store, &config.base, &config.token) {
+    match sync::run_with_progress(&store, &config.base, &config.token, &|progress| {
+        let _ = app.emit("reading://sync-progress", progress);
+    }) {
         Ok(report) => {
             let _ = app.emit("reading://synced", report);
         }

@@ -18,9 +18,18 @@ export interface SyncConfig {
 export interface SyncReport {
   pulled: number;
   pushed: number;
-  refetched: number;
-  pending_parse: number;
+  /** 已有一轮同步在跑，本轮直接跳过。 */
+  skipped: boolean;
+  /** 本轮在完成前被取消。 */
+  cancelled: boolean;
   errors: string[];
+}
+
+export interface SyncProgress {
+  stage: 'reconcile' | 'push' | 'pull' | 'done';
+  done: number;
+  total: number;
+  label: string;
 }
 
 export type LinkState = 'idle' | 'connecting' | 'online' | 'offline';
@@ -76,9 +85,16 @@ export async function stopSyncWatcher(): Promise<void> {
   await invoke('reading_sync_watch_stop');
 }
 
+/** 取消正在进行的同步：当前这一篇处理完后停下，已完成的保留。 */
+export async function cancelSync(): Promise<void> {
+  if (!isTauriRuntime()) return;
+  await invoke('reading_sync_cancel');
+}
+
 export interface SyncEventHandlers {
   onLink?: (status: LinkStatus) => void;
   onStart?: () => void;
+  onProgress?: (progress: SyncProgress) => void;
   onSynced?: (report: SyncReport) => void;
   onError?: (message: string) => void;
 }
@@ -89,18 +105,40 @@ export async function onSyncEvents(handlers: SyncEventHandlers): Promise<Unliste
   const unlisten = await Promise.all([
     handlers.onLink ? listen<LinkStatus>('reading://link', (event) => handlers.onLink?.(event.payload)) : null,
     handlers.onStart ? listen('reading://sync-start', () => handlers.onStart?.()) : null,
+    handlers.onProgress
+      ? listen<SyncProgress>('reading://sync-progress', (event) => handlers.onProgress?.(event.payload))
+      : null,
     handlers.onSynced ? listen<SyncReport>('reading://synced', (event) => handlers.onSynced?.(event.payload)) : null,
     handlers.onError ? listen<string>('reading://sync-error', (event) => handlers.onError?.(event.payload)) : null,
   ]);
   return () => unlisten.forEach((stop) => stop?.());
 }
 
-/** 把一份报告压成界面上的单行摘要。 */
+/** 把一份报告压成界面上的单行摘要。同步不再本地解析，所以只有上下行两栏。 */
 export function formatSyncReport(report: SyncReport): string {
-  const parts = [`下行 ${report.pulled}`, `上行 ${report.pushed}`, `解析 ${report.refetched}`];
-  if (report.pending_parse > 0) parts.push(`待解析 ${report.pending_parse}`);
+  if (report.skipped) return '同步已在进行中';
+  const parts = [`下行 ${report.pulled}`, `上行 ${report.pushed}`];
+  if (report.cancelled) parts.push('已取消');
   if (report.errors.length > 0) parts.push(report.errors[0]);
   return parts.join(' · ');
+}
+
+function shorten(label: string, max = 22): string {
+  return label.length > max ? `${label.slice(0, max)}…` : label;
+}
+
+/** 同步过程中的单行进度。 */
+export function formatSyncProgress(progress: SyncProgress): string {
+  switch (progress.stage) {
+    case 'reconcile':
+      return '正在读取服务器清单…';
+    case 'push':
+      return `正在上传 ${progress.done + 1}/${progress.total}：${shorten(progress.label)}`;
+    case 'pull':
+      return `正在取 ${progress.done + 1}/${progress.total}：${shorten(progress.label)}`;
+    default:
+      return '对账完成';
+  }
 }
 
 export function linkLabel(status: LinkStatus): string {

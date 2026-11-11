@@ -83,6 +83,11 @@ export function App() {
   }, [settingsOpen]);
   const model = useDesktop();
   const readingModel = useReading();
+  // 切回阅读时重新读一次列表：后台对账可能在别的视图里拉到了新条目。
+  React.useEffect(() => {
+    if (activeView === 'reading') void readingModel.refresh();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeView]);
   const serverReadOnly = transportCapabilities()?.writable === false;
   const readOnly = serverReadOnly || model.sourceBusy;
 

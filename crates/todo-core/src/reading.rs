@@ -14,6 +14,7 @@ use std::{
     collections::HashSet,
     fs,
     path::{Path, PathBuf},
+    sync::atomic::{AtomicUsize, Ordering},
     time::Duration,
 };
 
@@ -31,6 +32,14 @@ const WECHAT_USER_AGENT: &str = "Mozilla/5.0 (Linux; Android 14; Pixel 7 Build/U
 const MAX_IMAGES: usize = 60;
 const MAX_IMAGE_BYTES: usize = 12 * 1024 * 1024;
 const MAX_PAGE_BYTES: usize = 24 * 1024 * 1024;
+/// 一次失败解析最多尝试几次（含第一次）。到达上限后只保留链接，不再自动重试；
+/// 手动「重试解析」会把计数清零。
+pub const MAX_PARSE_ATTEMPTS: u32 = 3;
+/// 每次失败后的等待时间。只有前两次失败会安排重试，第三次即终态。
+const PARSE_RETRY_BACKOFF_MS: [i64; 2] = [60_000, 300_000];
+/// 从服务器拉取正文时并发下载图片的线程数。图片已经在服务器本地，并发能把
+/// 一篇多图文章的等待从「张数 × 往返」压到接近一次往返。
+const MAX_IMAGE_WORKERS: usize = 6;
 
 /// One saved link as the list shows it: metadata and progress, no body.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -245,6 +254,9 @@ impl ReadingStore {
                 ("revisit_type", "TEXT NOT NULL DEFAULT 'NONE'"),
                 ("parse_status", "TEXT NOT NULL DEFAULT 'ok'"),
                 ("parse_error", "TEXT NOT NULL DEFAULT ''"),
+                ("parse_attempts", "INTEGER NOT NULL DEFAULT 0"),
+                // 到期时间（epoch ms）；NULL 表示没有安排自动重试。
+                ("parse_retry_at", "INTEGER"),
             ],
         )?;
         connection.execute_batch("PRAGMA foreign_keys = ON;")?;
@@ -493,23 +505,62 @@ impl ReadingStore {
         self.get(&id)
     }
 
-    /// Records that the background parse did not produce content. The record
-    /// stays in the library so the person can still keep the link; the reason
-    /// rides along so the card can explain itself.
+    /// Records that the background parse did not produce content and schedules
+    /// the next attempt with a backoff. The record stays in the library so the
+    /// person can still keep the link; the reason rides along so the card can
+    /// explain itself. After [`MAX_PARSE_ATTEMPTS`] the row is terminal: the
+    /// link stays, but no automatic retry is scheduled any more.
     pub fn mark_failed(&self, id: &str, reason: &str) -> Result<()> {
         let connection = self.connect()?;
+        let previous: i64 = connection
+            .query_row(
+                "SELECT parse_attempts FROM articles WHERE id = ?1",
+                params![id],
+                |row| row.get(0),
+            )
+            .optional()?
+            .ok_or_else(|| Error::ReadingArticleNotFound(id.to_string()))?;
+        let attempts = previous + 1;
+        let retry_at = if attempts as u32 >= MAX_PARSE_ATTEMPTS {
+            None
+        } else {
+            let wait = PARSE_RETRY_BACKOFF_MS
+                [(attempts as usize - 1).min(PARSE_RETRY_BACKOFF_MS.len() - 1)];
+            Some(now_ms() + wait)
+        };
         connection.execute(
-            "UPDATE articles SET parse_status = 'failed', parse_error = ?2 WHERE id = ?1",
-            params![id, reason],
+            "UPDATE articles SET parse_status = 'failed', parse_error = ?2,
+                    parse_attempts = ?3, parse_retry_at = ?4
+             WHERE id = ?1",
+            params![id, reason, attempts, retry_at],
         )?;
         Ok(())
     }
 
-    /// Puts a record back into the queue (retry of a failed parse).
+    /// Puts a record back into the queue for a manual retry: the attempt count
+    /// is reset, so a person asking again gets the full automatic budget.
     pub fn mark_pending(&self, id: &str) -> Result<()> {
         let connection = self.connect()?;
         let changed = connection.execute(
-            "UPDATE articles SET parse_status = 'pending', parse_error = '' WHERE id = ?1",
+            "UPDATE articles SET parse_status = 'pending', parse_error = '',
+                    parse_attempts = 0, parse_retry_at = NULL
+             WHERE id = ?1",
+            params![id],
+        )?;
+        if changed == 0 {
+            return Err(Error::ReadingArticleNotFound(id.to_string()));
+        }
+        Ok(())
+    }
+
+    /// Puts a record back into the queue for an automatic retry. The attempt
+    /// count is kept, so repeated failures still reach the terminal cap.
+    pub fn mark_retrying(&self, id: &str) -> Result<()> {
+        let connection = self.connect()?;
+        let changed = connection.execute(
+            "UPDATE articles SET parse_status = 'pending', parse_error = '',
+                    parse_retry_at = NULL
+             WHERE id = ?1",
             params![id],
         )?;
         if changed == 0 {
@@ -525,6 +576,28 @@ impl ReadingStore {
         let mut statement = connection
             .prepare("SELECT id FROM articles WHERE parse_status = 'pending' ORDER BY added_at")?;
         let rows = statement.query_map([], |row| row.get::<_, String>(0))?;
+        rows.collect::<std::result::Result<Vec<_>, _>>()
+            .map_err(Error::from)
+    }
+
+    /// Failed rows whose backoff has elapsed and which still have attempts
+    /// left. This is what keeps a dead link from being fetched on every sync:
+    /// terminal rows never show up here, and live ones only when due.
+    pub fn due_retry_ids(&self, limit: usize) -> Result<Vec<String>> {
+        self.due_retry_ids_at(now_ms(), limit)
+    }
+
+    pub(crate) fn due_retry_ids_at(&self, now: i64, limit: usize) -> Result<Vec<String>> {
+        let connection = self.connect()?;
+        let mut statement = connection.prepare(
+            "SELECT id FROM articles
+             WHERE parse_status = 'failed' AND parse_attempts < ?1
+               AND (parse_retry_at IS NULL OR parse_retry_at <= ?2)
+             ORDER BY added_at LIMIT ?3",
+        )?;
+        let rows = statement.query_map(params![MAX_PARSE_ATTEMPTS, now, limit as i64], |row| {
+            row.get::<_, String>(0)
+        })?;
         rows.collect::<std::result::Result<Vec<_>, _>>()
             .map_err(Error::from)
     }
@@ -578,7 +651,7 @@ impl ReadingStore {
         connection.execute(
             "UPDATE articles SET title = ?2, site_name = ?3, excerpt = ?4, byline = ?5, cover_file = ?6,
                     content_html = ?7, markdown = ?8, word_count = ?9, reading_minutes = ?10,
-                    parse_status = 'ok', parse_error = ''
+                    parse_status = 'ok', parse_error = '', parse_attempts = 0, parse_retry_at = NULL
              WHERE id = ?1",
             params![
                 id,
@@ -595,6 +668,115 @@ impl ReadingStore {
         )?;
         drop(connection);
         self.get(id)
+    }
+
+    /// Stores an article another device already parsed. The body and its
+    /// images come from the sync server, so the original site is not touched
+    /// again — this is what keeps a reconciliation to a couple of requests per
+    /// new article instead of a full re-parse.
+    ///
+    /// A URL already in the library keeps its context and reading state. If it
+    /// was still a bodyless stub when it was first pulled, the body is filled
+    /// in here once the server has one.
+    pub fn save_pulled(
+        &self,
+        detail: &ReadingArticleDetail,
+        base: &str,
+    ) -> Result<ReadingArticleDetail> {
+        let url = normalize_url(&detail.article.url)?;
+        let base = base.trim().trim_end_matches('/');
+        if let Some(existing_id) = self.find_by_url(&url)? {
+            let existing = self.get(&existing_id)?;
+            if existing.article.word_count > 0 || detail.article.word_count == 0 {
+                return Ok(existing);
+            }
+            let image_dir = self.image_dir(&existing_id);
+            let content_html =
+                localize_remote_images(&detail.content_html, base, &detail.article.id, &image_dir);
+            let cover_file = remote_cover_file(detail, base, &image_dir);
+            let connection = self.connect()?;
+            connection.execute(
+                "UPDATE articles SET title = ?2, site_name = ?3, excerpt = ?4, byline = ?5,
+                        cover_file = ?6, content_html = ?7, markdown = ?8, word_count = ?9,
+                        reading_minutes = ?10, parse_status = 'ok', parse_error = '',
+                        parse_attempts = 0, parse_retry_at = NULL
+                 WHERE id = ?1",
+                params![
+                    existing_id,
+                    detail.article.title,
+                    detail.article.site_name,
+                    detail.article.excerpt,
+                    detail.article.byline,
+                    cover_file,
+                    content_html,
+                    detail.markdown,
+                    detail.article.word_count,
+                    detail.article.reading_minutes,
+                ],
+            )?;
+            drop(connection);
+            return self.get(&existing_id);
+        }
+
+        // Keep the server id when it is free: image references stay stable
+        // across devices and re-pulls are idempotent.
+        let mut id = detail.article.id.clone();
+        if self.get(&id).is_ok() {
+            id = new_id();
+        }
+        let image_dir = self.image_dir(&id);
+        let content_html =
+            localize_remote_images(&detail.content_html, base, &detail.article.id, &image_dir);
+        let cover_file = remote_cover_file(detail, base, &image_dir);
+        let has_body = detail.article.word_count > 0 || !detail.content_html.trim().is_empty();
+        let parse_error = if has_body {
+            String::new()
+        } else if detail.article.parse_error.is_empty() {
+            "服务器还没有解析出正文".to_string()
+        } else {
+            detail.article.parse_error.clone()
+        };
+        // A bodyless pull is due immediately: this device may reach a page the
+        // server could not (WeChat is sensitive to the network's region).
+        let retry_at = if has_body { None } else { Some(now_ms()) };
+        let connection = self.connect()?;
+        connection.execute(
+            "INSERT INTO articles (id, url, title, site_name, excerpt, byline, cover_file, content_html,
+                                   markdown, word_count, reading_minutes, added_at, last_opened_at,
+                                   progress_percent, progress_anchor, read_at, saved_reason,
+                                   focus_questions, revisit_condition, personal_notes, revisit_type,
+                                   parse_status, parse_error, parse_attempts, parse_retry_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17,
+                     ?18, ?19, ?20, ?21, ?22, ?23, 0, ?24)",
+            params![
+                id,
+                url,
+                detail.article.title,
+                detail.article.site_name,
+                detail.article.excerpt,
+                detail.article.byline,
+                cover_file,
+                content_html,
+                detail.markdown,
+                detail.article.word_count,
+                detail.article.reading_minutes,
+                detail.article.added_at,
+                detail.article.last_opened_at,
+                detail.article.progress_percent,
+                detail.article.progress_anchor,
+                detail.article.read_at,
+                detail.context.saved_reason,
+                detail.context.focus_questions,
+                detail.context.revisit_condition,
+                detail.context.personal_notes,
+                detail.context.revisit_type,
+                if has_body { "ok" } else { "failed" },
+                parse_error,
+                retry_at,
+            ],
+        )?;
+        drop(connection);
+        self.get(&id)
     }
 
     /// Links the article to a registered project (by registry ID). Idempotent.
@@ -2228,6 +2410,126 @@ fn localize_cover(cover_url: &str, page_url: &str, image_dir: &Path) -> Option<S
     download_image(&client, &absolute, page_url, image_dir, "cover")
 }
 
+/// Downloads a pulled article's images from the sync server instead of the
+/// original site. Anything that cannot be fetched keeps an absolute server URL
+/// in the body: a network-backed picture beats a broken one.
+fn localize_remote_images(
+    content_html: &str,
+    base: &str,
+    server_id: &str,
+    image_dir: &Path,
+) -> String {
+    let Ok(pattern) = Regex::new(r#"src="images/([^"]+)""#) else {
+        return content_html.to_string();
+    };
+    let mut files: Vec<String> = Vec::new();
+    for captures in pattern.captures_iter(content_html) {
+        let file = captures[1].to_string();
+        if !files.contains(&file) {
+            files.push(file);
+        }
+    }
+    if files.is_empty() {
+        return content_html.to_string();
+    }
+    let missing: Vec<String> = files
+        .iter()
+        .filter(|file| !image_dir.join(file).exists())
+        .cloned()
+        .collect();
+    if !missing.is_empty() {
+        if let Some(client) = remote_image_client() {
+            download_remote_images(&client, base, server_id, image_dir, &missing);
+        }
+    }
+    let mut result = content_html.to_string();
+    for file in files {
+        if image_dir.join(&file).exists() {
+            continue;
+        }
+        let remote = format!("{base}/images/{server_id}/{file}");
+        result = result.replace(
+            &format!("src=\"images/{file}\""),
+            &format!("src=\"{remote}\""),
+        );
+    }
+    result
+}
+
+/// The cover is served from the same directory as the body images.
+fn remote_cover_file(
+    detail: &ReadingArticleDetail,
+    base: &str,
+    image_dir: &Path,
+) -> Option<String> {
+    let file = Path::new(detail.article.cover_path.as_deref()?)
+        .file_name()?
+        .to_str()?
+        .to_string();
+    if !image_dir.join(&file).exists() {
+        let client = remote_image_client()?;
+        download_remote_images(
+            &client,
+            base,
+            &detail.article.id,
+            image_dir,
+            std::slice::from_ref(&file),
+        );
+    }
+    image_dir.join(&file).exists().then_some(file)
+}
+
+/// Images are a straight copy from our own server: a short timeout keeps a
+/// dead connection from stalling a reconciliation.
+fn remote_image_client() -> Option<reqwest::blocking::Client> {
+    crate::http_client_builder()
+        .timeout(Duration::from_secs(10))
+        .build()
+        .ok()
+}
+
+/// Fetches `images/<file>` from the sync server with a small worker pool. The
+/// server already holds these files, so this is a straight copy; failures are
+/// silent and leave the reference for the caller to rewrite.
+fn download_remote_images(
+    client: &reqwest::blocking::Client,
+    base: &str,
+    server_id: &str,
+    image_dir: &Path,
+    files: &[String],
+) {
+    if files.is_empty() {
+        return;
+    }
+    let _ = fs::create_dir_all(image_dir);
+    let next = AtomicUsize::new(0);
+    let workers = files.len().min(MAX_IMAGE_WORKERS);
+    std::thread::scope(|scope| {
+        for _ in 0..workers {
+            scope.spawn(|| loop {
+                let index = next.fetch_add(1, Ordering::Relaxed);
+                let Some(file) = files.get(index) else {
+                    return;
+                };
+                let url = format!("{base}/images/{server_id}/{file}");
+                let Ok(response) = client.get(&url).send() else {
+                    continue;
+                };
+                if !response.status().is_success() {
+                    continue;
+                }
+                let Ok(bytes) = response.bytes() else {
+                    continue;
+                };
+                if bytes.is_empty() || bytes.len() > MAX_IMAGE_BYTES {
+                    continue;
+                }
+                let _ = fs::write(image_dir.join(file), &bytes);
+            });
+        }
+    });
+}
+
 fn absolute_url(base: &str, candidate: &str) -> Option<String> {
     let candidate = decode_entities(candidate);
     if candidate.starts_with("data:") {
@@ -3050,5 +3352,186 @@ mod reading_context_tests {
         let legacy = store.get("legacy1").unwrap();
         assert_eq!(legacy.article.title, "旧文章");
         assert_eq!(legacy.context.parse_status, "ok");
+    }
+
+    /// A server-side article as `GET /articles/{id}` returns it.
+    fn remote_detail(id: &str, url: &str, body: &str) -> ReadingArticleDetail {
+        ReadingArticleDetail {
+            article: ReadingArticle {
+                id: id.into(),
+                url: url.into(),
+                title: "服务器标题".into(),
+                site_name: "example.com".into(),
+                excerpt: "服务器摘要".into(),
+                byline: Some("作者".into()),
+                cover_path: None,
+                word_count: if body.is_empty() { 0 } else { 100 },
+                reading_minutes: if body.is_empty() { 0 } else { 1 },
+                added_at: now_ms() - 1_000,
+                last_opened_at: None,
+                progress_percent: 42,
+                progress_anchor: Some("idx:3".into()),
+                read_at: None,
+                annotation_count: 0,
+                parse_status: if body.is_empty() { "failed" } else { "ok" }.into(),
+                parse_error: String::new(),
+            },
+            content_html: body.into(),
+            markdown: if body.is_empty() {
+                None
+            } else {
+                Some("# 正文".into())
+            },
+            image_dir: "/srv/reading/images/x".into(),
+            annotations: Vec::new(),
+            context: ReadingContext {
+                saved_reason: "服务器上的原因".into(),
+                ..ReadingContext::empty()
+            },
+        }
+    }
+
+    #[test]
+    fn pulled_articles_reuse_the_server_body_without_refetching() {
+        let (_d, store) = store();
+        let detail = remote_detail(
+            "srv00001",
+            "https://example.com/pulled",
+            "<p>服务器正文</p>",
+        );
+        let saved = store.save_pulled(&detail, "http://127.0.0.1:9").unwrap();
+        assert_eq!(saved.article.id, "srv00001");
+        assert_eq!(saved.content_html, "<p>服务器正文</p>");
+        assert_eq!(saved.article.parse_status, "ok");
+        assert_eq!(saved.context.saved_reason, "服务器上的原因");
+        assert_eq!(saved.article.progress_percent, 42);
+
+        // 再拉一次是幂等的：不新增行，也不覆盖本机改过的上下文。
+        store
+            .update_context(
+                &saved.article.id,
+                &ReadingContextInput {
+                    saved_reason: "本地改过".into(),
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+        let again = store.save_pulled(&detail, "http://127.0.0.1:9").unwrap();
+        assert_eq!(again.article.id, "srv00001");
+        assert_eq!(again.context.saved_reason, "本地改过");
+        assert_eq!(store.list().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn a_bodyless_pull_is_filled_in_when_the_server_finishes() {
+        let (_d, store) = store();
+        let mut stub = remote_detail("srv00002", "https://example.com/later", "");
+        stub.article.parse_error = "参数错误".into();
+        let stub = store.save_pulled(&stub, "http://127.0.0.1:9").unwrap();
+        assert_eq!(stub.article.parse_status, "failed");
+        assert_eq!(stub.article.parse_error, "参数错误");
+        assert_eq!(stub.article.word_count, 0);
+        // 空壳立即进入本机重试队列，而不是等下一次同步。
+        assert_eq!(
+            store.due_retry_ids(10).unwrap(),
+            vec![stub.article.id.clone()]
+        );
+
+        let full = remote_detail("srv00002", "https://example.com/later", "<p>补好的正文</p>");
+        let filled = store.save_pulled(&full, "http://127.0.0.1:9").unwrap();
+        assert_eq!(filled.article.id, stub.article.id);
+        assert_eq!(filled.article.parse_status, "ok");
+        assert_eq!(filled.content_html, "<p>补好的正文</p>");
+        assert_eq!(filled.article.word_count, 100);
+    }
+
+    #[test]
+    fn failed_parses_back_off_and_stop_after_the_cap() {
+        let (_d, store) = store();
+        let detail = store.add_pending("https://example.com/broken").unwrap();
+        let id = detail.article.id.clone();
+
+        store.mark_failed(&id, "第一次失败").unwrap();
+        // 刚失败时不到期；一分钟后才进入重试队列。
+        assert!(store.due_retry_ids(10).unwrap().is_empty());
+        assert_eq!(
+            store.due_retry_ids_at(now_ms() + 60_001, 10).unwrap(),
+            vec![id.clone()]
+        );
+
+        store.mark_failed(&id, "第二次失败").unwrap();
+        // 第二次退避 5 分钟。
+        assert!(store
+            .due_retry_ids_at(now_ms() + 60_001, 10)
+            .unwrap()
+            .is_empty());
+
+        store.mark_failed(&id, "第三次失败").unwrap();
+        // 到达上限即终态：再过一小时也不会被自动重试。
+        assert!(store
+            .due_retry_ids_at(now_ms() + 60 * 60_000, 10)
+            .unwrap()
+            .is_empty());
+        assert_eq!(store.list().unwrap()[0].parse_status, "failed");
+
+        // 手动重试清零计数，重新获得完整预算。
+        store.mark_pending(&id).unwrap();
+        assert_eq!(store.list().unwrap()[0].parse_status, "pending");
+        store.mark_failed(&id, "手动重试后又失败").unwrap();
+        assert_eq!(
+            store.due_retry_ids_at(now_ms() + 60_001, 10).unwrap(),
+            vec![id]
+        );
+    }
+
+    #[test]
+    fn pulled_images_are_copied_from_the_sync_server() {
+        let png = b"\x89PNG\r\n\x1a\nfake-image";
+        let base = serve_once(png, "image/png");
+        let (_d, store) = store();
+        let detail = remote_detail(
+            "srv00004",
+            "https://example.com/img",
+            r#"<p>带图正文</p><img src="images/1.jpg">"#,
+        );
+        let saved = store.save_pulled(&detail, &base).unwrap();
+        assert!(saved.content_html.contains(r#"src="images/1.jpg""#));
+        let file = Path::new(&saved.image_dir).join("1.jpg");
+        assert_eq!(fs::read(file).unwrap(), png);
+    }
+
+    #[test]
+    fn pulled_images_fall_back_to_the_server_url_when_the_copy_fails() {
+        let (_d, store) = store();
+        let detail = remote_detail(
+            "srv00003",
+            "https://example.com/img2",
+            r#"<p>带图正文</p><img src="images/1.jpg">"#,
+        );
+        let saved = store.save_pulled(&detail, "http://127.0.0.1:9").unwrap();
+        assert!(saved
+            .content_html
+            .contains(r#"src="http://127.0.0.1:9/images/srv00003/1.jpg""#));
+    }
+
+    /// Minimal one-shot-per-connection HTTP server; returns its base URL.
+    fn serve_once(body: &'static [u8], content_type: &'static str) -> String {
+        use std::io::{Read, Write};
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = listener.local_addr().unwrap();
+        std::thread::spawn(move || {
+            for stream in listener.incoming() {
+                let Ok(mut stream) = stream else { return };
+                let mut buffer = [0u8; 1024];
+                let _ = stream.read(&mut buffer);
+                let header = format!(
+                    "HTTP/1.1 200 OK\r\nContent-Type: {content_type}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                    body.len()
+                );
+                let _ = stream.write_all(header.as_bytes());
+                let _ = stream.write_all(body);
+            }
+        });
+        format!("http://{address}")
     }
 }

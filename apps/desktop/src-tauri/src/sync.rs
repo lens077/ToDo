@@ -1,63 +1,62 @@
-//! 桌面阅读库 ↔ todo-sync 服务器全量对账（v1）。
+//! 桌面阅读库 ↔ todo-sync 服务器全量对账（v2）。
 //!
-//! 同步模型与 `docs/sync-server-spec.md` 一致：URL 为唯一键的全量对账——
-//! 本地有而服务器没有的上行（stub + context，服务器后台解析），服务器有
-//! 而本地没有的下行（stub + context + 本地重解析，每轮上限内）。已有条目
-//! 的备注/进度互不覆盖（v1 冲突策略：创建时随行，之后各自独立）。
+//! 同步只搬运数据，不再解析：服务器已经解析好的正文和图片由
+//! `GET /articles/{id}` 一次性取回，经 `ReadingStore::save_pulled` 直接落库，
+//! 客户端不会为了「同步」再去抓原站。解析只发生在本机新添加的链接上，失败后
+//! 按退避重试（见 `todo_core::ReadingStore::mark_failed`）。
+//!
+//! 对账仍以 URL 为唯一键：本地有、服务器没有的上行（只传 URL + 上下文，正文
+//! 由服务器解析）；服务器有、本地没有的下行；本地已有正文的条目不再重复拉取。
+//! 已有条目的备注/进度互不覆盖（v1 冲突策略：创建时随行，之后各自独立）。
 
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Mutex, TryLockError};
 use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
-use todo_core::{ReadingContextInput, ReadingStore};
+use todo_core::{ReadingArticle, ReadingArticleDetail, ReadingStore};
 
-/// 每轮同步最多内联重解析的下载数量；超出的保持 stub，下一轮继续。
-const REFETCH_BUDGET: usize = 10;
+/// 单实例闸门：SSE 对账、手动对账、启动补推共用同一条路径。先到先跑，后来者
+/// 直接跳过，避免同一批文章被并发拉取。
+static SYNC_LOCK: Mutex<()> = Mutex::new(());
+/// 取消标记：界面上的「取消」让当前这一轮在下一个安全点停下。
+static CANCEL: AtomicBool = AtomicBool::new(false);
+
+pub fn cancel() {
+    CANCEL.store(true, Ordering::SeqCst);
+}
+
+fn cancelled() -> bool {
+    CANCEL.load(Ordering::SeqCst)
+}
 
 #[derive(Clone, Debug, Default, Serialize)]
 pub struct SyncReport {
     pub pulled: usize,
     pub pushed: usize,
-    pub refetched: usize,
-    pub pending_parse: usize,
+    /// 已有一轮同步在跑，本轮没有做事。
+    pub skipped: bool,
+    /// 本轮在完成前被取消。
+    pub cancelled: bool,
     pub errors: Vec<String>,
+}
+
+/// 进度：界面只显示当前阶段和“第几篇/共几篇”，不做百分比承诺。
+#[derive(Clone, Debug, Default, Serialize)]
+pub struct SyncProgress {
+    /// `reconcile` | `push` | `pull` | `done`
+    pub stage: &'static str,
+    /// 已处理的条数（从 0 开始）。
+    pub done: usize,
+    pub total: usize,
+    /// 正在处理的条目标题或地址。
+    pub label: String,
 }
 
 #[derive(Deserialize)]
 struct ServerList {
-    articles: Vec<ServerArticle>,
-}
-
-#[derive(Deserialize)]
-struct ServerArticle {
-    id: String,
-    url: String,
-}
-
-#[derive(Deserialize)]
-struct ServerDetail {
-    context: ServerContext,
-}
-
-#[derive(Deserialize)]
-struct ServerContext {
-    saved_reason: String,
-    focus_questions: String,
-    revisit_condition: String,
-    personal_notes: String,
-    revisit_type: String,
-}
-
-impl From<ServerContext> for ReadingContextInput {
-    fn from(context: ServerContext) -> Self {
-        Self {
-            saved_reason: context.saved_reason,
-            focus_questions: context.focus_questions,
-            revisit_condition: context.revisit_condition,
-            personal_notes: context.personal_notes,
-            revisit_type: context.revisit_type,
-        }
-    }
+    articles: Vec<ReadingArticle>,
 }
 
 fn context_json(input: &todo_core::ReadingContext) -> serde_json::Value {
@@ -71,6 +70,31 @@ fn context_json(input: &todo_core::ReadingContext) -> serde_json::Value {
 }
 
 pub fn run(store: &ReadingStore, base: &str, token: &str) -> Result<SyncReport, String> {
+    run_with_progress(store, base, token, &|_| {})
+}
+
+/// 与 [`run`] 相同，但在阶段切换和每篇下行前回调一次进度。
+pub fn run_with_progress<F>(
+    store: &ReadingStore,
+    base: &str,
+    token: &str,
+    on_progress: &F,
+) -> Result<SyncReport, String>
+where
+    F: Fn(SyncProgress) + ?Sized,
+{
+    let _guard = match SYNC_LOCK.try_lock() {
+        Ok(guard) => guard,
+        Err(TryLockError::WouldBlock) => {
+            return Ok(SyncReport {
+                skipped: true,
+                ..SyncReport::default()
+            })
+        }
+        Err(TryLockError::Poisoned(poisoned)) => poisoned.into_inner(),
+    };
+    CANCEL.store(false, Ordering::SeqCst);
+
     let base = base.trim().trim_end_matches('/');
     let client = todo_core::http_client_builder()
         .timeout(Duration::from_secs(30))
@@ -78,6 +102,12 @@ pub fn run(store: &ReadingStore, base: &str, token: &str) -> Result<SyncReport, 
         .map_err(|error| error.to_string())?;
     let mut report = SyncReport::default();
 
+    on_progress(SyncProgress {
+        stage: "reconcile",
+        done: 0,
+        total: 0,
+        label: "读取服务器清单".into(),
+    });
     let server_list: ServerList = client
         .get(format!("{base}/articles"))
         .header(reqwest::header::AUTHORIZATION, format!("Bearer {token}"))
@@ -87,28 +117,37 @@ pub fn run(store: &ReadingStore, base: &str, token: &str) -> Result<SyncReport, 
         .map_err(|error| format!("服务器拒绝访问（检查 token）：{error}"))?
         .json()
         .map_err(|error| error.to_string())?;
-    let server: HashMap<String, String> = server_list
+    let server: HashMap<String, ReadingArticle> = server_list
         .articles
         .into_iter()
-        .map(|article| (article.url, article.id))
+        .map(|article| (article.url.clone(), article))
         .collect();
 
     let local_list = store.list().map_err(|error| error.to_string())?;
-    let mut local: HashMap<String, String> = HashMap::new();
-    let mut stubs: Vec<String> = Vec::new();
-    for article in &local_list {
-        local.insert(article.url.clone(), article.id.clone());
-        if article.word_count == 0 {
-            stubs.push(article.id.clone());
-        }
-    }
+    let local: HashMap<String, ReadingArticle> = local_list
+        .into_iter()
+        .map(|article| (article.url.clone(), article))
+        .collect();
 
     // 上行：本地有、服务器没有 → stub + context（服务器后台解析）。
-    for (url, id) in &local {
-        if server.contains_key(url) {
-            continue;
+    let mut local_only: Vec<&ReadingArticle> = local
+        .values()
+        .filter(|article| !server.contains_key(&article.url))
+        .collect();
+    local_only.sort_by_key(|article| std::cmp::Reverse(article.added_at));
+    for (index, article) in local_only.iter().enumerate() {
+        if cancelled() {
+            report.cancelled = true;
+            break;
         }
-        let detail = match store.get(id) {
+        on_progress(SyncProgress {
+            stage: "push",
+            done: index,
+            total: local_only.len(),
+            label: article.url.clone(),
+        });
+        let url = &article.url;
+        let detail = match store.get(&article.id) {
             Ok(detail) => detail,
             Err(error) => {
                 report.errors.push(format!("读取本地 {url}：{error}"));
@@ -132,14 +171,34 @@ pub fn run(store: &ReadingStore, base: &str, token: &str) -> Result<SyncReport, 
         }
     }
 
-    // 下行：服务器有、本地没有 → stub + context + 本地重解析。
-    let mut refetch_budget = REFETCH_BUDGET;
-    for (url, server_id) in &server {
-        if local.contains_key(url) {
-            continue;
+    // 下行：服务器有、本地没有；或本地只有空壳而服务器已经解析出正文。
+    // 正文与图片直接取自服务器，本地不再重抓原站。
+    let mut pending: Vec<&ReadingArticle> = server
+        .values()
+        .filter(|article| match local.get(&article.url) {
+            None => true,
+            Some(existing) => existing.word_count == 0 && article.word_count > 0,
+        })
+        .collect();
+    pending.sort_by_key(|article| std::cmp::Reverse(article.added_at));
+    for (index, article) in pending.iter().enumerate() {
+        if report.cancelled || cancelled() {
+            report.cancelled = true;
+            break;
         }
-        let detail: ServerDetail = match client
-            .get(format!("{base}/articles/{server_id}"))
+        on_progress(SyncProgress {
+            stage: "pull",
+            done: index,
+            total: pending.len(),
+            label: if article.title.is_empty() {
+                article.url.clone()
+            } else {
+                article.title.clone()
+            },
+        });
+        let url = &article.url;
+        let detail: ReadingArticleDetail = match client
+            .get(format!("{base}/articles/{}", article.id))
             .header(reqwest::header::AUTHORIZATION, format!("Bearer {token}"))
             .send()
         {
@@ -164,34 +223,19 @@ pub fn run(store: &ReadingStore, base: &str, token: &str) -> Result<SyncReport, 
                 continue;
             }
         };
-        let created = match store.add_failed(url) {
-            Ok(created) => created,
-            Err(error) => {
-                report.errors.push(format!("入库 {url}：{error}"));
-                continue;
-            }
-        };
-        let local_id = created.article.id.clone();
-        if let Err(error) = store.update_context(&local_id, &detail.context.into()) {
-            report.errors.push(format!("备注 {url}：{error}"));
-        }
-        report.pulled += 1;
-        if refetch_budget > 0 {
-            refetch_budget -= 1;
-            match store.refetch(&local_id) {
-                Ok(_) => report.refetched += 1,
-                Err(_) => report.pending_parse += 1,
-            }
-        } else {
-            report.pending_parse += 1;
+        match store.save_pulled(&detail, base) {
+            Ok(_) => report.pulled += 1,
+            Err(error) => report.errors.push(format!("入库 {url}：{error}")),
         }
     }
 
-    // 重试：本地解析失败的 stub，本轮预算内继续重解析。
-    for id in stubs.iter().take(refetch_budget) {
-        if store.refetch(id).is_ok() {
-            report.refetched += 1;
-        }
+    if !report.cancelled {
+        on_progress(SyncProgress {
+            stage: "done",
+            done: pending.len(),
+            total: pending.len(),
+            label: String::new(),
+        });
     }
 
     if report.errors.len() > 5 {
@@ -199,4 +243,71 @@ pub fn run(store: &ReadingStore, base: &str, token: &str) -> Result<SyncReport, 
         report.errors.push("……（其余错误已省略）".to_string());
     }
     Ok(report)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_second_sync_is_skipped_while_one_is_running() {
+        let guard = SYNC_LOCK.lock().unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        let store = ReadingStore::new(dir.path().join("reading"));
+        // 先到的那轮还占着闸门：这一轮必须直接返回，不碰网络。
+        let report = run(&store, "http://127.0.0.1:9", "token").unwrap();
+        assert!(report.skipped);
+        assert_eq!(report.pulled, 0);
+        assert_eq!(report.pushed, 0);
+        drop(guard);
+    }
+
+    /// 对着真实服务器跑两轮：第一轮把远端库拉进空目录，第二轮应该零变更且
+    /// 在秒级完成。默认忽略，验收时用环境变量打开：
+    ///
+    /// ```text
+    /// TODO_SYNC_BASE=https://todo-sync.apikv.com TODO_SYNC_TOKEN=*** \
+    ///   cargo test -p todo-desktop live_sync_reuses_server_bodies -- --ignored --nocapture
+    /// ```
+    #[test]
+    #[ignore]
+    fn live_sync_reuses_server_bodies() {
+        let (Ok(base), Ok(token)) = (
+            std::env::var("TODO_SYNC_BASE"),
+            std::env::var("TODO_SYNC_TOKEN"),
+        ) else {
+            eprintln!("TODO_SYNC_BASE / TODO_SYNC_TOKEN 未设置，跳过");
+            return;
+        };
+        if base.trim().is_empty() || token.trim().is_empty() {
+            eprintln!("TODO_SYNC_BASE / TODO_SYNC_TOKEN 为空，跳过");
+            return;
+        }
+        let dir = tempfile::tempdir().unwrap();
+        let store = ReadingStore::new(dir.path().join("reading"));
+
+        let started = std::time::Instant::now();
+        let cold = run(&store, &base, &token).unwrap();
+        let cold_elapsed = started.elapsed();
+
+        let started = std::time::Instant::now();
+        let warm = run(&store, &base, &token).unwrap();
+        let warm_elapsed = started.elapsed();
+        println!(
+            "cold: {cold_elapsed:?} pulled={} pushed={} errors={:?}",
+            cold.pulled, cold.pushed, cold.errors
+        );
+        println!(
+            "warm: {warm_elapsed:?} pulled={} pushed={} errors={:?}",
+            warm.pulled, warm.pushed, warm.errors
+        );
+
+        assert_eq!(warm.pulled, 0, "第二轮不该再下行");
+        assert_eq!(warm.pushed, 0, "第二轮不该再上行");
+        assert!(
+            warm_elapsed < Duration::from_secs(5),
+            "无变更的同步耗时 {warm_elapsed:?}，应在一秒级"
+        );
+        assert_eq!(warm.errors.len(), 0, "第二轮不该有错误");
+    }
 }

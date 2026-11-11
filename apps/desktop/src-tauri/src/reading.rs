@@ -161,15 +161,29 @@ pub fn reading_retry_parse(
     Ok(article)
 }
 
-/// Resumes parses that an app restart cut short. Called when the reading view
-/// mounts, so「解析中」never sticks forever.
+/// Resumes parses that an app restart cut short, plus failed ones whose
+/// backoff has elapsed. Called when the reading view mounts, so「解析中」never
+/// sticks forever and a dead link is retried at most [`todo_core::MAX_PARSE_ATTEMPTS`]
+/// times instead of on every sync.
 #[tauri::command]
 pub fn reading_resume_pending(
     state: State<'_, ReadingState>,
     app: AppHandle,
 ) -> Result<u32, String> {
+    /// 启动时最多补跑几条失败解析：退避到期不等于要立刻全部重来。
+    const RETRY_BUDGET: usize = 3;
+
     let store = state.store()?;
-    let ids = store.pending_ids().map_err(|error| error.to_string())?;
+    let mut ids = store.pending_ids().map_err(|error| error.to_string())?;
+    let due = store
+        .due_retry_ids(RETRY_BUDGET)
+        .map_err(|error| error.to_string())?;
+    for id in due {
+        match store.mark_retrying(&id) {
+            Ok(()) => ids.push(id),
+            Err(error) => eprintln!("reading retry mark failed: {id}: {error}"),
+        }
+    }
     let count = ids.len() as u32;
     for id in ids {
         spawn_parse(app.clone(), store.clone(), id);
@@ -386,14 +400,27 @@ pub fn reading_export_project_index(
 }
 
 /// 全量对账：本地阅读库 ↔ todo-sync 服务器。网络往返阻塞，走 blocking pool。
+/// 进度经 `reading://sync-progress` 推给界面；同一时刻只允许一轮。
 #[tauri::command]
 pub async fn reading_sync_now(
     state: State<'_, ReadingState>,
+    app: AppHandle,
     base: String,
     token: String,
 ) -> Result<sync::SyncReport, String> {
     let store = state.store()?;
-    tauri::async_runtime::spawn_blocking(move || sync::run(&store, &base, &token))
-        .await
-        .map_err(|error| error.to_string())?
+    tauri::async_runtime::spawn_blocking(move || {
+        sync::run_with_progress(&store, &base, &token, &|progress| {
+            let _ = app.emit("reading://sync-progress", progress);
+        })
+    })
+    .await
+    .map_err(|error| error.to_string())?
+}
+
+/// 请求取消正在进行的同步：当前这一篇处理完后停下，已完成的条目保留。
+#[tauri::command]
+pub fn reading_sync_cancel() -> bool {
+    sync::cancel();
+    true
 }
