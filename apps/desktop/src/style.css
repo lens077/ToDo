@@ -2272,6 +2272,9 @@
 }
 .reading-sync__panel label { display: flex; flex-direction: column; gap: 5px; color: var(--ink-3); font-size: 11.5px; }
 .reading-sync__panel input { height: 32px; font-size: 13px; }
-.reading-sync__panel > button { align-self: flex-start; }
+.reading-sync__actions { display: flex; align-items: center; gap: 8px; }
 .reading-sync__report { color: var(--ink-2); font-size: 12px; }
 .reading-sync__error { color: var(--danger); font-size: 12px; }
+.reading-sync__state { color: var(--ink-3); font-size: 12px; }
+.reading-sync__state[data-state='online'] { color: var(--ok, #3f7d4f); }
+.reading-sync__state[data-state='offline'] { color: var(--danger); }

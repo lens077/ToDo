@@ -14,7 +14,7 @@ use todo_core::{ReadingContextInput, ReadingStore};
 /// 每轮同步最多内联重解析的下载数量；超出的保持 stub，下一轮继续。
 const REFETCH_BUDGET: usize = 10;
 
-#[derive(Debug, Default, Serialize)]
+#[derive(Clone, Debug, Default, Serialize)]
 pub struct SyncReport {
     pub pulled: usize,
     pub pushed: usize,

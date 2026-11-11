@@ -32,6 +32,7 @@ import { SourceControls, SourcePreview } from './components/SourceControls';
 import { SourceEnrollmentDialog } from './components/SourceEnrollmentDialog';
 import { BatchAdoptDialog } from './components/BatchAdoptDialog';
 import { commitSourceEnrollment, filterSnapshotBySources, useSourceEnrollment } from './lib/sourceEnrollment';
+import { readSyncConfig, startSyncWatcher } from './lib/readingSync';
 
 interface PriorityRequest {
   task: DesktopTask;
@@ -71,6 +72,12 @@ export function App() {
   React.useEffect(() => {
     trackView(`/${activeView}`);
   }, [activeView]);
+  // 把 todo-sync 的常驻连接拉起来：配置存在时，SSE 一有变更就自动对账，
+  // 断线由 Rust 侧退避重试；界面只在阅读视图里展示状态。
+  React.useEffect(() => {
+    const config = readSyncConfig();
+    if (config) void startSyncWatcher(config).catch(() => {});
+  }, []);
   React.useEffect(() => {
     if (settingsOpen) trackEvent('settings_open');
   }, [settingsOpen]);

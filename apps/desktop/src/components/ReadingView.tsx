@@ -14,6 +14,19 @@ import {
   type ReadingFilter,
 } from '../lib/reading';
 import { Icon } from './Icon';
+import {
+  clearSyncConfig,
+  formatSyncReport,
+  isTauriRuntime,
+  linkLabel,
+  onSyncEvents,
+  readSyncConfig,
+  startSyncWatcher,
+  stopSyncWatcher,
+  writeSyncConfig,
+  type LinkStatus,
+  type SyncReport,
+} from '../lib/readingSync';
 
 interface ReadingViewProps {
   model: ReadingModel;
@@ -338,20 +351,6 @@ export function ReadingView({ model }: ReadingViewProps) {
   );
 }
 
-const SYNC_CONFIG_KEY = 'virgo-sync-config';
-
-interface SyncReport {
-  pulled: number;
-  pushed: number;
-  refetched: number;
-  pending_parse: number;
-  errors: string[];
-}
-
-function isTauriRuntime(): boolean {
-  return typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
-}
-
 async function call<T>(command: string, args?: Record<string, unknown>): Promise<T> {
   const { invoke } = await import('@tauri-apps/api/core');
   return invoke<T>(command, args);
@@ -359,24 +358,54 @@ async function call<T>(command: string, args?: Record<string, unknown>): Promise
 
 /// 与 todo-sync 服务器（todo-sync.apikv.com）对账。配置存 localStorage，
 /// 与网页端 sync-web 的键一致，方便同一份 token 两处复用。
+///
+/// 有配置时自动运行：Rust 侧保持 `/stream` 长连接，连上先补推离线期间攒下的
+/// 条目，之后每次服务器变更自动对账；断线退避重试。这里只负责显示状态和
+/// 手动触发一次。
 function SyncControl({ disabled, onSynced }: { disabled: boolean; onSynced: () => void }) {
   const [open, setOpen] = React.useState(false);
-  const [base, setBase] = React.useState('https://todo-sync.apikv.com');
-  const [token, setToken] = React.useState('');
+  const stored = React.useMemo(() => readSyncConfig(), []);
+  const [base, setBase] = React.useState(stored?.base ?? 'https://todo-sync.apikv.com');
+  const [token, setToken] = React.useState(stored?.token ?? '');
   const [busy, setBusy] = React.useState(false);
   const [report, setReport] = React.useState<string | null>(null);
   const [error, setError] = React.useState<string | null>(null);
+  const [link, setLink] = React.useState<LinkStatus>({ state: 'idle', retry_in: 0, error: null });
+  const onSyncedRef = React.useRef(onSynced);
+  onSyncedRef.current = onSynced;
 
   React.useEffect(() => {
-    try {
-      const raw = localStorage.getItem(SYNC_CONFIG_KEY);
-      if (!raw) return;
-      const parsed = JSON.parse(raw) as { base?: string; token?: string };
-      if (parsed.base) setBase(parsed.base);
-      if (parsed.token) setToken(parsed.token);
-    } catch {
-      // 无有效配置时保持默认，首次同步前用户自行填写。
-    }
+    if (!isTauriRuntime()) return;
+    let stop: (() => void) | undefined;
+    void onSyncEvents({
+      onLink: (status) => {
+        setLink(status);
+        if (status.state === 'offline' && status.error) setError(status.error);
+        if (status.state === 'online') setError(null);
+      },
+      onStart: () => setBusy(true),
+      onSynced: (next) => {
+        setBusy(false);
+        setError(null);
+        setReport(formatSyncReport(next));
+        // 只有真的拉到了新条目才刷新列表，避免每次心跳都重排卡片。
+        if (next.pulled > 0 || next.refetched > 0) onSyncedRef.current();
+      },
+      onError: (message) => {
+        setBusy(false);
+        setError(message);
+      },
+    }).then((unlisten) => {
+      stop = unlisten;
+    });
+    return () => stop?.();
+  }, []);
+
+  // 已有配置时恢复自动同步（App 启动时也会启动，这里是兜底）。
+  React.useEffect(() => {
+    const config = readSyncConfig();
+    if (!config) return;
+    void startSyncWatcher(config).catch((cause) => setError(String(cause)));
   }, []);
 
   if (!isTauriRuntime()) return null;
@@ -385,21 +414,27 @@ function SyncControl({ disabled, onSynced }: { disabled: boolean; onSynced: () =
     if (busy || !base.trim() || !token.trim()) return;
     setBusy(true);
     setError(null);
+    const config = { base: base.trim(), token: token.trim() };
     try {
-      const result = await call<SyncReport>('reading_sync_now', {
-        base: base.trim(),
-        token: token.trim(),
-      });
-      localStorage.setItem(SYNC_CONFIG_KEY, JSON.stringify({ base: base.trim(), token: token.trim() }));
-      const parts = [`下行 ${result.pulled}`, `上行 ${result.pushed}`, `解析 ${result.refetched}`];
-      if (result.pending_parse > 0) parts.push(`待解析 ${result.pending_parse}`);
-      setReport(parts.join(' · ') + (result.errors.length > 0 ? ` · ${result.errors[0]}` : ''));
+      const result = await call<SyncReport>('reading_sync_now', config);
+      writeSyncConfig(config);
+      setReport(formatSyncReport(result));
       onSynced();
+      // 新配置（可能是刚换的 token）立刻接管常驻连接。
+      await startSyncWatcher(config).catch(() => {});
     } catch (cause) {
       setError(String(cause));
     } finally {
       setBusy(false);
     }
+  };
+
+  const disconnect = async () => {
+    clearSyncConfig();
+    await stopSyncWatcher().catch(() => {});
+    setLink({ state: 'idle', retry_in: 0, error: null });
+    setReport(null);
+    setError(null);
   };
 
   return (
@@ -408,7 +443,7 @@ function SyncControl({ disabled, onSynced }: { disabled: boolean; onSynced: () =
         type="button"
         className="reading-add__browser"
         disabled={disabled || busy}
-        title="与 todo-sync 服务器双向对账"
+        title={link.state === 'idle' ? '与 todo-sync 服务器双向对账' : linkLabel(link)}
         onClick={() => setOpen((current) => !current)}
       >
         {busy ? '同步中…' : '同步'}
@@ -423,9 +458,19 @@ function SyncControl({ disabled, onSynced }: { disabled: boolean; onSynced: () =
             Token
             <input type="password" value={token} onChange={(event) => setToken(event.target.value)} placeholder="todo-sync-token 的值" />
           </label>
-          <button type="button" disabled={busy || !base.trim() || !token.trim()} onClick={() => void run()}>
-            立即对账
-          </button>
+          <span className="reading-sync__actions">
+            <button type="button" disabled={busy || !base.trim() || !token.trim()} onClick={() => void run()}>
+              立即对账
+            </button>
+            {link.state !== 'idle' && (
+              <button type="button" className="text-action" onClick={() => void disconnect()}>
+                断开自动同步
+              </button>
+            )}
+          </span>
+          <span className="reading-sync__state" data-state={link.state}>
+            {linkLabel(link)}
+          </span>
           {report && <span className="reading-sync__report" role="status">{report}</span>}
           {error && <span className="reading-sync__error" role="alert">{error}</span>}
         </span>

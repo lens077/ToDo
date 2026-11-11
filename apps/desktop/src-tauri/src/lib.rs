@@ -2,6 +2,7 @@ pub mod ops;
 mod preferences;
 mod reading;
 pub mod sync;
+mod sync_watch;
 mod watch;
 pub mod workspace;
 
@@ -708,6 +709,7 @@ pub fn run() {
         .manage(workspace::WorkspaceState {
             store: workspace::runtime_workspace_store(),
         })
+        .manage(sync_watch::SyncWatchState::default())
         .manage(AppState {
             ops,
             watcher: Mutex::new(None),
@@ -750,6 +752,9 @@ pub fn run() {
             desktop_status,
             reading::reading_list,
             reading::reading_sync_now,
+            sync_watch::reading_sync_watch_start,
+            sync_watch::reading_sync_watch_stop,
+            sync_watch::reading_sync_watch_status,
             reading::reading_import_browser,
             reading::reading_add,
             reading::reading_get,
