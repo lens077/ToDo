@@ -109,7 +109,8 @@ fn spawn_parse(app: AppHandle, store: ReadingStore, id: String) {
             },
             Err(error) => {
                 let message = error.to_string();
-                let _ = store.mark_failed(&id);
+                eprintln!("reading parse failed: {id}: {message}");
+                let _ = store.mark_failed(&id, &message);
                 ParsedEvent {
                     id: id.clone(),
                     status: "failed",

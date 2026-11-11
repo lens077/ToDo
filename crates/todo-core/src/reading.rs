@@ -25,6 +25,9 @@ use serde_json::Value;
 use crate::{Error, Result};
 
 const USER_AGENT: &str = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Safari/605.1.15";
+/// 微信正文页对「桌面 Safari」这类指纹会返回「参数错误」壳（尤其移动网络出口）。
+/// 用微信内置浏览器的 UA 再试一次，能过风控的概率明显更高。
+const WECHAT_USER_AGENT: &str = "Mozilla/5.0 (Linux; Android 14; Pixel 7 Build/UQ1A.240205.004) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/122.0.6261.120 Mobile Safari/537.36 XWEB/1220117 MMWEBSDK/20240404 MMWEBID/1234 MicroMessenger/8.0.49.2600(0x28003133) WeChat/arm64 Weixin NetType/WIFI Language/zh_CN ABI/arm64";
 const MAX_IMAGES: usize = 60;
 const MAX_IMAGE_BYTES: usize = 12 * 1024 * 1024;
 const MAX_PAGE_BYTES: usize = 24 * 1024 * 1024;
@@ -54,6 +57,9 @@ pub struct ReadingArticle {
     /// library, `failed` when the last parse attempt did not produce content.
     #[serde(default = "default_parse_status")]
     pub parse_status: String,
+    /// Why the last parse failed; empty when it succeeded.
+    #[serde(default)]
+    pub parse_error: String,
 }
 
 fn default_parse_status() -> String {
@@ -238,6 +244,7 @@ impl ReadingStore {
                 ("personal_notes", "TEXT NOT NULL DEFAULT ''"),
                 ("revisit_type", "TEXT NOT NULL DEFAULT 'NONE'"),
                 ("parse_status", "TEXT NOT NULL DEFAULT 'ok'"),
+                ("parse_error", "TEXT NOT NULL DEFAULT ''"),
             ],
         )?;
         connection.execute_batch("PRAGMA foreign_keys = ON;")?;
@@ -316,7 +323,7 @@ impl ReadingStore {
             "SELECT a.id, a.url, a.title, a.site_name, a.excerpt, a.byline, a.cover_file, a.word_count,
                     a.reading_minutes, a.added_at, a.last_opened_at, a.progress_percent, a.progress_anchor,
                     a.read_at, (SELECT COUNT(*) FROM annotations n WHERE n.article_id = a.id),
-                    a.parse_status
+                    a.parse_status, a.parse_error
              FROM articles a
              ORDER BY a.added_at DESC",
         )?;
@@ -332,7 +339,7 @@ impl ReadingStore {
                 "SELECT a.id, a.url, a.title, a.site_name, a.excerpt, a.byline, a.cover_file, a.word_count,
                         a.reading_minutes, a.added_at, a.last_opened_at, a.progress_percent, a.progress_anchor,
                         a.read_at, (SELECT COUNT(*) FROM annotations n WHERE n.article_id = a.id),
-                        a.parse_status
+                        a.parse_status, a.parse_error
                  FROM articles a WHERE a.id = ?1",
                 params![id],
                 |row| self.article_from_row(row),
@@ -487,12 +494,13 @@ impl ReadingStore {
     }
 
     /// Records that the background parse did not produce content. The record
-    /// stays in the library so the person can still keep the link.
-    pub fn mark_failed(&self, id: &str) -> Result<()> {
+    /// stays in the library so the person can still keep the link; the reason
+    /// rides along so the card can explain itself.
+    pub fn mark_failed(&self, id: &str, reason: &str) -> Result<()> {
         let connection = self.connect()?;
         connection.execute(
-            "UPDATE articles SET parse_status = 'failed' WHERE id = ?1",
-            params![id],
+            "UPDATE articles SET parse_status = 'failed', parse_error = ?2 WHERE id = ?1",
+            params![id, reason],
         )?;
         Ok(())
     }
@@ -501,7 +509,7 @@ impl ReadingStore {
     pub fn mark_pending(&self, id: &str) -> Result<()> {
         let connection = self.connect()?;
         let changed = connection.execute(
-            "UPDATE articles SET parse_status = 'pending' WHERE id = ?1",
+            "UPDATE articles SET parse_status = 'pending', parse_error = '' WHERE id = ?1",
             params![id],
         )?;
         if changed == 0 {
@@ -570,7 +578,7 @@ impl ReadingStore {
         connection.execute(
             "UPDATE articles SET title = ?2, site_name = ?3, excerpt = ?4, byline = ?5, cover_file = ?6,
                     content_html = ?7, markdown = ?8, word_count = ?9, reading_minutes = ?10,
-                    parse_status = 'ok'
+                    parse_status = 'ok', parse_error = ''
              WHERE id = ?1",
             params![
                 id,
@@ -1075,6 +1083,7 @@ type: reading
             read_at: row.get(13)?,
             annotation_count: row.get::<_, i64>(14)? as u32,
             parse_status: row.get(15)?,
+            parse_error: row.get(16)?,
         })
     }
 }
@@ -1120,10 +1129,22 @@ fn normalize_url(url: &str) -> Result<String> {
     if !(trimmed.starts_with("http://") || trimmed.starts_with("https://")) {
         return Err(Error::InvalidReadingUrl("只能添加 http/https 链接".into()));
     }
+    // 多行粘贴被折叠成空格后，`Url::parse` 会把空格编码进路径，拼出一个永远
+    // 抓不到的地址；这里直接拒掉，避免脏链接进库。
+    if trimmed.chars().any(char::is_whitespace) {
+        return Err(Error::InvalidReadingUrl(
+            "链接里含有空格，可能是多条链接拼在了一起".into(),
+        ));
+    }
     let parsed = reqwest::Url::parse(trimmed)
         .map_err(|error| Error::InvalidReadingUrl(format!("链接无效：{error}")))?;
     if parsed.host_str().is_none() {
         return Err(Error::InvalidReadingUrl("链接缺少主机名".into()));
+    }
+    if parsed.path().contains("http://") || parsed.path().contains("https://") {
+        return Err(Error::InvalidReadingUrl(
+            "链接里含有多个地址，请分开添加".into(),
+        ));
     }
     if url_is_private(&parsed) {
         return Err(Error::InvalidReadingUrl("不能抓取本机或内网地址".into()));
@@ -1186,10 +1207,16 @@ fn fetch_page(url: &str) -> Result<FetchedPage> {
         }
     }
     let client = http_client()?;
-    let response = client
+    let mut request = client
         .get(url)
         .header("Accept", "text/html,application/xhtml+xml,*/*;q=0.8")
-        .header("Accept-Language", "zh-CN,zh;q=0.9,en;q=0.8")
+        .header("Accept-Language", "zh-CN,zh;q=0.9,en;q=0.8");
+    if is_wechat_article(url) {
+        request = request
+            .header(reqwest::header::USER_AGENT, WECHAT_USER_AGENT)
+            .header(reqwest::header::REFERER, "https://mp.weixin.qq.com/");
+    }
+    let response = request
         .send()
         .map_err(|error| Error::ReadingFetch(fetch_failure_message(url, error)))?;
     let status = response.status();
@@ -1875,6 +1902,8 @@ fn extract(page: &FetchedPage, requested_url: &str) -> Result<Extracted> {
         .and_then(|item| item.content.clone())
         .filter(|content| !content.trim().is_empty())
         .or_else(|| fallback.clone())
+        // 只有元数据的页面（微信视频/图片消息等）也保留下来，而不是判失败。
+        .or_else(|| link_only_body(&html))
         .ok_or_else(|| Error::ReadingExtract("没有找到可阅读的正文".into()))?;
     let title_from_article = article.as_ref().and_then(|item| item.title.clone());
     let standardized =
@@ -1911,6 +1940,7 @@ fn extract(page: &FetchedPage, requested_url: &str) -> Result<Extracted> {
         .and_then(|item| item.title.clone())
         .map(|title| title.trim().to_string())
         .filter(|title| !title.is_empty())
+        .or_else(|| meta_content(&html, "og:title"))
         .or_else(|| html_title(&html))
         .unwrap_or_else(|| host.clone());
     let excerpt = article
@@ -1918,6 +1948,7 @@ fn extract(page: &FetchedPage, requested_url: &str) -> Result<Extracted> {
         .and_then(|item| item.excerpt.clone())
         .map(|excerpt| collapse_whitespace(&excerpt))
         .filter(|excerpt| !excerpt.is_empty())
+        .or_else(|| meta_content(&html, "og:description"))
         .unwrap_or_else(|| first_sentence(&text));
     Ok(Extracted {
         title,
@@ -1936,6 +1967,14 @@ fn extract(page: &FetchedPage, requested_url: &str) -> Result<Extracted> {
         word_count,
         reading_minutes,
     })
+}
+
+/// 微信正文页（`mp.weixin.qq.com/s/...`）走一套更像内置浏览器的请求头。
+fn is_wechat_article(url: &str) -> bool {
+    reqwest::Url::parse(url)
+        .ok()
+        .and_then(|parsed| parsed.host_str().map(|host| host == "mp.weixin.qq.com"))
+        .unwrap_or(false)
 }
 
 fn is_wechat_error_shell(html: &str) -> bool {
@@ -2030,6 +2069,40 @@ fn html_title(html: &str) -> Option<String> {
         .and_then(|captures| captures.get(1))
         .map(|m| collapse_whitespace(&decode_entities(m.as_str())))
         .filter(|title| !title.is_empty())
+}
+
+/// Reads `og:*` / `twitter:*` meta content in either attribute order.
+fn meta_content(html: &str, key: &str) -> Option<String> {
+    let first = Regex::new(&format!(
+        r#"(?is)<meta\b[^>]*?(?:property|name)\s*=\s*["']{}["'][^>]*?content\s*=\s*["']([^"']*)["']"#,
+        regex::escape(key)
+    ))
+    .ok()?;
+    let second = Regex::new(&format!(
+        r#"(?is)<meta\b[^>]*?content\s*=\s*["']([^"']*)["'][^>]*?(?:property|name)\s*=\s*["']{}["']"#,
+        regex::escape(key)
+    ))
+    .ok()?;
+    first
+        .captures(html)
+        .or_else(|| second.captures(html))
+        .and_then(|captures| captures.get(1))
+        .map(|m| collapse_whitespace(&decode_entities(m.as_str())))
+        .filter(|value| !value.is_empty())
+}
+
+/// 只有元数据的页面（微信视频/图片消息、部分分享页）没有可提取正文。
+/// 只要页面给了 og:title 就当作「已收藏」保存，正文位置放一段说明，
+/// 而不是把整条链接标成解析失败。
+fn link_only_body(html: &str) -> Option<String> {
+    meta_content(html, "og:title")?;
+    let mut body = String::from(
+        "<p>这篇内容没有可提取的正文（可能是视频、图片消息或分享页）。可点「原文」继续阅读。</p>",
+    );
+    if let Some(description) = meta_content(html, "og:description") {
+        body.push_str(&format!("<p>{}</p>", escape_html(&description)));
+    }
+    Some(body)
 }
 
 fn og_image(html: &str) -> Option<String> {
@@ -2513,6 +2586,40 @@ mod tests {
         assert_eq!(og_image(b).as_deref(), Some("https://x/b.jpg"));
     }
 
+    #[test]
+    fn pasted_multi_link_inputs_are_rejected() {
+        // 单行输入框把换行折成空格后的样子。
+        let glued = "https://mp.weixin.qq.com/s/Lc1qmdP9PdjkH-YIVYM98g https://mp.weixin.qq.com/s/aQIH8KKcVuOfztlIBQDAOA";
+        assert!(normalize_url(glued).is_err());
+        let encoded = "https://mp.weixin.qq.com/s/Lc1qmdP9PdjkH-YIVYM98g%20https://";
+        assert!(normalize_url(encoded).is_err());
+        assert_eq!(
+            normalize_url("https://mp.weixin.qq.com/s/Lc1qmdP9PdjkH-YIVYM98g").unwrap(),
+            "https://mp.weixin.qq.com/s/Lc1qmdP9PdjkH-YIVYM98g"
+        );
+    }
+
+    #[test]
+    fn pages_without_a_body_fall_back_to_their_meta_description() {
+        let video_article = r#"<html><head>
+            <meta property="og:title" content="办税小知识：如何使用数电票？">
+            <meta property="og:description" content="点击视频了解，来源：国家税务总局">
+          </head><body><div id="js_content" class="share_notice_wrp">分享</div></body></html>"#;
+        // 没有 og:title 的页面仍然算失败，避免把 404 页收进库里。
+        let broken = r#"<html><head><title>404</title></head><body>Not Found</body></html>"#;
+        assert!(link_only_body(broken).is_none());
+        let body = link_only_body(video_article).expect("meta-only page keeps a placeholder body");
+        assert!(body.contains("没有可提取的正文"));
+        assert!(body.contains("点击视频了解"));
+        let page = FetchedPage {
+            html: video_article.into(),
+            final_url: "https://mp.weixin.qq.com/s/x".into(),
+        };
+        let extracted = extract(&page, "https://mp.weixin.qq.com/s/x").unwrap();
+        assert_eq!(extracted.title, "办税小知识：如何使用数电票？");
+        assert_eq!(extracted.excerpt, "点击视频了解，来源：国家税务总局");
+    }
+
     fn temp_store() -> (tempfile::TempDir, ReadingStore) {
         let dir = tempfile::tempdir().unwrap();
         let store = ReadingStore::new(dir.path().join("reading"));
@@ -2766,13 +2873,17 @@ mod reading_context_tests {
         );
 
         // A failed attempt keeps the row and flips the badge.
-        store.mark_failed(&detail.article.id).unwrap();
-        assert_eq!(store.list().unwrap()[0].parse_status, "failed");
+        store.mark_failed(&detail.article.id, "抓取超时").unwrap();
+        let listed = store.list().unwrap();
+        assert_eq!(listed[0].parse_status, "failed");
+        assert_eq!(listed[0].parse_error, "抓取超时");
         assert!(store.pending_ids().unwrap().is_empty());
 
-        // Retry puts it back in the queue; success clears the badge.
+        // Retry puts it back in the queue; success clears the badge and the reason.
         store.mark_pending(&detail.article.id).unwrap();
-        assert_eq!(store.list().unwrap()[0].parse_status, "pending");
+        let retrying = store.list().unwrap();
+        assert_eq!(retrying[0].parse_status, "pending");
+        assert_eq!(retrying[0].parse_error, "");
         let done = store
             .replace_content(&detail.article.id, &fixture_page("补好了", "正文"))
             .unwrap();
