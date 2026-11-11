@@ -1049,3 +1049,14 @@ Session 存为项目内 Markdown（`<project>/.virgo/sessions/s-<ts>.md`），�
 4. 剪贴板：新增 `reading_clipboard_text`（`tauri-plugin-clipboard-manager`，Rust 侧读取，Android 前台可读）。进入阅读视图时若有 http(s) 链接：1 条提示「剪贴板里有链接 example.com，要导入吗？」，多条提示「剪贴板里有 2 条链接，要全部导入吗？」，提供「导入 / 批量导入」与「忽略」。
 5. 去重：按整段剪贴板文本算指纹写入 localStorage；实测导入后切到目标再回阅读，提示不再出现，新复制一段才会再问。
 6. 门禁：`make check-quick` 绿；reading + mobile E2E 20 passed。
+
+## 2026-11-11 阅读：多链接粘贴与无正文文章（通过）
+
+1. **现象**：用户把三条微信链接一次性粘进单行输入框后点「添加」，三条里只有一条成功，另两条一直「解析失败」且重试无效。
+2. **根因**：`<input type="text">` 会把多行粘贴里的换行折成空格，`normalizeInputUrl` 用 `new URL()` 把空格编码进路径，落库成 `…/Lc1qmdP9PdjkH-YIVYM98g%20https://` 这样的畸形地址；微信对它的响应是「参数错误」壳，所以怎么重试都不会成功。设备数据库里能直接看到这条 URL。
+3. **修复**：单链接输入框先跑 `extractBatchUrls`——命中 ≥2 条就逐条入队（等价批量导入），不再拼成一条；`normalizeInputUrl` 与 Rust `normalize_url` 都拒绝含空格或路径里再出现 scheme 的值，避免脏链接进库。
+4. **无正文文章**：微信视频类文章（如「办税小知识…」）只有 `og:title` / `og:description`，Readability 与 `#js_content` 兜底都拿不到正文，之前直接判失败。现在只要有 `og:title` 就按「仅链接」收藏：标题/摘要取 meta，正文位置放一句说明，状态为 `ok`；没有 `og:title` 的 404 页仍然判失败。
+5. **微信请求头**：`mp.weixin.qq.com` 的正文请求改用微信内置浏览器 UA + `Referer: https://mp.weixin.qq.com/`，降低「参数错误」壳出现的概率（本次设备上的真实失败是上面的畸形 URL，不是风控）。
+6. **失败原因可查**：新增 `parse_error` 列并显示在卡片上（过长省略，title 里有全文），`mark_failed` 同时把原因落库，logcat 也有 `reading parse failed: <id>: <reason>`。
+7. **真机复测**（V2425A）：三条微信链接现在都是 `ok`（马斯克/南宁日报/办税小知识）；一次粘贴三条会拆成三条入列、输入框清空；用户库里的失败测试链接已清理。
+8. 门禁：`make check-quick` 绿；`playwright test e2e/reading.spec.ts` 10 passed（新增「多链接一次粘贴」用例）。
