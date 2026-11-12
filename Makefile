@@ -6,6 +6,7 @@ CARGO ?= cargo
 OUTPUT_DIR ?= target/release-local
 VERSION ?= $(shell node -p "require('./apps/desktop/src-tauri/tauri.conf.json').version")
 BUILD_TARGET ?= ./scripts/build-target.sh
+ANDROID_BUILD ?= ./scripts/build-android.sh
 
 # 官网三端：Cloudflare Pages（海外）、EdgeOne Pages（大陆镜像）、
 # virgo.apikv.com（k1 集群，经 Pangolin 转 10.10.31.240:443）。
@@ -23,7 +24,7 @@ SYNC_CHART_DIR ?= apps/sync-server/deploy/chart/todo-sync
 SYNC_NAMESPACE ?= todo
 
 .PHONY: help install dev icon check check-quick hooks build bundle-macos package-macos package-macos-signed \
-        comm-build build-mac-arm64 build-win-x64 build-linux-x64 \
+        comm-build build-mac-arm64 build-win-x64 build-linux-x64 build-android \
         site-build pages-deploy pages-deploy-eo site-image k8s-deploy argo-apply site-deploy \
         sponsor-image sponsor-k8s-deploy sponsor-argo-apply \
         sync-secret sync-image sync-k8s-deploy sync-argo-apply
@@ -41,6 +42,7 @@ help: ## List available build and packaging targets
 	  'make package-macos         Build local unsigned archives and checksums' \
 	  'make package-macos-signed  Sign, notarize, and package release artifacts' \
 	  'make comm-build            按宿主构建唯一保留的目标（mac arm64 / win x64 / linux x64）' \
+	  'make build-android         Android arm64-v8a（强制 aarch64，需 Android SDK/NDK）' \
 	  '' \
 	  '官网（三端）：' \
 	  'make site-deploy          构建并发布到全部三端' \
@@ -120,6 +122,8 @@ build-win-x64: ## Windows x64
 	$(BUILD_TARGET) win-x64
 build-linux-x64: ## Linux x64 (deb, rpm)
 	$(BUILD_TARGET) linux-x64
+build-android: ## Android arm64-v8a（包装脚本强制 aarch64）
+	$(ANDROID_BUILD)
 
 # Landing site ---------------------------------------------------------------
 
