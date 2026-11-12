@@ -12,6 +12,7 @@
 /.playwright-cli/
 /.agent-teams/
 /.scratch/
+/.loomy-attachments/
 **/.impeccable/config.local.json
 *.log
 .DS_Store
