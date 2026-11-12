@@ -23,7 +23,7 @@ SYNC_CHART_DIR ?= apps/sync-server/deploy/chart/todo-sync
 SYNC_NAMESPACE ?= todo
 
 .PHONY: help install dev icon check check-quick hooks build bundle-macos package-macos package-macos-signed \
-        comm-build other-build build-mac-arm64 build-mac-x64 build-win-x64 build-win-arm64 build-linux-x64 \
+        comm-build build-mac-arm64 build-win-x64 build-linux-x64 \
         site-build pages-deploy pages-deploy-eo site-image k8s-deploy argo-apply site-deploy \
         sponsor-image sponsor-k8s-deploy sponsor-argo-apply \
         sync-secret sync-image sync-k8s-deploy sync-argo-apply
@@ -40,8 +40,7 @@ help: ## List available build and packaging targets
 	  'make bundle-macos          Build Todo.app without creating archives' \
 	  'make package-macos         Build local unsigned archives and checksums' \
 	  'make package-macos-signed  Sign, notarize, and package release artifacts' \
-	  'make comm-build            常用集合（按宿主：mac arm64 / win x64）' \
-	  'make other-build           其余集合（按宿主：linux x64 / mac intel / win arm64）' \
+	  'make comm-build            按宿主构建唯一保留的目标（mac arm64 / win x64 / linux x64）' \
 	  '' \
 	  '官网（三端）：' \
 	  'make site-deploy          构建并发布到全部三端' \
@@ -86,6 +85,7 @@ build: ## Build the release CLI and production web assets
 	$(PNPM) --filter @todo/desktop build
 
 bundle-macos: ## Build "target/release/bundle/macos/Sumery Virgo.app"
+	@[ "$$(uname -m)" = "arm64" ] || { echo "bundle-macos: 构建矩阵只保留 macOS arm64，请在 Apple Silicon 上构建" >&2; exit 1; }
 	env \
 	  -u APPLE_SIGNING_IDENTITY \
 	  -u APPLE_ID \
@@ -105,30 +105,20 @@ package-macos-signed: ## Build Developer ID signed and notarized release archive
 # 桌面端多平台构建。Tauri 安装包只能在对应宿主上生成：
 # mac-* 在 macOS，win-* 在 Windows，linux-* 在 Linux。
 # 在错误宿主上会明确报错，不假装成功。
-# comm-build / other-build 按宿主选目标：一条命令在当前机器上永远可执行，
-# 对应集合里的另一个平台请在它的宿主或发布 runner 上跑。
-comm-build: ## 常用集合（按宿主：mac arm64 / win x64）
+# 构建矩阵（见 AGENTS.md）：只保留 macOS arm64、Windows x64、Linux x64（deb/rpm）。
+# Intel/universal macOS、Windows arm64、Linux AppImage 已不再构建。
+comm-build: ## 按宿主构建保留目标（mac arm64 / win x64 / linux x64）
 	@case "$$(uname -s)" in \
 	  Darwin) $(MAKE) --no-print-directory build-mac-arm64 ;; \
-	  MINGW*|MSYS*|CYGWIN*|Windows_NT) $(MAKE) --no-print-directory build-win-x64 ;; \
-	  *) echo "comm-build: 请在 macOS 或 Windows 上运行" >&2; exit 1 ;; \
-	esac
-other-build: ## 其余集合（按宿主：linux x64 / mac intel / win arm64）
-	@case "$$(uname -s)" in \
-	  Darwin) $(MAKE) --no-print-directory build-mac-x64 ;; \
 	  Linux) $(MAKE) --no-print-directory build-linux-x64 ;; \
-	  MINGW*|MSYS*|CYGWIN*|Windows_NT) $(MAKE) --no-print-directory build-win-arm64 ;; \
-	  *) echo "other-build: 无法识别宿主" >&2; exit 1 ;; \
+	  MINGW*|MSYS*|CYGWIN*|Windows_NT) $(MAKE) --no-print-directory build-win-x64 ;; \
+	  *) echo "comm-build: 无法识别宿主" >&2; exit 1 ;; \
 	esac
 build-mac-arm64: ## macOS Apple Silicon
 	$(BUILD_TARGET) mac-arm64
-build-mac-x64: ## macOS Intel
-	$(BUILD_TARGET) mac-x64
 build-win-x64: ## Windows x64
 	$(BUILD_TARGET) win-x64
-build-win-arm64: ## Windows ARM64
-	$(BUILD_TARGET) win-arm64
-build-linux-x64: ## Linux x64
+build-linux-x64: ## Linux x64 (deb, rpm)
 	$(BUILD_TARGET) linux-x64
 
 # Landing site ---------------------------------------------------------------

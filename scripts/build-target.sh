@@ -5,20 +5,21 @@
 #   linux-* → Linux
 # 在错误宿主上会直接报错，不会假装成功。
 #
-# 用法：scripts/build-target.sh <mac-arm64|mac-x64|win-x64|win-arm64|linux-x64>
+# 构建矩阵（见 AGENTS.md）：只保留 macOS arm64、Windows x64、Linux x64（deb/rpm）。
+# Intel/universal macOS、Windows arm64、Linux AppImage 已不再构建。
+#
+# 用法：scripts/build-target.sh <mac-arm64|win-x64|linux-x64>
 # 预检：scripts/build-target.sh <target> --check
 set -euo pipefail
 
 target=${1:-}
 check_only=${2:-}
-[ -n "$target" ] || { echo "用法: $0 <mac-arm64|mac-x64|win-x64|win-arm64|linux-x64> [--check]" >&2; exit 2; }
+[ -n "$target" ] || { echo "用法: $0 <mac-arm64|win-x64|linux-x64> [--check]" >&2; exit 2; }
 
 case "$target" in
   mac-arm64)  want=Darwin; triple=aarch64-apple-darwin;        bundles=app ;;
-  mac-x64)    want=Darwin; triple=x86_64-apple-darwin;         bundles=app ;;
   win-x64)    want=Windows; triple=x86_64-pc-windows-msvc;     bundles=nsis ;;
-  win-arm64)  want=Windows; triple=aarch64-pc-windows-msvc;    bundles=nsis ;;
-  linux-x64)  want=Linux;  triple=x86_64-unknown-linux-gnu;    bundles=appimage,deb ;;
+  linux-x64)  want=Linux;  triple=x86_64-unknown-linux-gnu;    bundles=deb,rpm ;;
   *) echo "未知目标: $target" >&2; exit 2 ;;
 esac
 

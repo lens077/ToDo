@@ -10,6 +10,11 @@ if [[ "$(uname -s)" != "Darwin" ]]; then
   echo "error: macOS release artifacts must be built on macOS" >&2
   exit 1
 fi
+# 构建矩阵只保留 macOS arm64（见 AGENTS.md），Intel 与 universal 不再产出。
+if [[ "$(uname -m)" != "arm64" ]]; then
+  echo "error: macOS release artifacts must be built on Apple Silicon (arm64)" >&2
+  exit 1
+fi
 if [[ "$SIGN_AND_NOTARIZE" != "0" && "$SIGN_AND_NOTARIZE" != "1" ]]; then
   echo "error: SIGN_AND_NOTARIZE must be 0 or 1" >&2
   exit 1
