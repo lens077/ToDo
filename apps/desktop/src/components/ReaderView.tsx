@@ -511,13 +511,14 @@ export function ReaderView({ detail, model }: ReaderViewProps) {
         <div className="reader__heading">
           <h1 id="reader-title" title={detail.title}>{detail.title}</h1>
           <p className="reader__meta">
-            <span title={detail.url}>{detail.site_name || hostOf(detail.url)}</span>
-            {detail.byline && detail.byline !== detail.site_name && (
+            {detail.byline && <span className="reader__author">{detail.byline}</span>}
+            {detail.site_name && detail.site_name !== detail.byline && (
               <>
-                <span aria-hidden="true">·</span>
-                <span>{detail.byline}</span>
+                {detail.byline && <span aria-hidden="true">·</span>}
+                <span title={detail.url}>{detail.site_name}</span>
               </>
             )}
+            {!detail.byline && !detail.site_name && <span title={detail.url}>{hostOf(detail.url)}</span>}
             <span aria-hidden="true">·</span>
             <span>{detail.reading_minutes} 分钟</span>
             <span aria-hidden="true">·</span>

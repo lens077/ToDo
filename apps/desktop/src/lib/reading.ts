@@ -78,6 +78,16 @@ export interface ReadingArticleDetail extends ReadingArticle {
   context: ReadingContext;
 }
 
+/** 另存为的输出格式；与 Rust `ReadingExportFormat` 的小写 serde 命名一致。 */
+export type ReadingExportFormat = 'html' | 'markdown';
+
+export interface ReadingExportResult {
+  /** 主文件（标题.html / 标题.md）的绝对路径。 */
+  path: string;
+  /** 保存进 `img/` 的图片数量。 */
+  images: number;
+}
+
 function emptyContext(): ReadingContext {
   return {
     saved_reason: '',
@@ -600,6 +610,13 @@ export const reading = {
     if (isTauriRuntime()) return call<void>('reading_remove', { id });
     const index = mockArticles.findIndex((article) => article.id === id);
     if (index >= 0) mockArticles.splice(index, 1);
+  },
+
+  /** 另存为 HTML / Markdown 到用户选择的目录；图片复制进 `img/`。 */
+  async exportArticle(id: string, format: ReadingExportFormat, dir: string): Promise<ReadingExportResult> {
+    if (isTauriRuntime()) return call<ReadingExportResult>('reading_export_article', { id, format, dir });
+    const found = mockFind(id);
+    return { path: `${dir}/${found.title}.${format === 'html' ? 'html' : 'md'}`, images: 0 };
   },
 
   async upsertAnnotation(annotation: AnnotationInput): Promise<ReadingAnnotation> {

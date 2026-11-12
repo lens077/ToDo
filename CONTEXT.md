@@ -47,3 +47,4 @@ _Avoid_: Daily task list, separate inbox
 - Workspace / Project Profile / Knowledge / Session / Overview（蓝图 Phase 1–7）已实现并通过测试；截至 2026-11-06 成果仍在工作区待提交（现状与风险见 `docs/audits/2026-11-03-audit.md`）。
 - 进行中：M0 收口——恢复完整门禁（`make check`）并把上述成果按模块提交进 Git。
 - 阻塞项：可分发的桌面端 release（缺 Developer ID 签名与 Apple 公证凭据，`TODO.md` `d3l8hn`）；赞助生产切换（等支付宝签约，`TODO.md` `3nd6da`）。
+- 2026-11-13：阅读功能两项落地——微信内联样式保留（readabilityrs `clean_styles(false)` + ammonia 声明级 style 过滤，存量文章需重新解析）与另存为 HTML/Markdown（目录选择器 + `img/` 图片目录 + 标题文件名，任务2）；自动门禁全绿，真机验收待办（`TODO.md` `wst7k4` / `sv2md9`）。

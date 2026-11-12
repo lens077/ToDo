@@ -43,6 +43,10 @@ columns:
       ↳ 粘贴链接秒回入列，正文后台解析（解析中/失败/重试），剪贴板单条/多条提示并按内容指纹去重；真机验收见 docs/verification-log.md <!--n:n0fz2h-->
 - [x] 阅读：修复多链接粘贴与无正文文章解析 <!--t:3571gu--> #sync #desktop
       ↳ 根因是多行粘贴折行拼成畸形 URL；已拆条入队并在两端拒绝脏链接，无正文文章改为仅链接收藏，失败原因落库并显示；真机三条微信链接均 ok，见 docs/verification-log.md <!--n:3571gu-->
+- [x] 阅读：解析保留微信内联样式（卡片/装饰标题不再丢失） <!--t:wst7k4--> #desktop #reading !2
+      ↳ 根因是 readabilityrs clean_styles 默认删光 style 属性 + ammonia 白名单不放行；微信文章改为 clean_styles(false)，sanitize_html 放行 style 并做声明级过滤（url()/expression()/position:fixed 等整条丢弃）；存量文章点「重新解析」即按新管线重生。cargo test 40 通过，check-quick 绿 <!--n:wst7k4-->
+- [x] 阅读：另存为 HTML / Markdown（任务2） <!--t:sv2md9--> #desktop #reading !2
+      ↳ 阅读上下文面板新增「另存为 HTML / Markdown」：系统目录选择器选目录，正文存为「标题.html/.md」（重名自动 -2 序号），图片复制/尽力下载进 img/ 子目录并重写引用；Markdown 优先用已存 markdown，缺失时 htmd 现转。命令 reading_export_article，单测覆盖文件名净化/图片落地/远程兜底保留，check-quick 绿 <!--n:sv2md9-->
 - [x] 清理 sync-server 测试脏数据（example.com/*、/s/quick-1..3、clip-a/b、dbg-one、rust-lang/cargo） <!--t:t4gfbx--> #sync #backend !2
 - [x] Android APK 重打并真机复验同步 v2（进度/取消/热同步） <!--t:0x16fl--> #mobile #sync !2
       ↳ 2026-11-12 三端复验通过：手机首次同步拉 14 条（含进度）、PC 重启 dev 后热同步零变更；服务器/PC/手机 URL 集合 diff 为空。手机 3 条 failed 系服务器端 wc=0 的 3 条按设计转本机退避解析（save_pulled 第 4 分支），非缺陷。「取消」按钮未单独验证 <!--n:0x16fl-->

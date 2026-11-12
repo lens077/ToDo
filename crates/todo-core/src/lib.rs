@@ -73,7 +73,8 @@ pub use prompt::{
 };
 pub use reading::{
     reading_stats, ReadingAnnotation, ReadingAnnotationInput, ReadingArticle, ReadingArticleDetail,
-    ReadingContext, ReadingContextInput, ReadingLink, ReadingStore,
+    ReadingContext, ReadingContextInput, ReadingExportFormat, ReadingExportResult, ReadingLink,
+    ReadingStore,
 };
 pub use reconcile::*;
 pub use scan::{import_text, scan, CodeComment, LooseCheckbox, ScanOptions, ScanReport, ScanStats};

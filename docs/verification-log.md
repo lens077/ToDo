@@ -1122,3 +1122,66 @@ Session 存为项目内 Markdown（`<project>/.virgo/sessions/s-<ts>.md`），�
 6. **门禁（自动）**：`cargo check -p todo-desktop` 绿；`pnpm --filter @todo/desktop exec tsc --noEmit` 绿；`make check-quick` 绿（rust fmt + clippy + workspace test + contract check，web desktop build + 静态站点，245s）。未覆盖人工交互。
 7. **待人工验收**（需用户执行 `pnpm --filter @todo/desktop tauri dev`，改过 Rust 需重启）：设置 →「打开引导向导」走完 5 步；空状态显式创建 TODO.md 后在目标目录确认只新增该文件；完成第 3 个任务出现 agent 提示且关闭后重启不再出现；`contract` 视图首次揭示说明只出现一次。规格 §6 的「≤3 命令 / ≤2 点击 / 零非预期写盘」尚未实测。
 8. **已知偏差**：规格 §6 要求「老用户（已有配置）升级后看不到任何新增引导界面」，而 agent 提示的触发条件是「已完成 ≥3 个任务」——升级用户若已满足该条件会看到一次提示。当前按交接文档实现，未加「本次安装后新完成」的时间窗；如需严格满足该条，应在人工验收时定夺是否补充时间窗判定。
+
+## 2026-11-13 阅读样式保留 + 另存为 HTML/Markdown（自动门禁通过，真机验收待办）
+
+任务：wst7k4（微信内联样式保留）、sv2md9（另存为，任务2）。
+
+1. **根因定位**：微信文章视觉设计全靠 `#js_content` 内联 `style`；`extract()` 未关闭 readabilityrs 默认 `clean_styles`（post_processor.rs 正则删光 style 属性），且 `sanitize_html()` ammonia 默认白名单不放行 style，两层剥除导致卡片/装饰标题塌缩。
+2. **样式修复**：`extract()` 对微信 URL 设 `.clean_styles(false)`（非微信站点保留默认剥除）；`sanitize_html()` `add_generic_attributes(["style"])` + `attribute_filter` 声明级过滤（`url(`/`expression(`/`javascript:`/`@import`/`-moz-binding`/`position:fixed` 整条丢弃）。存量文章需点「重新解析」重生。
+3. **另存为实现**：`ReadingStore::export_article(id, format, dir)`——文件名取标题（非法字符/控制符过滤、限长 80、重名 `-2` 序号）；图片：本地 `images/<file>` 从 image_dir 复制、远程兜底 URL 用 `download_image` 尽力下载，均进 `img/` 并重写引用；HTML 导出为带头部的独立文档（保留内联样式），Markdown 优先用已存 `markdown` 列、缺失时 `htmd::convert(content_html)`。命令 `reading_export_article`（blocking pool）已在 lib.rs 注册；前端 `reading.exportArticle` + ReadingContextPanel 两个按钮 + `@tauri-apps/plugin-dialog` 目录选择。
+4. **门禁（自动）**：`cargo test -p todo-core reading` 40 通过（新增 8：样式保留×3、导出×4、文件名净化×1）；`pnpm --filter @todo/desktop` tsc 绿；reading e2e 10 通过；`make check-quick` 绿（126s）。
+5. **待人工验收**：`pnpm --filter @todo/desktop tauri dev` 打开一篇微信公众号文章 → 确认卡片边框/装饰标题/二维码卡片样式保留；点「另存为 HTML / Markdown」选目录 → 检查产物（标题.html + img/）并在浏览器打开验证。
+
+## 2026-11-13 修复：微信正文被 opacity:0 包裹层隐藏（回归，通过）
+
+1. **现象**：样式修复后对微信文章点「重新解析」，正文全空白（仅作者行可见，页面滚动条正常）。根因是 `clean_styles(false)` 后保留了内联样式，而微信正文包在 `<div style="opacity: 0">` 的 JS 淡入层里——浏览器里由脚本淡入，抓取时 JS 不执行，整层不可见。
+2. **修复**：`prepare_html` 的隐藏样式兜底从只剥 `visibility:hidden` 扩展到 `opacity:0`（含 `0.0…`），边界字符只匹配不吞掉，`opacity: 0.5` 等半透明装饰不受影响。
+3. **验证**：新增单测（opacity:0 剥除、0.5 保留）；41 个 reading 测试通过；用真实文章 URL（rfea0fb5x1zvo 同链接）走完整管线：word_count 9162、正文段落/二维码卡片在位、无 `opacity: 0` 残留；dev watcher 已自动重编译重启 app。
+4. **待用户操作**：对该文章再点一次「重新解析」即可恢复正文。
+
+## 2026-11-13 修复：微信正文图片整块丢失（readability 选根不稳，改取 js_content 容器，通过）
+
+1. **定位**（临时 #[ignore] debug 测试逐阶段计数，已删）：raw 27 imgs → prepare_html 27（data-src 提升正常）→ readability 输出 0。readabilityrs 的候选评分把微信 section 重嵌套、图片占比高的块整体判为杂质；上一轮的作者卡错根问题同源。
+2. **修复**：微信页优先直接取固定容器 `#js_content`（`wechat_content_fallback` 重写为 `<div` 嵌套配对扫描，原非贪婪正则会截断在第一个 `</div>`），跳过 readability 的根节点选择；fallback 缺失（视频/图片消息页）仍退回原链路。走容器时 text 用 `html_to_text` 统计、markdown 置 None（另存为导出时由 htmd 现转）。
+3. **验证**：两篇真实微信文章全管线——prompt 文 18/18 张正文图下载本地化、800行文 17/17，正文/二维码卡片在位、无 opacity:0 残留；42 个 reading 测试通过；`make check-quick` 绿（84s）。
+4. **已知差异**：文章头部「公众号资料卡」（头像/1181篇原创）在 js_content 之外、由 JS 动态填充，阅读器按正文边界裁掉，与 Safari 阅读模式行为一致，不做保留。
+5. **待用户操作**：对受影响文章点「重新解析」。
+
+## 2026-11-13 合成公众号资料卡（无链接样式，通过）
+
+1. **取证**：服务端 HTML 里 `js_profile_card` 是空容器，卡片由 JS 从页面变量渲染（`var nickname = htmlDecode("腾讯云开发者")`、`var hd_head_img = "http://wx.qlogo.cn/..."`），抓取时不可得；curl 抓取被风控间歇拦截，reqwest + 微信 UA 可稳定获取。
+2. **实现**：`wechat_profile_card` 用上述变量合成纯展示卡（头像圆形 48px + 账号名 + 「公众号」标签，全部内联样式、**无 `<a>` 标签**，不受阅读器链接样式影响），微信 fallback 路径下插在正文最前；头像经既有 `localize_images` 下载本地化。
+3. **验证**：真实文章全管线 img 19/19（18 正文 + 1 头像）本地化、卡片在顶部、无链接标签；43 个 reading 测试通过；`make check-quick` 绿（86s）。
+4. **已知差异**：「1181篇原创内容」计数由 JS 从服务器接口取，不在静态页里，卡片不含该行。
+5. **待用户操作**：重新解析后生效。
+
+## 2026-11-13 资料卡改为原地渲染 mp-common-profile 组件（按原版样式，通过）
+
+1. **取证**：正文里内嵌 `<mp-common-profile>` 自定义组件（真实 DOM、在 js_content 内、位置与原文一致），昵称/头像/简介/原创数/认证状态全在 data-* 属性里，由 JS 渲染成卡片；此前 ammonia 把未知组件剥掉导致卡片缺失。页面顶部 `js_profile_card` 是 JS 填充的空容器，上一版用 `var nickname`/`var hd_head_img` 变量合成的顶部卡与原版位置/内容不符，已移除。
+2. **实现**：`prepare_html` 里把 `<mp-common-profile ...></mp-common-profile>` 原地转换成纯展示卡：头像 40px 圆形（margin 写全 `0 12px 0 0`，避开阅读器图片居中规则挪位）+ 昵称 + 蓝色认证徽标（data-verify_status≠0）+ 简介（data-signature）+「N 篇原创内容」（data-origin_num）+ 分隔线与「公众号」标签；全部内联样式、无 `<a>` 标签，链接样式不作用其上。数据残缺的组件直接丢弃。
+3. **验证**：真实文章全管线 20/20 张图本地化（含头像 images/1.png）、卡片在原文位置渲染完整；43 个 reading 测试通过；`make check-quick` 绿（83s，修复 clippy 对 then 闭包的两处告警）。
+4. **已知差异**：简介行原文有「…交…」省略与右箭头（UI 交互元素）未仿制；原创数取自抓取时快照（原版实时显示 1181，静态页属性为 1049）。
+5. **待用户操作**：重新解析后生效。
+
+## 2026-11-13 作者头 + 列表卡主次作者间隔（通过）
+
+1. **作者头（阅读视图顶部）**：原版文章顶部的「原创 | 作者 | 公众号 | 发布时间」行来自页面变量（`var author` / `var nickname` / `var createTime` / `copyright_stat`），微信 `js_content` 不含它。新增 `wechat_article_header` 合成纯展示行（原创橙标、作者深灰、公众号与时间浅灰，无 `<a>`，阅读数/地区为 JS 实时数据不显示），微信 fallback 路径插在正文最前。
+2. **列表卡主次作者间隔**：微信 og:description 是「原创 作者 公众号」连排，与下方 byline 行重复；卡片摘要渲染时正则补间隔符 →「原创 徐泓镔 · 腾讯云开发者」（`displayExcerpt`，非该模式的摘要不受影响）。
+3. **验证**：44 个 reading 测试通过（新增作者头合成测试：原创标/作者/公众号/时间/无链接、非原创无标、无变量不生成）；tsc 绿；reading e2e 10 条通过；contract check ok。
+4. **待用户操作**：重新解析后作者头生效；列表卡摘要间隔即时生效。
+
+## 2026-11-13 修复：主次作者混淆（site_name 被 byline 覆盖）+ 顶栏作者放大（通过）
+
+1. **根因**：extract() 旧逻辑对微信把 byline（作者名 徐泓镔）直接当 site_name，公众号名（腾讯云开发者）整条丢失，顶栏/列表只剩一个人。
+2. **修复**：微信 fallback 路径改用页面变量——`var author` → byline（主作者）、`var nickname` → site_name（次作者），抽出 `wechat_page_var` / `wechat_nickname` 共用辅助（作者头复用）。
+3. **顶栏**：reader__meta 重排——主作者（byline）放最前、字号 11→14px 加深（.reader__author），公众号名次之，阅读进度仍为小字。
+4. **验证**：真实文章 byline=徐泓镔 site=腾讯云开发者，正文头含原创标/作者/时间；45 个 reading 测试、tsc、reading e2e 10 条全绿。
+5. **待用户操作**：重新解析生效（顶栏样式即时生效）。
+
+## 2026-11-13 旧数据自动修复：微信 site_name 找回公众号名（通过）
+
+1. **问题**：顶栏/列表仍只显示主作者——存量行的 site_name 是旧解析写进去的作者名（=byline），显示层修复只对新解析生效。
+2. **实现**：`connect()` 挂一次性规范化 `normalize_wechat_site_names`：对微信文章且 site_name == byline 的行，从摘要（og:description「原创 作者 公众号」连排）认出公众号名并 UPDATE 回写；认不出或已正确的行不动（重复执行空转）。
+3. **验证**：46 个 reading 测试通过（新增旧行修复测试：旧行纠正/正确行不动/认不出保持原样）；真实库 rjqcboc29qui3 行已被自动修复为 byline=徐泓镔 site_name=腾讯云开发者；`make check-quick` 绿（92s）。
+4. **待用户操作**：无需重新解析，重进文章/列表即显示两个作者。

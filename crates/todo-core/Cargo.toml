@@ -22,6 +22,7 @@ ignore.workspace = true
 reqwest.workspace = true
 readabilityrs.workspace = true
 ammonia.workspace = true
+htmd.workspace = true
 encoding_rs.workspace = true
 regex.workspace = true
 

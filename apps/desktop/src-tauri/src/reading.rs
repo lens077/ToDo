@@ -9,7 +9,8 @@ use serde::{Deserialize, Serialize};
 use std::sync::{Condvar, Mutex, OnceLock};
 use tauri::{AppHandle, Emitter, State};
 use todo_core::{
-    ReadingAnnotation, ReadingAnnotationInput, ReadingArticle, ReadingArticleDetail, ReadingStore,
+    ReadingAnnotation, ReadingAnnotationInput, ReadingArticle, ReadingArticleDetail,
+    ReadingExportFormat, ReadingStore,
 };
 
 /// `TODO_READING_STORE` overrides the global directory so tests and the
@@ -396,6 +397,26 @@ pub fn reading_export_project_index(
         .ok_or_else(|| "阅读库不可用：无法确定用户主目录".to_string())?;
     reading
         .export_project_index(&project_ref)
+        .map_err(|error| error.to_string())
+}
+
+/// 另存为 HTML / Markdown：正文与图片写进用户选择的目录。远程兜底图的
+/// 下载会走网络，放在 blocking pool，避免卡住 UI 线程。
+#[tauri::command]
+pub async fn reading_export_article(
+    state: State<'_, ReadingState>,
+    id: String,
+    format: ReadingExportFormat,
+    dir: String,
+) -> Result<todo_core::ReadingExportResult, String> {
+    if dir.trim().is_empty() {
+        return Err("保存目录为空".to_string());
+    }
+    let store = state.store()?;
+    let dir = std::path::PathBuf::from(dir);
+    tauri::async_runtime::spawn_blocking(move || store.export_article(&id, format, &dir))
+        .await
+        .map_err(|error| format!("另存为任务中断：{error}"))?
         .map_err(|error| error.to_string())
 }
 

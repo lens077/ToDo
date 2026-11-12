@@ -5,7 +5,9 @@
  * re-fetch can never clobber them (the Rust UPDATE doesn't mention them).
  */
 import * as React from 'react';
-import { reading, type ReadingArticleDetail, type ReadingContextInput } from '../lib/reading';
+import { open } from '@tauri-apps/plugin-dialog';
+import { isTauriRuntime } from '../lib/readingSync';
+import { reading, type ReadingArticleDetail, type ReadingContextInput, type ReadingExportFormat } from '../lib/reading';
 
 interface ReadingContextPanelProps {
   detail: ReadingArticleDetail;
@@ -94,6 +96,25 @@ export function ReadingContextPanel({ detail, onDetailChanged }: ReadingContextP
     }
   }, [detail.id, onDetailChanged]);
 
+  const exportArticle = React.useCallback(async (format: ReadingExportFormat) => {
+    if (!isTauriRuntime()) {
+      setError('浏览器版不支持另存到本机目录，请使用桌面端。');
+      return;
+    }
+    setBusy(true);
+    try {
+      const dir = await open({ directory: true, multiple: false, title: '选择保存目录（将写入文章文件与 img/ 图片目录）' });
+      if (typeof dir !== 'string') return;
+      const result = await reading.exportArticle(detail.id, format, dir);
+      setStatus(`已保存到 ${result.path}（图片 ${result.images} 张）`);
+      setError(null);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setBusy(false);
+    }
+  }, [detail.id]);
+
   const addLink = React.useCallback(
     async (kind: 'project' | 'task') => {
       const reference = linkDraft.trim();
@@ -153,6 +174,12 @@ export function ReadingContextPanel({ detail, onDetailChanged }: ReadingContextP
           )}
           <button type="button" className="rctx__tool" disabled={busy} onClick={() => void refetch()}>
             重新解析
+          </button>
+          <button type="button" className="rctx__tool" disabled={busy} onClick={() => void exportArticle('html')}>
+            另存为 HTML
+          </button>
+          <button type="button" className="rctx__tool" disabled={busy} onClick={() => void exportArticle('markdown')}>
+            另存为 Markdown
           </button>
         </div>
       </div>

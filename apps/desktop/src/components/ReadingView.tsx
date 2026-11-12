@@ -65,6 +65,11 @@ interface ReadingCardProps {
   onRetry: (id: string) => void;
 }
 
+/** 微信的 og:description 是「原创 作者 公众号」连排，主次作者之间补间隔符。 */
+function displayExcerpt(excerpt: string): string {
+  return excerpt.replace(/^(原创[，,]?\s*)(\S+)\s+(.+)$/, '$1$2 · $3');
+}
+
 function ReadingCard({ article, busy, opening, onOpen, onSetRead, onRemove, onRetry }: ReadingCardProps) {
   const state = readingState(article);
   const percent = state === 'read' ? 100 : article.progress_percent;
@@ -85,7 +90,7 @@ function ReadingCard({ article, busy, opening, onOpen, onSetRead, onRemove, onRe
         <Cover article={article} />
         <span className="reading-card__body">
           <span className="reading-card__title">{article.title}</span>
-          {article.excerpt && <span className="reading-card__excerpt">{article.excerpt}</span>}
+          {article.excerpt && <span className="reading-card__excerpt">{displayExcerpt(article.excerpt)}</span>}
           {failed && article.parse_error && (
             <span className="reading-card__parse-reason" title={article.parse_error}>{article.parse_error}</span>
           )}
@@ -132,8 +137,18 @@ function ReadingCard({ article, busy, opening, onOpen, onSetRead, onRemove, onRe
           <button
             type="button"
             className="icon-action"
+            disabled={busy || parsing}
+            data-tip={parsing ? '解析中…' : '重新解析：重新抓取正文与图片，笔记与上下文保留'}
+            aria-label={`重新解析：${article.title}`}
+            onClick={() => onRetry(article.id)}
+          >
+            <Icon name="refresh" />
+          </button>
+          <button
+            type="button"
+            className="icon-action"
             disabled={busy}
-            title={state === 'read' ? '标为未读' : '标为已读'}
+            data-tip={state === 'read' ? '标为未读：回到未读列表' : '标为已读：直接完成，不再出现在待读里'}
             aria-label={state === 'read' ? `标为未读：${article.title}` : `标为已读：${article.title}`}
             onClick={() => onSetRead(article.id, state !== 'read')}
           >
@@ -143,7 +158,7 @@ function ReadingCard({ article, busy, opening, onOpen, onSetRead, onRemove, onRe
             type="button"
             className="icon-action"
             disabled={busy}
-            title="删除（同时删除本地正文与笔记）"
+            data-tip="删除：移出阅读库，本地正文、图片与笔记一并删除"
             aria-label={`删除：${article.title}`}
             onClick={() => {
               if (window.confirm(`删除「${article.title}」？本地正文、图片与笔记都会一并删除。`)) onRemove(article.id);

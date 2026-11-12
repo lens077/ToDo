@@ -11,7 +11,7 @@
 //! against the stored body, which never changes, so they re-anchor reliably.
 
 use std::{
-    collections::HashSet,
+    collections::{HashMap, HashSet},
     fs,
     path::{Path, PathBuf},
     sync::atomic::{AtomicUsize, Ordering},
@@ -155,6 +155,30 @@ pub struct ReadingAnnotation {
     pub updated_at: i64,
 }
 
+/// 另存为的输出格式；前端以 `html` / `markdown` 小写字符串传参。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ReadingExportFormat {
+    Html,
+    Markdown,
+}
+
+impl ReadingExportFormat {
+    fn extension(self) -> &'static str {
+        match self {
+            Self::Html => "html",
+            Self::Markdown => "md",
+        }
+    }
+}
+
+/// 一次「另存为」的产物：主文件绝对路径与保存进 `img/` 的图片数。
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ReadingExportResult {
+    pub path: String,
+    pub images: u32,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ReadingAnnotationInput {
     pub id: String,
@@ -260,7 +284,53 @@ impl ReadingStore {
             ],
         )?;
         connection.execute_batch("PRAGMA foreign_keys = ON;")?;
+        Self::normalize_wechat_site_names(&connection);
         Ok(connection)
+    }
+
+    /// 一次性修复旧数据：早期的微信解析把作者名（byline）写进了 site_name，
+    /// 公众号名整条丢失。摘要（og:description）是「原创 作者 公众号」连排，
+    /// 能认出公众号名就把 site_name 纠正回来。修好的行不再命中 WHERE，
+    /// 重复执行是空转。
+    fn normalize_wechat_site_names(connection: &Connection) {
+        let Ok(mut statement) = connection.prepare(
+            "SELECT id, byline, excerpt FROM articles
+             WHERE url LIKE '%mp.weixin.qq.com%' AND byline != '' AND site_name = byline",
+        ) else {
+            return;
+        };
+        let rows = statement
+            .query_map([], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, String>(2)?,
+                ))
+            })
+            .ok();
+        let Some(rows) = rows else {
+            return;
+        };
+        for row in rows.flatten() {
+            let (id, byline, excerpt) = row;
+            let Ok(pattern) = Regex::new(&format!(
+                r#"^原创[，,]?\s*{}\s+(\S+)\s*$"#,
+                regex::escape(byline.trim())
+            )) else {
+                continue;
+            };
+            let Some(account) = pattern
+                .captures(excerpt.trim())
+                .and_then(|captures| captures.get(1))
+                .map(|matched| matched.as_str().to_string())
+            else {
+                continue;
+            };
+            let _ = connection.execute(
+                "UPDATE articles SET site_name = ?2 WHERE id = ?1",
+                params![id, account],
+            );
+        }
     }
 
     /// Fetches, extracts, localizes images, and stores the article. Adding a
@@ -1077,6 +1147,52 @@ type: reading
             }
         }
         Ok(markdown)
+    }
+
+    /// 另存为：把正文与图片写进用户选择的目录，图片放 `img/`，文件名用
+    /// 文章标题（重名自动加序号）。返回主文件路径。
+    pub fn export_article(
+        &self,
+        id: &str,
+        format: ReadingExportFormat,
+        dir: &Path,
+    ) -> Result<ReadingExportResult> {
+        let detail = self.get(id)?;
+        fs::create_dir_all(dir).map_err(|source| Error::Io {
+            path: dir.to_path_buf(),
+            source,
+        })?;
+        let img_dir = dir.join("img");
+        fs::create_dir_all(&img_dir).map_err(|source| Error::Io {
+            path: img_dir.clone(),
+            source,
+        })?;
+        let (html, markdown, images) = export_with_local_images(
+            &detail.content_html,
+            detail.markdown.as_deref(),
+            &self.image_dir(id),
+            &img_dir,
+            &detail.article.url,
+        );
+        let stem = export_stem(&detail.article.title, id);
+        let (path, body) = match format {
+            ReadingExportFormat::Html => (
+                unique_export_path(dir, &stem, format.extension()),
+                export_html_document(&detail, &html),
+            ),
+            ReadingExportFormat::Markdown => (
+                unique_export_path(dir, &stem, format.extension()),
+                export_markdown_document(&detail, markdown.as_deref()),
+            ),
+        };
+        fs::write(&path, body).map_err(|source| Error::Io {
+            path: path.clone(),
+            source,
+        })?;
+        Ok(ReadingExportResult {
+            path: path.to_string_lossy().into_owned(),
+            images,
+        })
     }
 
     /// Records that the reader opened the article now.
@@ -2063,10 +2179,16 @@ fn extract(page: &FetchedPage, requested_url: &str) -> Result<Extracted> {
     } else {
         &page.final_url
     };
-    let options = readabilityrs::ReadabilityOptions::builder()
+    let mut builder = readabilityrs::ReadabilityOptions::builder()
         .output_markdown(true)
-        .sanitize_content(true)
-        .build();
+        .sanitize_content(true);
+    if is_wechat_article(requested_url) || is_wechat_article(&page.final_url) {
+        // 微信的视觉设计（卡片边框、装饰标题等）全部写在 style 属性上；
+        // readability 默认的 clean_styles 会把它删光。sanitize_html 会再做
+        // 一次声明级过滤，这里放心保留。
+        builder = builder.clean_styles(false);
+    }
+    let options = builder.build();
     if let Some(tweet) = x_tweet_extract(&html) {
         return Ok(tweet);
     }
@@ -2079,23 +2201,44 @@ fn extract(page: &FetchedPage, requested_url: &str) -> Result<Extracted> {
         .ok()
         .and_then(|parser| parser.parse());
     let fallback = wechat_content_fallback(&html);
-    let raw_content = article
-        .as_ref()
-        .and_then(|item| item.content.clone())
-        .filter(|content| !content.trim().is_empty())
-        .or_else(|| fallback.clone())
-        // 只有元数据的页面（微信视频/图片消息等）也保留下来，而不是判失败。
-        .or_else(|| link_only_body(&html))
-        .ok_or_else(|| Error::ReadingExtract("没有找到可阅读的正文".into()))?;
+    // 微信正文容器是固定的 #js_content，直接取容器：readability 的候选评分
+    // 在微信这种 section 重嵌套 + 图多的排版上会选错根节点（丢整块图片、
+    // 或选到作者卡片区）。fallback 缺失时（视频/图片消息页）退回原链路。
+    let wechat = is_wechat_article(requested_url) || is_wechat_article(&page.final_url);
+    let used_fallback = wechat && fallback.is_some();
+    let raw_content = if used_fallback {
+        fallback.clone()
+    } else {
+        article
+            .as_ref()
+            .and_then(|item| item.content.clone())
+            .filter(|content| !content.trim().is_empty())
+            .or_else(|| fallback.clone())
+            // 只有元数据的页面（微信视频/图片消息等）也保留下来，而不是判失败。
+            .or_else(|| link_only_body(&html))
+    }
+    .ok_or_else(|| Error::ReadingExtract("没有找到可阅读的正文".into()))?;
     let title_from_article = article.as_ref().and_then(|item| item.title.clone());
     let standardized =
         readabilityrs::elements::standardize_all(&raw_content, title_from_article.as_deref());
-    let content_html = sanitize_html(&standardized);
-    let text = article
-        .as_ref()
-        .and_then(|item| item.text_content.clone())
-        .filter(|value| !value.trim().is_empty())
-        .unwrap_or_else(|| html_to_text(&raw_content));
+    let mut content_html = sanitize_html(&standardized);
+    if used_fallback {
+        // 作者头（原创/作者/公众号/发布时间）插在正文最前。
+        if let Some(header) = wechat_article_header(&html) {
+            content_html = format!("{header}{content_html}");
+        }
+    }
+    // 走 js_content 容器时，readability 的 text/markdown 属于它自己选的节点，
+    // 与本文不对应，直接从容器内容推导。
+    let text = if used_fallback {
+        html_to_text(&raw_content)
+    } else {
+        article
+            .as_ref()
+            .and_then(|item| item.text_content.clone())
+            .filter(|value| !value.trim().is_empty())
+            .unwrap_or_else(|| html_to_text(&raw_content))
+    };
     let (word_count, reading_minutes) = reading_stats(&text);
     let host = reqwest::Url::parse(base_url)
         .ok()
@@ -2108,7 +2251,7 @@ fn extract(page: &FetchedPage, requested_url: &str) -> Result<Extracted> {
         .filter(|value| !value.is_empty());
     // WeChat labels every article "微信公众平台"; the account name is what
     // the reader recognises.
-    let site_name = if host == "mp.weixin.qq.com" && byline.is_some() {
+    let mut site_name = if host == "mp.weixin.qq.com" && byline.is_some() {
         byline.clone().unwrap_or_default()
     } else {
         article
@@ -2117,6 +2260,17 @@ fn extract(page: &FetchedPage, requested_url: &str) -> Result<Extracted> {
             .filter(|name| !name.trim().is_empty())
             .unwrap_or_else(|| host.clone())
     };
+    let mut byline = byline;
+    if used_fallback {
+        // 页面变量里是准确的作者（var author）与公众号名（var nickname）。
+        // 旧逻辑把 byline（作者名）当成了 site_name，公众号名整个丢失。
+        if let Some(author) = wechat_page_var(&html, "author") {
+            byline = Some(author);
+        }
+        if let Some(nickname) = wechat_nickname(&html) {
+            site_name = nickname;
+        }
+    }
     let title = article
         .as_ref()
         .and_then(|item| item.title.clone())
@@ -2142,10 +2296,14 @@ fn extract(page: &FetchedPage, requested_url: &str) -> Result<Extracted> {
             .and_then(|item| item.image.clone())
             .or_else(|| og_image(&html)),
         content_html,
-        markdown: article
-            .as_ref()
-            .and_then(|item| item.markdown_content.clone())
-            .filter(|value| !value.trim().is_empty()),
+        markdown: if used_fallback {
+            None
+        } else {
+            article
+                .as_ref()
+                .and_then(|item| item.markdown_content.clone())
+                .filter(|value| !value.trim().is_empty())
+        },
         word_count,
         reading_minutes,
     })
@@ -2171,19 +2329,198 @@ fn wechat_content_fallback(html: &str) -> Option<String> {
     {
         return None;
     }
-    let patterns = [
-        r#"(?is)<div[^>]*id=["']js_content["'][^>]*>(.*?)</div>"#,
-        r#"(?is)<div[^>]*class=["'][^"']*rich_media_content[^"']*["'][^>]*>(.*?)</div>"#,
-    ];
-    patterns.iter().find_map(|pattern| {
-        Regex::new(pattern)
+    // 逐个扫描 <div 开始标签，找到正文容器（js_content / rich_media_content），
+    // 再按嵌套深度配对取内层——非贪婪正则会在第一个 </div> 处截断，
+    // 而微信正文里嵌着大量 div/section。
+    let mut cursor = 0;
+    while let Some(offset) = html[cursor..].find("<div") {
+        let open_start = cursor + offset;
+        let Some(open_end) = html[open_start..].find('>') else {
+            break;
+        };
+        let open_end = open_start + open_end;
+        let open_tag = &html[open_start..=open_end];
+        let is_container = open_tag.contains("id=\"js_content\"")
+            || open_tag.contains("id='js_content'")
+            || open_tag.contains("rich_media_content");
+        cursor = open_end + 1;
+        if !is_container {
+            continue;
+        }
+        let inner = balanced_div_inner(html, open_end + 1)?;
+        let body = inner.trim();
+        return (html_to_text(body).chars().count() >= 20).then(|| body.to_string());
+    }
+    None
+}
+
+/// 公众号资料卡：正文中内嵌的 `<mp-common-profile>` 组件由 JS 渲染，抓取时
+/// 只是空标签，但属性里带了全部数据（昵称/头像/简介/原创数/认证状态）。
+/// 原地转换成纯展示卡（无 `<a>`，不受阅读器链接样式影响），位置与原文一致；
+/// 内联样式里写全 margin，避免被阅读器的图片居中规则挪位。
+fn render_wechat_profile_cards(html: &str) -> String {
+    let Ok(tag) = Regex::new(r#"(?is)<mp-common-profile\b[^>]*>\s*</mp-common-profile>"#) else {
+        return html.to_string();
+    };
+    let attribute = |source: &str, name: &str| -> Option<String> {
+        Regex::new(&format!(r#"data-{name}="([^"]*)""#))
+            .ok()?
+            .captures(source)
+            .and_then(|captures| captures.get(1))
+            .map(|matched| decode_entities(matched.as_str()))
+            .filter(|value| !value.trim().is_empty())
+    };
+    tag.replace_all(html, |captures: &regex::Captures<'_>| {
+        let source = &captures[0];
+        let Some(nickname) = attribute(source, "nickname") else {
+            // 数据不全的组件没有可展示的内容，直接丢弃。
+            return String::new();
+        };
+        let avatar = attribute(source, "headimg").map(|url| {
+            format!(
+                r#"<img src="{}" alt="" style="width: 48px; height: 48px; border-radius: 50%; margin: 2px 14px 0 0; flex: none">"#,
+                html_escape(&url)
+            )
+        });
+        let verified = attribute(source, "verify_status")
+            .map(|status| status != "0")
+            .unwrap_or(false);
+        let badge = if verified {
+            r#"<span style="display: inline-block; margin-left: 4px; width: 15px; height: 15px; line-height: 15px; border-radius: 50%; background: #4874ff; color: #fff; font-size: 11px; text-align: center; vertical-align: 1px">✓</span>"#
+        } else {
+            ""
+        };
+        let signature = attribute(source, "signature")
+            .map(|value| {
+                format!(
+                    r#"<div style="color: #444; font-size: 14px; line-height: 1.6; margin-top: 6px">{}</div>"#,
+                    html_escape(&value)
+                )
+            })
+            .unwrap_or_default();
+        let origin = attribute(source, "origin_num").and_then(|value| value.parse::<u32>().ok())
+            .filter(|count| *count > 0)
+            .map(|count| {
+                format!(
+                    r#"<div style="color: #b2b2b2; font-size: 13px; margin-top: 6px">{count}篇原创内容</div>"#
+                )
+            })
+            .unwrap_or_default();
+        format!(
+            r#"<div style="margin: 0 0 8px; padding: 16px 20px; border: 1px solid #e7e7e7; border-radius: 8px; background: #fff; max-width: 100%; box-sizing: border-box"><div style="display: flex; align-items: flex-start">{}<div style="min-width: 0; flex: 1"><div style="font-weight: 600; color: #1a1a1a; font-size: 17px; line-height: 1.4">{}{badge}</div>{signature}{origin}</div></div><div style="border-top: 1px solid #f0f0f0; margin-top: 14px; padding-top: 10px; color: #b2b2b2; font-size: 13px">公众号</div></div>"#,
+            avatar.unwrap_or_default(),
+            html_escape(&nickname),
+        )
+    })
+    .into_owned()
+}
+
+/// 微信页面变量（`var author = "徐泓镔";` / `var createTime = '...'`）。
+fn wechat_page_var(html: &str, name: &str) -> Option<String> {
+    Regex::new(&format!(r#"var\s+{name}\s*=\s*['"]([^'"]*)['"]\s*;"#))
+        .ok()?
+        .captures(html)
+        .and_then(|captures| captures.get(1))
+        .map(|matched| decode_entities(matched.as_str()))
+        .filter(|value| !value.trim().is_empty())
+}
+
+/// 公众号名：新版页面写 `var nickname = htmlDecode("...")`，旧版直接赋值。
+fn wechat_nickname(html: &str) -> Option<String> {
+    wechat_page_var(html, "nickname").or_else(|| {
+        Regex::new(r#"var\s+nickname\s*=\s*htmlDecode\("([^"]*)"\)"#)
             .ok()?
             .captures(html)
-            .and_then(|captures| {
-                let body = captures.get(1)?.as_str().trim();
-                (html_to_text(body).chars().count() >= 20).then(|| body.to_string())
-            })
+            .and_then(|captures| captures.get(1))
+            .map(|matched| collapse_whitespace(&decode_entities(matched.as_str())))
+            .filter(|value| !value.is_empty())
     })
+}
+
+/// 作者头：原版文章顶部的一行——原创标记、作者、公众号、发布时间。阅读数与
+/// 地区由 JS 实时取，静态页没有，不显示。数据全无时返回 None。
+fn wechat_article_header(html: &str) -> Option<String> {
+    let nickname = wechat_nickname(html);
+    let author = wechat_page_var(html, "author");
+    let create_time = wechat_page_var(html, "createTime");
+    let is_original = Regex::new(r#"copyright_stat[^0-9]*'(\d)'"#)
+        .ok()?
+        .captures(html)
+        .and_then(|captures| captures.get(1))
+        .map(|matched| matched.as_str() == "1")
+        .unwrap_or(false);
+    if author.is_none() && nickname.is_none() && create_time.is_none() {
+        return None;
+    }
+    let original_badge = if is_original {
+        r#"<span style="background: #f0a032; color: #fff; font-size: 12px; padding: 1px 6px; border-radius: 3px; flex: none">原创</span>"#
+    } else {
+        ""
+    };
+    let part = |value: &Option<String>, color: &str| {
+        value
+            .as_deref()
+            .map(|text| {
+                format!(
+                    r#"<span style="color: {color}; overflow: hidden; text-overflow: ellipsis; white-space: nowrap">{}</span>"#,
+                    html_escape(text)
+                )
+            })
+            .unwrap_or_default()
+    };
+    Some(format!(
+        r#"<div style="margin: 0 8px 20px; display: flex; align-items: center; flex-wrap: wrap; gap: 10px; font-size: 15px">{original_badge}{}{}{}</div>"#,
+        part(&author, "#333"),
+        part(&nickname, "#999"),
+        part(&create_time, "#999"),
+    ))
+}
+
+/// 从 `open_end`（`<div ...>` 的 `>` 之后）开始，按 `<div` / `</div>` 的嵌套
+/// 深度找到配对的闭合标签，返回两者之间的 HTML。未闭合时取到文档末尾兜底。
+fn balanced_div_inner(html: &str, open_end: usize) -> Option<String> {
+    let mut depth = 1usize;
+    let mut cursor = open_end;
+    let boundary = |byte: u8| byte.is_ascii_whitespace() || byte == b'>' || byte == b'/';
+    while depth > 0 {
+        let rest = &html[cursor..];
+        let next_open = rest.find("<div").filter(|offset| {
+            rest[*offset + 4..]
+                .bytes()
+                .next()
+                .map(boundary)
+                .unwrap_or(false)
+        });
+        let next_close = rest.find("</div").filter(|offset| {
+            rest[*offset + 5..]
+                .bytes()
+                .next()
+                .map(boundary)
+                .unwrap_or(false)
+        });
+        match (next_open, next_close) {
+            // 有未配对的 <div 就先吃掉它的开始标签；否则消耗一个闭合标签。
+            (Some(open), None) => {
+                let tag_end = rest[open..].find('>')? + open + 1;
+                depth += 1;
+                cursor += tag_end;
+            }
+            (Some(open), Some(close)) if open < close => {
+                let tag_end = rest[open..].find('>')? + open + 1;
+                depth += 1;
+                cursor += tag_end;
+            }
+            (_, Some(close)) => {
+                depth -= 1;
+                if depth == 0 {
+                    return Some(html[open_end..cursor + close].to_string());
+                }
+                cursor += rest[close..].find('>')? + close + 1;
+            }
+            (None, None) => return Some(html[open_end..].to_string()),
+        }
+    }
+    None
 }
 
 fn html_to_text(html: &str) -> String {
@@ -2215,10 +2552,19 @@ fn prepare_html(html: &str) -> String {
             })
             .into_owned();
     }
-    if let Ok(hidden) = Regex::new(r#"(?i)visibility\s*:\s*hidden\s*;?"#) {
-        result = hidden.replace_all(&result, "").into_owned();
+    // 隐藏样式的兜底：微信正文在 JS 淡入前靠 `visibility:hidden` / `opacity:0`
+    // 藏着，抓取时 JS 不会执行。边界（\s;"' 或结尾）只匹配不吞掉，因此
+    // `opacity: 0.5` 这类半透明装饰不会被误伤。
+    if let Ok(hidden) =
+        Regex::new(r#"(?i)(visibility\s*:\s*hidden|opacity\s*:\s*0+(\.0*)?)([\s;"']|$)"#)
+    {
+        result = hidden
+            .replace_all(&result, |captures: &regex::Captures<'_>| {
+                captures[3].to_string()
+            })
+            .into_owned();
     }
-    result
+    render_wechat_profile_cards(&result)
 }
 
 pub(crate) fn sanitize_html(html: &str) -> String {
@@ -2239,9 +2585,50 @@ pub(crate) fn sanitize_html(html: &str) -> String {
         .add_tag_attributes("audio", ["src", "controls"])
         .add_tag_attributes("source", ["src", "type"])
         .rm_tag_attributes("a", ["target"])
+        // 微信等站点的视觉设计全靠内联 style；放行后逐条声明过滤，
+        // 危险构造（url()/expression()/position:fixed 等）不会出现在结果里。
+        .add_generic_attributes(["style"])
+        .attribute_filter(|_element, attribute, value| {
+            if attribute.eq_ignore_ascii_case("style") {
+                Some(std::borrow::Cow::Owned(sanitize_style(value)))
+            } else {
+                Some(std::borrow::Cow::Borrowed(value))
+            }
+        })
         .link_rel(Some("noopener noreferrer"))
         .url_relative(ammonia::UrlRelative::PassThrough);
     builder.clean(html).to_string()
+}
+
+/// 过滤内联 style 中的单条声明。ammonia 4 的 CSS 过滤器（`style::filter_style_attribute`）
+/// 是私有的，这里做一个等价的声明级白名单：`url()` / `expression()` / `javascript:`
+/// 是 XSS 与外链通道，`position:fixed` 可做覆盖层钓鱼，含这些构造的声明整条丢弃，
+/// 其余（边框、背景色、字号等纯样式）保留。
+fn sanitize_style(style: &str) -> String {
+    style
+        .split(';')
+        .map(|declaration| declaration.trim())
+        .filter(|declaration| {
+            if declaration.is_empty() {
+                return false;
+            }
+            let lower = declaration.to_ascii_lowercase();
+            if lower.starts_with('@')
+                || lower.contains("url(")
+                || lower.contains("expression(")
+                || lower.contains("javascript:")
+                || lower.contains("-moz-binding")
+            {
+                return false;
+            }
+            // `position: fixed` 无论空格怎么写都拦掉。
+            let mut parts = lower.splitn(2, ':');
+            let property = parts.next().unwrap_or_default().trim();
+            let value = parts.next().unwrap_or_default().trim();
+            !(property == "position" && value.split_whitespace().any(|word| word == "fixed"))
+        })
+        .collect::<Vec<_>>()
+        .join("; ")
 }
 
 fn html_title(html: &str) -> Option<String> {
@@ -2362,6 +2749,225 @@ pub fn reading_stats(text: &str) -> (u32, u32) {
     let words = cjk + latin_words;
     let minutes = (f64::from(cjk) / 400.0 + f64::from(latin_words) / 230.0).ceil() as u32;
     (words, minutes.max(if words > 0 { 1 } else { 0 }))
+}
+
+// ── Export as HTML / Markdown ───────────────────────────────────────────────
+
+const MAX_EXPORT_STEM_CHARS: usize = 80;
+
+/// 把 HTML 与 Markdown 里的图片引用统一落地到 `img_dir`：本地 `images/<file>`
+/// 直接从 `image_dir` 复制；本地化失败时残留的远程 http(s) URL 尽力下载，
+/// 失败保留原 URL。返回处理后的正文、Markdown 与保存的图片数。
+fn export_with_local_images(
+    html: &str,
+    markdown: Option<&str>,
+    image_dir: &Path,
+    img_dir: &Path,
+    page_url: &str,
+) -> (String, Option<String>, u32) {
+    let mut mapping: HashMap<String, String> = HashMap::new();
+    let mut next_index = 1u32;
+    let client = http_client().ok();
+    let mut resolve = |source: &str| {
+        resolve_export_image(
+            source,
+            image_dir,
+            img_dir,
+            page_url,
+            client.as_ref(),
+            &mut mapping,
+            &mut next_index,
+        )
+    };
+    let exported_html = rewrite_export_html_images(html, &mut resolve);
+    let exported_markdown = match markdown {
+        Some(markdown) => Some(rewrite_export_markdown_images(markdown, &mut resolve)),
+        // 存储层没有 Markdown（微信 fallback 路径）时从重写后的 HTML 现转，
+        // 图片引用已经是 img/ 相对路径，不用再处理。
+        None => {
+            Some(htmd::convert(&exported_html).unwrap_or_else(|_| html_to_text(&exported_html)))
+        }
+    };
+    (exported_html, exported_markdown, mapping.len() as u32)
+}
+
+type ExportResolve<'a> = dyn FnMut(&str) -> Option<String> + 'a;
+
+fn rewrite_export_html_images(html: &str, resolve: &mut ExportResolve<'_>) -> String {
+    let Ok(pattern) = Regex::new(r#"(?i)src="([^"]+)""#) else {
+        return html.to_string();
+    };
+    pattern
+        .replace_all(html, |captures: &regex::Captures<'_>| {
+            resolve(captures[1].trim()).map_or_else(
+                || captures[0].to_string(),
+                |local| format!("src=\"{local}\""),
+            )
+        })
+        .into_owned()
+}
+
+fn rewrite_export_markdown_images(markdown: &str, resolve: &mut ExportResolve<'_>) -> String {
+    let Ok(pattern) = Regex::new(r"(!\[[^\]]*\]\()([^)]+)(\))") else {
+        return markdown.to_string();
+    };
+    pattern
+        .replace_all(markdown, |captures: &regex::Captures<'_>| {
+            resolve(captures[2].trim()).map_or_else(
+                || captures[0].to_string(),
+                |local| format!("{}img/{local}{}", &captures[1], &captures[3]),
+            )
+        })
+        .into_owned()
+}
+
+/// 一个图片引用的导出处理：返回 `img/<file>` 形式的相对引用，或 None（保持原样）。
+#[allow(clippy::too_many_arguments)]
+fn resolve_export_image(
+    source: &str,
+    image_dir: &Path,
+    img_dir: &Path,
+    page_url: &str,
+    client: Option<&reqwest::blocking::Client>,
+    mapping: &mut HashMap<String, String>,
+    next_index: &mut u32,
+) -> Option<String> {
+    if let Some(existing) = mapping.get(source) {
+        return Some(existing.clone());
+    }
+    let file = if let Some(rest) = source.strip_prefix("images/") {
+        // 已本地化的图片：store 的 images/ 目录里直接复制。
+        let origin = image_dir.join(rest);
+        if !origin.exists() {
+            return None;
+        }
+        fs::create_dir_all(parent_dir(img_dir, rest)).ok()?;
+        fs::copy(&origin, img_dir.join(rest)).ok()?;
+        rest.to_string()
+    } else {
+        if !(source.starts_with("http://") || source.starts_with("https://")) {
+            return None;
+        }
+        let client = client?;
+        let stem = next_index.to_string();
+        *next_index += 1;
+        download_image(client, source, page_url, img_dir, &stem)?
+    };
+    let reference = format!("img/{file}");
+    mapping.insert(source.to_string(), reference.clone());
+    Some(reference)
+}
+
+/// `img/<file>` 可能带子目录（文件名里没有，但防御一下），复制前补齐父目录。
+fn parent_dir(img_dir: &Path, file: &str) -> PathBuf {
+    match Path::new(file).parent() {
+        Some(parent) if !parent.as_os_str().is_empty() => img_dir.join(parent),
+        _ => img_dir.to_path_buf(),
+    }
+}
+
+/// 导出文件名取自文章标题：去掉各平台非法字符与控制符，限长，空标题回退到 id。
+fn export_stem(title: &str, id: &str) -> String {
+    let cleaned: String = title
+        .chars()
+        .filter(|c| {
+            !matches!(c, '/' | '\\' | ':' | '*' | '?' | '"' | '<' | '>' | '|') && !c.is_control()
+        })
+        .collect();
+    let mut stem = collapse_whitespace(&cleaned).trim().to_string();
+    while stem.ends_with('.') {
+        stem.pop();
+    }
+    if stem.chars().count() > MAX_EXPORT_STEM_CHARS {
+        stem = stem.chars().take(MAX_EXPORT_STEM_CHARS).collect();
+        while stem.ends_with('.') {
+            stem.pop();
+        }
+    }
+    if stem.is_empty() {
+        stem = format!("article-{id}");
+    }
+    stem
+}
+
+/// 目标目录里已有同名导出时追加序号（-2、-3……），不覆盖旧文件。
+fn unique_export_path(dir: &Path, stem: &str, extension: &str) -> PathBuf {
+    let first = dir.join(format!("{stem}.{extension}"));
+    if !first.exists() {
+        return first;
+    }
+    (2..)
+        .map(|index| dir.join(format!("{stem}-{index}.{extension}")))
+        .find(|candidate| !candidate.exists())
+        .unwrap_or(first)
+}
+
+fn export_html_document(detail: &ReadingArticleDetail, html: &str) -> String {
+    let title = html_escape(&detail.article.title);
+    let url = html_escape(&detail.article.url);
+    let site = html_escape(&detail.article.site_name);
+    let byline = detail
+        .article
+        .byline
+        .as_deref()
+        .map(html_escape)
+        .unwrap_or_default();
+    let date = chrono::DateTime::from_timestamp_millis(detail.article.added_at)
+        .map(|time| {
+            time.with_timezone(&chrono::Local)
+                .format("%Y-%m-%d")
+                .to_string()
+        })
+        .unwrap_or_default();
+    format!(
+        r#"<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{title}</title>
+<style>
+body {{ max-width: 720px; margin: 0 auto; padding: 24px 16px; font: 16px/1.7 -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif; color: #222; }}
+header {{ border-bottom: 1px solid #eee; margin-bottom: 24px; padding-bottom: 12px; }}
+header p {{ color: #888; font-size: 14px; }}
+img {{ max-width: 100%; }}
+blockquote {{ color: #666; border-left: 3px solid #ddd; margin-left: 0; padding-left: 12px; }}
+</style>
+</head>
+<body>
+<header>
+<h1>{title}</h1>
+<p>{byline} · {site} · {date} · <a href="{url}">原文链接</a></p>
+</header>
+<main>
+{html}
+</main>
+</body>
+</html>
+"#
+    )
+}
+
+fn export_markdown_document(detail: &ReadingArticleDetail, markdown: Option<&str>) -> String {
+    let mut out = format!("# {}\n\n", detail.article.title);
+    if let Some(byline) = &detail.article.byline {
+        out.push_str(&format!("- 作者：{byline}\n"));
+    }
+    out.push_str(&format!("- 来源：{}\n", detail.article.site_name));
+    out.push_str(&format!("- 原始链接：{}\n\n", detail.article.url));
+    if let Some(markdown) = markdown.filter(|value| !value.trim().is_empty()) {
+        out.push_str(markdown.trim());
+        out.push('\n');
+    }
+    out
+}
+
+fn html_escape(value: &str) -> String {
+    value
+        .replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
 }
 
 // ── Image localization ──────────────────────────────────────────────────────
@@ -2841,6 +3447,52 @@ mod tests {
     }
 
     #[test]
+    fn prepare_html_reveals_opacity_zero_but_keeps_partial_opacity() {
+        let html = r#"<div style="opacity: 0"><p>正文</p></div><div style="opacity:0;"><p>正文二</p></div><div style="opacity: 0.5"><p>装饰</p></div>"#;
+        let prepared = prepare_html(html);
+        assert!(prepared.contains("<p>正文</p>"));
+        assert!(prepared.contains("<p>正文二</p>"));
+        assert!(prepared.contains(r#"style=""#));
+        // 半透明装饰与其它属性原样保留。
+        assert!(prepared.contains("opacity: 0.5"));
+        assert!(!prepared.contains(r#"opacity: 0""#));
+        assert!(!prepared.contains("opacity:0;"));
+    }
+
+    #[test]
+    fn style_filter_keeps_decorations_and_drops_dangerous_declarations() {
+        assert_eq!(
+            sanitize_style("border: 1px solid green; font-size: 16px; color:#07c160"),
+            "border: 1px solid green; font-size: 16px; color:#07c160"
+        );
+        let filtered = sanitize_style(
+            "background-image: url(https://evil.example/track.png); position: fixed; top: 0; behavior: url(#default#time2); @import url(evil.css);",
+        );
+        assert_eq!(filtered, "top: 0");
+        assert!(sanitize_style("").is_empty());
+    }
+
+    #[test]
+    fn sanitizer_keeps_safe_inline_styles_but_strips_dangerous_ones() {
+        let html = r#"<section style="border: 1px solid green; padding: 12px"><p style="position: fixed; z-index: 9999">覆盖层</p></section>"#;
+        let clean = sanitize_html(html);
+        assert!(clean.contains(r#"style="border: 1px solid green; padding: 12px""#));
+        assert!(!clean.contains("position"));
+        assert!(clean.contains(">覆盖层</p>"));
+    }
+
+    #[test]
+    fn wechat_styled_cards_keep_their_inline_styles() {
+        let html = r#"<html><head><title>样式测试</title></head><body><div id="js_content" style="visibility: hidden;"><section style="border: 1px solid green; padding: 12px"><h2>01 背景</h2><p>按团队分工，我们的代码和文档分布在四个仓库，一个业务需求通常会同时牵动这四方。</p></section></div></body></html>"#;
+        let page = FetchedPage {
+            html: html.into(),
+            final_url: "https://mp.weixin.qq.com/s/test".into(),
+        };
+        let extracted = extract(&page, &page.final_url).unwrap();
+        assert!(extracted.content_html.contains("border: 1px solid green"));
+    }
+
+    #[test]
     fn urls_are_validated_and_fragments_dropped() {
         assert!(normalize_url("file:///etc/passwd").is_err());
         assert!(normalize_url("ftp://example.com/a").is_err());
@@ -2867,9 +3519,89 @@ mod tests {
     }
 
     #[test]
+    fn wechat_profile_component_renders_as_linkless_card() {
+        let html = r#"<section><mp-common-profile data-pluginname="mpprofile" data-nickname="腾讯云开发者" data-headimg="http://mmbiz.qpic.cn/a.png?wx_fmt=png&amp;wxfrom=19" data-signature="腾讯云官方社区公众号，汇聚技术开发者群体。" data-origin_num="1049" data-verify_status="2"></mp-common-profile></section>"#;
+        let prepared = prepare_html(html);
+        assert!(prepared.contains("腾讯云开发者"));
+        assert!(prepared.contains("腾讯云官方社区公众号，汇聚技术开发者群体。"));
+        assert!(prepared.contains("1049篇原创内容"));
+        assert!(prepared.contains("公众号"));
+        // URL 属性转义保真；下载时 absolute_url 里的 decode_entities 会还原 &。
+        assert!(prepared.contains(r#"src="http://mmbiz.qpic.cn/a.png?wx_fmt=png&amp;wxfrom=19""#));
+        assert!(!prepared.contains("mp-common-profile"));
+        // 纯展示卡：没有链接标签，阅读器的 a 样式不会作用到它。
+        assert!(!prepared.contains("<a"));
+        // 头像 margin 写全，不被阅读器图片居中规则挪位。
+        assert!(prepared.contains("margin: 2px 14px 0 0"));
+        // 数据残缺的组件直接丢弃。
+        assert_eq!(
+            prepare_html("<p>x</p><mp-common-profile data-nickname=\"\"></mp-common-profile>"),
+            "<p>x</p>"
+        );
+    }
+
+    #[test]
     fn wechat_error_shell_is_not_misreported_as_empty_article() {
         let html = r#"<div class="weui-msg__title warn">参数错误</div>"#;
         assert!(is_wechat_error_shell(html));
+    }
+
+    #[test]
+    fn wechat_fallback_extracts_author_and_account_from_page_vars() {
+        let html = r#"<html><head><title>长文标题</title><script>var author = "徐泓镔";
+var nickname = htmlDecode("腾讯云开发者");
+var createTime = '2026-11-12 09:09';
+copyright_stat: '1' * 1,</script></head><body><div id="js_content"><p>正文第一段，长度足以通过可读性阈值，满足提取要求。</p></div></body></html>"#;
+        let page = FetchedPage {
+            html: html.into(),
+            final_url: "https://mp.weixin.qq.com/s/test".into(),
+        };
+        let extracted = extract(&page, &page.final_url).unwrap();
+        // 主作者是人（byline），公众号名是 site_name——两者不再混用。
+        assert_eq!(extracted.byline.as_deref(), Some("徐泓镔"));
+        assert_eq!(extracted.site_name, "腾讯云开发者");
+    }
+
+    #[test]
+    fn wechat_article_header_shows_author_and_publish_time() {
+        let html = r#"<script>var author = "徐泓镔";
+var createTime = '2026-11-12 09:09';
+copyright_stat: '1' * 1,
+var nickname = htmlDecode("腾讯云开发者");</script>"#;
+        let header = wechat_article_header(html).unwrap();
+        assert!(header.contains(">原创</span>"));
+        assert!(header.contains("徐泓镔"));
+        assert!(header.contains("腾讯云开发者"));
+        assert!(header.contains("2026-11-12 09:09"));
+        assert!(!header.contains("<a"));
+        // 非原创（copyright_stat=0）不出原创标记；全无数据时不生成。
+        let plain = r#"<script>var author = "某某";
+copyright_stat: '0' * 1,</script>"#;
+        let header = wechat_article_header(plain).unwrap();
+        assert!(!header.contains(">原创<"));
+        assert!(wechat_article_header("<p>无变量</p>").is_none());
+    }
+
+    #[test]
+    fn wechat_fallback_uses_balanced_div_and_keeps_images() {
+        // js_content 里的嵌套 div 不应把提取截断在第一个 </div>。
+        let html = r#"<html><head><title>图集</title></head><body><div id="js_content"><div style="border: 1px solid green"><p>外层第一段，足以达到可读性阈值的内容。</p><img src="https://mmbiz.qpic.cn/a.jpg"></div><p>嵌套结束后的段落。</p></div><div id="js_content_footer"></div></body></html>"#;
+        let page = FetchedPage {
+            html: html.into(),
+            final_url: "https://mp.weixin.qq.com/s/test".into(),
+        };
+        let extracted = extract(&page, &page.final_url).unwrap();
+        assert!(extracted.content_html.contains("外层第一段"));
+        assert!(extracted.content_html.contains("嵌套结束后的段落"));
+        assert!(extracted
+            .content_html
+            .contains(r#"src="https://mmbiz.qpic.cn/a.jpg""#));
+        assert!(extracted.content_html.contains("border: 1px solid green"));
+        // 容器外的骨架（如 js_content_footer）不会混进正文。
+        assert!(!extracted.content_html.contains("footer"));
+        // 图片进不了 readability 时字数仍按容器全文统计。
+        assert!(extracted.word_count > 0);
+        assert_eq!(extracted.markdown, None);
     }
 
     #[test]
@@ -3078,6 +3810,39 @@ mod reading_context_tests {
         let dir = tempfile::tempdir().unwrap();
         let store = ReadingStore::new(dir.path().join("reading"));
         (dir, store)
+    }
+
+    #[test]
+    fn legacy_wechat_rows_get_the_account_name_back() {
+        let (_d, store) = store();
+        let _ = store.list(); // 建库（此时还没有旧数据）。
+        let connection = rusqlite::Connection::open(store.root().join("reading.sqlite")).unwrap();
+        // 旧解析把作者名同时写进了 byline 和 site_name。
+        connection
+            .execute(
+                "INSERT INTO articles (id, url, title, site_name, byline, excerpt, content_html, word_count, added_at)
+                 VALUES ('wxold', 'https://mp.weixin.qq.com/s/old', '旧文', '徐泓镔', '徐泓镔', '原创 徐泓镔 腾讯云开发者', '<p>x</p>', 10, ?1),
+                        ('wxok',  'https://mp.weixin.qq.com/s/ok',  '新文', '腾讯云开发者', '徐泓镔', '原创 徐泓镔 腾讯云开发者', '<p>x</p>', 10, ?1)",
+                rusqlite::params![now_ms()],
+            )
+            .unwrap();
+        // 下一次连接触发规范化：旧行被纠正，正确行不动。
+        let article = store.get("wxold").unwrap().article;
+        assert_eq!(article.site_name, "腾讯云开发者");
+        assert_eq!(article.byline.as_deref(), Some("徐泓镔"));
+        let article = store.get("wxok").unwrap().article;
+        assert_eq!(article.site_name, "腾讯云开发者");
+        assert_eq!(article.byline.as_deref(), Some("徐泓镔"));
+        // 摘要不含公众号名的行（认不出次作者）保持原样。
+        connection
+            .execute(
+                "INSERT INTO articles (id, url, title, site_name, byline, excerpt, content_html, word_count, added_at)
+                 VALUES ('wxnone', 'https://mp.weixin.qq.com/s/none', '无摘要', '某人', '某人', '正文摘要，没有作者连排。', '<p>x</p>', 10, ?1)",
+                rusqlite::params![now_ms()],
+            )
+            .unwrap();
+        let article = store.get("wxnone").unwrap().article;
+        assert_eq!(article.site_name, "某人");
     }
 
     fn fixture_page(title: &str, body: &str) -> FetchedPage {
@@ -3323,6 +4088,121 @@ mod reading_context_tests {
         store.set_read(&id, true).unwrap();
         let index = store.export_project_index("proj-1").unwrap();
         assert!(index.contains("## 已阅读"));
+    }
+
+    #[test]
+    fn export_html_uses_title_filename_and_lands_images_in_img() {
+        let (_d, store) = store();
+        let id = seed(&store);
+        let image_dir = store.root().join("images").join(&id);
+        fs::create_dir_all(&image_dir).unwrap();
+        fs::write(image_dir.join("1.jpg"), b"fake").unwrap();
+        let connection = rusqlite::Connection::open(store.root().join("reading.sqlite")).unwrap();
+        connection
+            .execute(
+                "UPDATE articles SET title = ?2, content_html = ?3, markdown = NULL WHERE id = ?1",
+                rusqlite::params![
+                    id,
+                    "给AI写了800行规则",
+                    r#"<section style="border: 1px solid green"><p>正文</p><img src="images/1.jpg" alt="a"><img src="https://invalid.example/x.png"></section>"#,
+                ],
+            )
+            .unwrap();
+        let out_dir = tempfile::tempdir().unwrap();
+        let result = store
+            .export_article(&id, ReadingExportFormat::Html, out_dir.path())
+            .unwrap();
+        // 已本地化的 1.jpg 复制进 img/；下载失败的远程图保留原 URL。
+        assert_eq!(result.images, 1);
+        assert!(out_dir.path().join("img").join("1.jpg").exists());
+        let html = fs::read_to_string(&result.path).unwrap();
+        assert!(html.contains(r#"src="img/1.jpg""#));
+        assert!(html.contains("https://invalid.example/x.png"));
+        assert!(html.contains("border: 1px solid green"));
+        assert!(html.contains("原文链接"));
+        assert!(result
+            .path
+            .ends_with(&format!("{}.html", export_stem("给AI写了800行规则", &id))));
+    }
+
+    #[test]
+    fn export_reuses_title_filename_with_sequence_when_repeated() {
+        let (_d, store) = store();
+        let id = seed(&store);
+        let out_dir = tempfile::tempdir().unwrap();
+        let first = store
+            .export_article(&id, ReadingExportFormat::Html, out_dir.path())
+            .unwrap();
+        let second = store
+            .export_article(&id, ReadingExportFormat::Html, out_dir.path())
+            .unwrap();
+        assert!(first.path.ends_with(".html"));
+        assert!(second.path.ends_with("-2.html"));
+        assert_ne!(first.path, second.path);
+    }
+
+    #[test]
+    fn export_markdown_converts_html_when_stored_markdown_is_missing() {
+        let (_d, store) = store();
+        let id = seed(&store);
+        let image_dir = store.root().join("images").join(&id);
+        fs::create_dir_all(&image_dir).unwrap();
+        fs::write(image_dir.join("1.jpg"), b"fake").unwrap();
+        let connection = rusqlite::Connection::open(store.root().join("reading.sqlite")).unwrap();
+        connection
+            .execute(
+                "UPDATE articles SET title = ?2, content_html = ?3, markdown = NULL WHERE id = ?1",
+                rusqlite::params![
+                    id,
+                    "流程：x-flow 让 AI 可控",
+                    "<h2>01 背景</h2><ul><li>要点一</li><li>要点二</li></ul><p>第一段。</p><img src=\"images/1.jpg\" alt=\"a\">",
+                ],
+            )
+            .unwrap();
+        let out_dir = tempfile::tempdir().unwrap();
+        let result = store
+            .export_article(&id, ReadingExportFormat::Markdown, out_dir.path())
+            .unwrap();
+        assert!(result.path.ends_with(".md"));
+        let markdown = fs::read_to_string(&result.path).unwrap();
+        assert!(markdown.contains("# 流程：x-flow 让 AI 可控"));
+        assert!(markdown.contains("- 来源：example.com"));
+        assert!(markdown.contains("## 01 背景"));
+        assert!(markdown.contains("*   要点一"));
+        assert!(markdown.contains("![a](img/1.jpg)"));
+    }
+
+    #[test]
+    fn export_markdown_uses_stored_markdown_and_keeps_remote_images() {
+        let (_d, store) = store();
+        let id = seed(&store);
+        let connection = rusqlite::Connection::open(store.root().join("reading.sqlite")).unwrap();
+        connection
+            .execute(
+                "UPDATE articles SET markdown = ?2 WHERE id = ?1",
+                rusqlite::params![
+                    id,
+                    "![远程图](https://invalid.example/lost.png)\n\n正文第一段。"
+                ],
+            )
+            .unwrap();
+        let out_dir = tempfile::tempdir().unwrap();
+        let result = store
+            .export_article(&id, ReadingExportFormat::Markdown, out_dir.path())
+            .unwrap();
+        let markdown = fs::read_to_string(&result.path).unwrap();
+        // 下载失败的远程图保留原 URL，而不是被静默丢掉。
+        assert!(markdown.contains("https://invalid.example/lost.png"));
+        assert!(markdown.contains("正文第一段。"));
+    }
+
+    #[test]
+    fn export_stem_strips_forbidden_characters_and_truncates() {
+        assert_eq!(export_stem(r#"a/b\c:d*e?f"g<h>i|j"#, "id1"), "abcdefghij");
+        assert_eq!(export_stem("标题\n带  换行", "id2"), "标题带 换行");
+        assert_eq!(export_stem(&"长".repeat(100), "id3").chars().count(), 80);
+        assert_eq!(export_stem("...", "id4"), "article-id4");
+        assert_eq!(export_stem("", "id5"), "article-id5");
     }
 
     #[test]

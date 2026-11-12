@@ -822,6 +822,7 @@ pub fn run() {
             reading::reading_unlink_task,
             reading::reading_export_reference,
             reading::reading_export_project_index,
+            reading::reading_export_article,
             workspace::workspace_list,
             workspace::workspace_create,
             workspace::workspace_rename,
