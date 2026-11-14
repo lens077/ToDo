@@ -53,7 +53,7 @@ columns:
 - [ ] 定位 make check-quick 耗时超标（实测 245s，目标 <120s） <!--t:xfayi6--> #perf #ci !3
       ↳ 2026-11-12 实测：check-quick 245s（rust fmt+clippy+workspace test+contract check 约 190s，desktop web build + 静态站点约 40s）。目标 <120s；待定位耗时来源（疑似 clippy 全量 + 未命中增量缓存的 web 构建），不阻塞 onboarding。 <!--n:xfayi6-->
 - [x] 现代 Web 特性优化：IME 回车防护 + 站点 stagger 动画现代化 <!--t:mg31je--> #desktop #frontend !2
-      ↳ 2026-11-14 modern-web-guidance 扫描驱动：知识搜索/会话目标输入加 isComposing+keyCode229 防护（WebKit bug 165004 乱序场景）、ConfirmCompleteDialog window 级 Enter 加防护、web 站点 hero stagger 改 sibling-index()（@supports 回退）。验证：tsc 绿、desktop build 绿、e2e 162 通过 0 失败、legacy-scan web 清零、desktop 余 1 条为 TaskCard 文章级快捷键（指南 dropWhen 排除的误报）。commits a55de99/7d454c4，见 docs/verification-log.md 2026-11-14 <!--n:mg31je-->
+      ↳ 2026-11-14 modern-web-guidance 扫描驱动：知识搜索/会话目标输入加 isComposing+keyCode229 防护（WebKit bug 165004 乱序场景）、ConfirmCompleteDialog window 级 Enter 加防护、web 站点 hero stagger 改 sibling-index()（@supports 回退）。验证：tsc 绿、desktop build 绿、e2e 162 通过 0 失败、legacy-scan web 清零、desktop 余 1 条为 TaskCard 文章级快捷键（指南 dropWhen 排除的误报）。已合入 main 并推送（commits 945ae8b/e1c29d5，rebase 前为 a55de99/7d454c4），见 docs/verification-log.md 2026-11-14 <!--n:mg31je-->
 
 ## Doing
 - [ ] 人工验收看板任务写回 TODO.md <!--t:h4m9zc--> #desktop #manual !1 ^3000
