@@ -1185,3 +1185,11 @@ Session 存为项目内 Markdown（`<project>/.virgo/sessions/s-<ts>.md`），�
 2. **实现**：`connect()` 挂一次性规范化 `normalize_wechat_site_names`：对微信文章且 site_name == byline 的行，从摘要（og:description「原创 作者 公众号」连排）认出公众号名并 UPDATE 回写；认不出或已正确的行不动（重复执行空转）。
 3. **验证**：46 个 reading 测试通过（新增旧行修复测试：旧行纠正/正确行不动/认不出保持原样）；真实库 rjqcboc29qui3 行已被自动修复为 byline=徐泓镔 site_name=腾讯云开发者；`make check-quick` 绿（92s）。
 4. **待用户操作**：无需重新解析，重进文章/列表即显示两个作者。
+
+## 2026-11-14 现代 Web 特性优化：IME 回车防护 + 站点 stagger 动画现代化（通过）
+
+1. **来源**：按 modern-web-guidance 技能流程对 `apps/desktop/src`、`web/src` 跑 legacy-scan（3+1 条确定性发现）并补充目录检索，逐条对照 keepWhen/dropWhen 核实。
+2. **IME 防护（desktop）**：知识搜索框（ProjectDetailPanel）与会话目标输入的 Enter 监听加 `isComposing || keyCode === 229` 防护——WebKit bug 165004 会把确认回车的 compositionend 乱序送达，单靠 isComposing 在 Safari 引擎（macOS WKWebView 即 Tauri 运行时）漏判；ConfirmCompleteDialog 的 window 级 Enter 同样加防护。Cmd/Ctrl+Enter 路径按指南无需处理；TaskCard 的 Enter/F2 是文章级快捷键（非文本输入提交），按指南 dropWhen 判误报不改。
+3. **站点 stagger（web）**：hero 入场 3 条 :nth-child 延迟规则收敛为 `calc((sibling-index() - 1) * 0.06s)` 单条（@supports 双向包裹，不支持的引擎回退原延迟）；顺带修正第 5 个子元素（.fine）此前延迟为 0 的次序问题。
+4. **验证**：`tsc -b` 绿；desktop vite build 绿（既有 dynamic-import 警告与本次无关）；e2e chromium+mobile 162 通过 / 0 失败（含知识搜索、开发会话 begin、确认完成门路径）；legacy-scan 复跑 web/src 0 条、desktop 余 1 条即上述误报；`make check-quick` 绿（53s）；`todo lint` no issues。
+5. **分支**：`modern-web-optimization`（a55de99 / 7d454c4），任务 `mg31je`。

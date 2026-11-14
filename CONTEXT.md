@@ -48,3 +48,4 @@ _Avoid_: Daily task list, separate inbox
 - 进行中：M0 收口——恢复完整门禁（`make check`）并把上述成果按模块提交进 Git。
 - 阻塞项：可分发的桌面端 release（缺 Developer ID 签名与 Apple 公证凭据，`TODO.md` `d3l8hn`）；赞助生产切换（等支付宝签约，`TODO.md` `3nd6da`）。
 - 2026-11-13：阅读功能两项落地——微信内联样式保留（readabilityrs `clean_styles(false)` + ammonia 声明级 style 过滤，存量文章需重新解析）与另存为 HTML/Markdown（目录选择器 + `img/` 图片目录 + 标题文件名，任务2）；自动门禁全绿，真机验收待办（`TODO.md` `wst7k4` / `sv2md9`）。
+- 2026-11-14：现代 Web 特性优化（分支 `modern-web-optimization`）——桌面端三处 Enter 提交加 IME 组字防护（isComposing + keyCode 229，覆盖 WebKit 乱序 bug），站点 hero stagger 换 sibling-index() 带 @supports 回退；tsc / vite build / e2e 162 通过全绿，详见 `docs/verification-log.md` 2026-11-14（`TODO.md` `mg31je`）。
