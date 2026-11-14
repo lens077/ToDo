@@ -28,7 +28,8 @@ export function ConfirmCompleteDialog({ task, busy, onCancel, onConfirm }: Confi
       if (event.key === 'Escape') {
         event.preventDefault();
         onCancel();
-      } else if (event.key === 'Enter') {
+      } else if (event.key === 'Enter' && !(event.isComposing || event.keyCode === 229)) {
+        // Window-level Enter must not fire while an IME composition is being confirmed.
         event.preventDefault();
         onConfirm();
       }

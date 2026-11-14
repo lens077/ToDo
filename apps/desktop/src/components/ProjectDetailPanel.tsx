@@ -405,7 +405,11 @@ export function ProjectDetailPanel({ projectId, projectName }: ProjectDetailPane
             placeholder="全文搜索（标题与正文）"
             aria-label="搜索知识文档"
             onChange={(event) => setKnowledgeQuery(event.target.value)}
-            onKeyDown={(event) => { if (event.key === 'Enter') void searchDocuments(); }}
+            onKeyDown={(event) => {
+              // Enter confirms an active IME composition (keyCode 229: Safari reports
+              // the confirming keystroke after compositionend) instead of searching.
+              if (event.key === 'Enter' && !(event.nativeEvent.isComposing || event.keyCode === 229)) void searchDocuments();
+            }}
           />
           <button type="button" className="ws-tool" disabled={busy !== null || !knowledgeQuery.trim()} onClick={() => void searchDocuments()}>
             <Icon name="folder" /> 搜索
@@ -582,7 +586,8 @@ export function ProjectDetailPanel({ projectId, projectName }: ProjectDetailPane
               placeholder="本次会话目标，例如：接入 watcher 增量扫描"
               onChange={(event) => setSessionGoal(event.target.value)}
               onKeyDown={(event) => {
-                if (event.key === 'Enter' && sessionGoal.trim()) void beginSession();
+                // IME-safe: a composing Enter confirms character conversion, not the session goal.
+                if (event.key === 'Enter' && !(event.nativeEvent.isComposing || event.keyCode === 229) && sessionGoal.trim()) void beginSession();
               }}
             />
             <button type="button" className="button-primary" disabled={busy !== null || !sessionGoal.trim()} onClick={() => void beginSession()}>
