@@ -1201,4 +1201,3 @@ Session 存为项目内 Markdown（`<project>/.virgo/sessions/s-<ts>.md`），�
 3. **告知**：设置页新增「剪贴板」分组，说明读取时机（进入阅读视图时一次）、范围（只识别 http(s) 链接，其他文字不保存不上传）与关闭后果（自动发现并导入复制链接失效，需手动粘贴）；阅读视图标题旁常驻一行同样提示。
 4. **关闭后行为**：`ReadingView` 的读取 effect 以设置项为门闩，关闭时直接清空提示且不调用 `reading_clipboard_text` / `navigator.clipboard.readText()`；重新打开开关后立即恢复读取。手动粘贴、批量导入、「从浏览器保存」不受影响。
 5. **验证**：`tsc -b` 绿；`playwright test` 全量 165 passed / 16 skipped；新增 3 条 reading e2e——开启时提示链接且「忽略」后不再打扰、存档关闭时读取次数为 0、在设置页关闭开关后再进阅读无提示且读取次数为 0。
-
