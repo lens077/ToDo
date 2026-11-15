@@ -1,4 +1,5 @@
 import * as React from 'react';
+import { createPortal } from 'react-dom';
 import type { Capture, DesktopColumn, DesktopSnapshot, TriageResult } from '../lib/desktop';
 import type { PartialTriageState } from '../hooks/useDesktop';
 import { formatCaptureTime, shortId } from '../lib/format';
@@ -25,6 +26,165 @@ interface CaptureItemProps {
   partial?: PartialTriageState;
   onDelete: (id: string) => Promise<boolean>;
   onTriage: (id: string, column: string) => Promise<TriageResult | null>;
+}
+
+interface TriageColumnPickerProps {
+  value: string;
+  columns: DesktopColumn[];
+  disabled: boolean;
+  onChange: (column: string) => void;
+}
+
+interface PickerPosition {
+  left: number;
+  width: number;
+  top?: number;
+  bottom?: number;
+}
+
+/**
+ * Narrow-screen-safe column picker. The native `<select>` popup is drawn by the
+ * OS (blue highlight, 12px rows) and its arrow cannot be placed by the app, so
+ * the triage target uses an app-owned listbox: readable type, 44px rows on
+ * touch, and the check mark sits at the end of the selected row.
+ */
+function TriageColumnPicker({ value, columns, disabled, onChange }: TriageColumnPickerProps) {
+  const [open, setOpen] = React.useState(false);
+  const [activeIndex, setActiveIndex] = React.useState(0);
+  const [position, setPosition] = React.useState<PickerPosition | null>(null);
+  const triggerRef = React.useRef<HTMLButtonElement>(null);
+  const listRef = React.useRef<HTMLDivElement>(null);
+  const listId = React.useId();
+  const selectedIndex = Math.max(0, columns.findIndex((item) => item.id === value));
+  const selected = columns.find((item) => item.id === value);
+
+  const measure = React.useCallback(() => {
+    const trigger = triggerRef.current;
+    if (!trigger) return;
+    const rect = trigger.getBoundingClientRect();
+    const width = Math.max(rect.width, 208);
+    const left = Math.min(Math.max(10, rect.left), Math.max(10, window.innerWidth - width - 10));
+    const estimated = Math.min(columns.length * 46 + 12, 336);
+    const above = window.innerHeight - rect.bottom < estimated + 12 && rect.top > window.innerHeight - rect.bottom;
+    setPosition(
+      above
+        ? { left, width, bottom: window.innerHeight - rect.top + 6 }
+        : { left, width, top: rect.bottom + 6 },
+    );
+  }, [columns.length]);
+
+  const close = React.useCallback((restoreFocus: boolean) => {
+    setOpen(false);
+    if (restoreFocus) triggerRef.current?.focus();
+  }, []);
+
+  React.useEffect(() => {
+    if (!open) return;
+    measure();
+    const dismiss = () => setOpen(false);
+    const onPointerDown = (event: PointerEvent) => {
+      const target = event.target as Node;
+      if (listRef.current?.contains(target) || triggerRef.current?.contains(target)) return;
+      dismiss();
+    };
+    const onScroll = (event: Event) => {
+      // Scrolling inside the list (to reach the active row) must not close it.
+      if (event.target instanceof Node && listRef.current?.contains(event.target)) return;
+      dismiss();
+    };
+    window.addEventListener('resize', dismiss);
+    window.addEventListener('scroll', onScroll, true);
+    document.addEventListener('pointerdown', onPointerDown);
+    return () => {
+      window.removeEventListener('resize', dismiss);
+      window.removeEventListener('scroll', onScroll, true);
+      document.removeEventListener('pointerdown', onPointerDown);
+    };
+  }, [open, measure]);
+
+  React.useEffect(() => {
+    if (!open || !position) return;
+    listRef.current?.focus();
+    listRef.current?.querySelector<HTMLElement>('[data-active="true"]')?.scrollIntoView({ block: 'nearest' });
+  }, [open, position, activeIndex]);
+
+  const pick = (column: string) => {
+    onChange(column);
+    close(true);
+  };
+
+  const onListKeyDown = (event: React.KeyboardEvent) => {
+    if (event.key === 'Escape' || event.key === 'Tab') {
+      if (event.key === 'Escape') event.preventDefault();
+      close(true);
+    } else if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+      event.preventDefault();
+      setActiveIndex((index) => Math.min(columns.length - 1, Math.max(0, index + (event.key === 'ArrowDown' ? 1 : -1))));
+    } else if (event.key === 'Home' || event.key === 'End') {
+      event.preventDefault();
+      setActiveIndex(event.key === 'Home' ? 0 : columns.length - 1);
+    } else if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      const column = columns[activeIndex];
+      if (column) pick(column.id);
+    }
+  };
+
+  return (
+    <div className="column-picker">
+      <button
+        ref={triggerRef}
+        type="button"
+        className={`column-picker__trigger${open ? ' is-open' : ''}`}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        aria-controls={open ? listId : undefined}
+        aria-label="选择目标列"
+        disabled={disabled || !columns.length}
+        onClick={() => (open ? close(false) : (setActiveIndex(selectedIndex), setOpen(true)))}
+        onKeyDown={(event) => {
+          if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return;
+          event.preventDefault();
+          if (open) return;
+          setActiveIndex(selectedIndex);
+          setOpen(true);
+        }}
+      >
+        <span className="column-picker__value">{selected?.name ?? '选择列'}</span>
+        <Icon name="chevron" />
+      </button>
+      {open && position
+        ? createPortal(
+            <div
+              ref={listRef}
+              id={listId}
+              className="column-picker__menu"
+              role="listbox"
+              aria-label="选择目标列"
+              tabIndex={-1}
+              style={{ left: position.left, width: position.width, top: position.top, bottom: position.bottom }}
+              onKeyDown={onListKeyDown}
+            >
+              {columns.map((column, index) => (
+                <div
+                  key={column.id}
+                  role="option"
+                  aria-selected={column.id === value}
+                  data-active={index === activeIndex}
+                  className={`column-picker__option${column.id === value ? ' is-selected' : ''}${index === activeIndex ? ' is-active' : ''}`}
+                  onPointerEnter={() => setActiveIndex(index)}
+                  onClick={() => pick(column.id)}
+                >
+                  <span>{column.name}</span>
+                  {column.id === value && <Icon name="check" />}
+                </div>
+              ))}
+            </div>,
+            document.body,
+          )
+        : null}
+    </div>
+  );
 }
 
 function CaptureItem({ capture, columns, busy, readOnly, partial, onDelete, onTriage }: CaptureItemProps) {
@@ -57,16 +217,12 @@ function CaptureItem({ capture, columns, busy, readOnly, partial, onDelete, onTr
         </div>
       ) : (
         <div className="capture-item__triage">
-          <label>
-            <span className="sr-only">选择目标列</span>
-            <select value={column} onChange={(event) => setColumn(event.target.value)} disabled={readOnly || !columns.length || busy}>
-              {columns.map((item) => (
-                <option key={item.id} value={item.id}>
-                  {item.name}
-                </option>
-              ))}
-            </select>
-          </label>
+          <TriageColumnPicker
+            value={column}
+            columns={columns}
+            disabled={readOnly || !columns.length || busy}
+            onChange={setColumn}
+          />
           <button
             className="text-action text-action--primary"
             type="button"
