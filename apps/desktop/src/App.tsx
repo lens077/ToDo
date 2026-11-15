@@ -442,11 +442,16 @@ export function App() {
           quadrant: unrankedCount,
           ai: aiFeed.attention,
         }}
-        onChangeView={setActiveView}
+        onChangeView={(view) => {
+          // 底部导航在设置页打开时仍可见：切换视图即离开设置。
+          setActiveView(view);
+          setSettingsOpen(false);
+        }}
         onOpenSettings={() => {
           setSettingsSection(null);
-          setSettingsOpen(true);
+          setSettingsOpen((open) => !open);
         }}
+        settingsOpen={settingsOpen}
         onEditTabs={() => {
           setSettingsSection('tabs');
           setSettingsOpen(true);

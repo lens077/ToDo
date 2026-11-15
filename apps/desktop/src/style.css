@@ -1896,12 +1896,22 @@
   .completion-outcomes { grid-template-columns: 1fr; }
   .completion-panel__actions { position: sticky; bottom: -14px; margin-inline: -14px; padding: 11px 14px calc(11px + env(safe-area-inset-bottom)); background: var(--panel); border-top: 1px solid var(--hairline); }
   .provider-dialog { padding: max(8px, env(safe-area-inset-top)) max(8px, env(safe-area-inset-right)) max(8px, env(safe-area-inset-bottom)) max(8px, env(safe-area-inset-left)); }
-  /* 设置：窄屏不套遮罩浮层，直接铺满整页——手机上再弹一层窗只会多一次点击。 */
-  .provider-dialog.settings-dialog { display: block; padding: 0; background: var(--bg); }
+  /* 设置：窄屏下占据工作区那一行，底部导航留在原位；不再盖住导航，也不再套遮罩。 */
+  .provider-dialog.settings-dialog {
+    position: relative;
+    inset: auto;
+    grid-row: 1;
+    grid-column: 1;
+    display: block;
+    min-width: 0;
+    min-height: 0;
+    overflow: hidden;
+    padding: 0;
+    background: var(--bg);
+  }
   .settings-dialog .settings-panel {
     width: 100%;
     height: 100%;
-    height: 100dvh;
     max-height: none;
     border: 0;
     border-radius: 0;
@@ -1916,10 +1926,11 @@
     background: var(--panel);
   }
   .settings-panel__header h2 { font-size: 19px; }
-  .settings-panel__close { width: 44px; height: 44px; }
+  /* 底部导航就是返回入口，标题栏不再保留关闭按钮。 */
+  .settings-panel__close { display: none; }
   .settings-body {
     gap: 22px;
-    padding: 16px calc(16px + env(safe-area-inset-right)) calc(28px + env(safe-area-inset-bottom)) calc(16px + env(safe-area-inset-left));
+    padding: 16px calc(16px + env(safe-area-inset-right)) 28px calc(16px + env(safe-area-inset-left));
   }
   .provider-panel { max-height: calc(100vh - 16px); max-height: calc(100dvh - 16px); }
   .provider-panel__header { align-items: start; padding: 18px 16px 14px; }

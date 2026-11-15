@@ -174,8 +174,8 @@ test('tab editor adds and removes views within the two-to-six clamp', async ({ p
   await expect(editor.getByRole('status')).toContainText('至少保留 2 个视图');
   await expect(editor.getByRole('button', { name: '移除阅读' })).toBeDisabled();
 
-  // Closing the dialog is enough: the bar already reflects the new order.
-  await page.getByRole('button', { name: '关闭设置' }).click();
+  // Closing the page is enough: the bar already reflects the new order.
+  await page.getByRole('button', { name: '我的' }).click();
   const labels: Array<string | null> = [];
   for (const button of await page.getByRole('navigation', { name: '底部导航' }).getByRole('button').all()) {
     labels.push(await button.getAttribute('aria-label'));
@@ -214,13 +214,13 @@ test('badges only appear on views that are in the bar', async ({ page }) => {
 
   await page.getByRole('button', { name: '我的' }).click();
   await page.locator('.settings-tabs').getByRole('button', { name: '加入AI' }).click();
-  await page.getByRole('button', { name: '关闭设置' }).click();
+  await page.getByRole('button', { name: '我的' }).click();
   await expect(bar.getByRole('button', { name: 'AI' }).locator('.mobile-tab-bar__count')).toHaveText(/^\d+$/);
 
   // Removing the view takes its badge with it.
   await page.getByRole('button', { name: '我的' }).click();
   await page.locator('.settings-tabs').getByRole('button', { name: '移除AI' }).click();
-  await page.getByRole('button', { name: '关闭设置' }).click();
+  await page.getByRole('button', { name: '我的' }).click();
   await expect(bar.getByRole('button', { name: 'AI' })).toHaveCount(0);
 });
 

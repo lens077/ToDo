@@ -21,6 +21,16 @@ export function SettingsDialog({ onClose, onOpenProviderSettings, onOpenWizard, 
   const [settings, update] = useAppSettings();
   const provider = readProviderSettings();
   const panelRef = React.useRef<HTMLElement>(null);
+  // 窄屏下设置占的是工作区那一行，底部导航仍可操作，所以不再是模态浮层。
+  const [compact, setCompact] = React.useState(() => window.matchMedia('(max-width: 719px)').matches);
+
+  React.useEffect(() => {
+    const query = window.matchMedia('(max-width: 719px)');
+    const sync = () => setCompact(query.matches);
+    sync();
+    query.addEventListener('change', sync);
+    return () => query.removeEventListener('change', sync);
+  }, []);
 
   React.useEffect(() => {
     if (initialSection !== 'tabs') return;
@@ -43,7 +53,7 @@ export function SettingsDialog({ onClose, onOpenProviderSettings, onOpenWizard, 
         if (event.target === event.currentTarget) onClose();
       }}
     >
-      <section className="settings-panel" role="dialog" aria-modal="true" aria-labelledby="settings-title" ref={panelRef}>
+      <section className="settings-panel" role="dialog" aria-modal={compact ? undefined : true} aria-labelledby="settings-title" ref={panelRef}>
         <header className="settings-panel__header">
           <h2 id="settings-title">设置</h2>
           <button type="button" className="icon-action settings-panel__close" aria-label="关闭设置" onClick={onClose}>

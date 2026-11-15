@@ -12,6 +12,8 @@ interface MobileTabBarProps {
   counts: Partial<Record<MainView, number>>;
   onChangeView: (view: MainView) => void;
   onOpenSettings: () => void;
+  /** Settings is a page on narrow screens, so 「我的」 stays lit while it is open. */
+  settingsOpen?: boolean;
   /** Long-press on any non-fixed tab: open settings at the tab editor. */
   onEditTabs: () => void;
 }
@@ -21,7 +23,7 @@ interface MobileTabBarProps {
  * slot on the far right, which is the way into settings and every view that
  * did not fit in the bar.
  */
-export function MobileTabBar({ activeView, counts, onChangeView, onOpenSettings, onEditTabs }: MobileTabBarProps) {
+export function MobileTabBar({ activeView, counts, onChangeView, onOpenSettings, settingsOpen, onEditTabs }: MobileTabBarProps) {
   const [settings] = useAppSettings();
   const tabs = settings.mobileTabBar.order;
   const holdRef = React.useRef<{ x: number; y: number; timer: number } | null>(null);
@@ -73,7 +75,7 @@ export function MobileTabBar({ activeView, counts, onChangeView, onOpenSettings,
       {tabs.map((id) => {
         const item = navItems.find((candidate) => candidate.id === id);
         if (!item) return null;
-        const active = activeView === id;
+        const active = activeView === id && !settingsOpen;
         const count = counts[id] ?? 0;
         return (
           <button
@@ -97,8 +99,9 @@ export function MobileTabBar({ activeView, counts, onChangeView, onOpenSettings,
       })}
       <button
         type="button"
-        className="mobile-tab-bar__me"
+        className={`mobile-tab-bar__me${settingsOpen ? ' is-active' : ''}`}
         aria-label="我的"
+        aria-current={settingsOpen ? 'page' : undefined}
         title="我的"
         onClick={onOpenSettings}
       >
