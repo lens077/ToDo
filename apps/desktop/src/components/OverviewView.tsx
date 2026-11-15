@@ -71,12 +71,13 @@ export function OverviewView() {
         )}
       </div>
 
-      <div className="reading-filters" role="group" aria-label="按状态筛选">
+      <div className="due-summary reading-filters" role="group" aria-label="按状态筛选">
         {FILTERS.map((item) => (
           <button
             key={item.id}
             type="button"
-            className={filter === item.id ? 'is-active' : undefined}
+            className={`due-summary__chip${filter === item.id ? ' is-active' : ''}`}
+            aria-pressed={filter === item.id}
             onClick={() => setFilter(item.id)}
           >
             {item.label}

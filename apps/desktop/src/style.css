@@ -1551,6 +1551,8 @@
   .column-empty { min-height: 72px; padding-block: 15px; }
 
   .due-summary { flex-wrap: wrap; }
+  .due-summary__chip { min-height: 36px; padding: 0 13px; font-size: 13.5px; }
+  .due-summary__chip strong { font-size: 13px; }
 
   .inline-capture,
   .capture-ledger { margin-inline: calc(14px + env(safe-area-inset-left)) calc(14px + env(safe-area-inset-right)); }
@@ -1894,6 +1896,31 @@
   .completion-outcomes { grid-template-columns: 1fr; }
   .completion-panel__actions { position: sticky; bottom: -14px; margin-inline: -14px; padding: 11px 14px calc(11px + env(safe-area-inset-bottom)); background: var(--panel); border-top: 1px solid var(--hairline); }
   .provider-dialog { padding: max(8px, env(safe-area-inset-top)) max(8px, env(safe-area-inset-right)) max(8px, env(safe-area-inset-bottom)) max(8px, env(safe-area-inset-left)); }
+  /* 设置：窄屏不套遮罩浮层，直接铺满整页——手机上再弹一层窗只会多一次点击。 */
+  .provider-dialog.settings-dialog { display: block; padding: 0; background: var(--bg); }
+  .settings-dialog .settings-panel {
+    width: 100%;
+    height: 100%;
+    height: 100dvh;
+    max-height: none;
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
+    animation: none;
+  }
+  .settings-panel__header {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    padding: calc(10px + env(safe-area-inset-top)) calc(12px + env(safe-area-inset-right)) 8px calc(18px + env(safe-area-inset-left));
+    background: var(--panel);
+  }
+  .settings-panel__header h2 { font-size: 19px; }
+  .settings-panel__close { width: 44px; height: 44px; }
+  .settings-body {
+    gap: 22px;
+    padding: 16px calc(16px + env(safe-area-inset-right)) calc(28px + env(safe-area-inset-bottom)) calc(16px + env(safe-area-inset-left));
+  }
   .provider-panel { max-height: calc(100vh - 16px); max-height: calc(100dvh - 16px); }
   .provider-panel__header { align-items: start; padding: 18px 16px 14px; }
   .provider-panel__header h2 { font-size: 18px; }

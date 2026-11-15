@@ -37,7 +37,7 @@ export function SettingsDialog({ onClose, onOpenProviderSettings, onOpenWizard, 
 
   return (
     <div
-      className="provider-dialog"
+      className="provider-dialog settings-dialog"
       role="presentation"
       onMouseDown={(event) => {
         if (event.target === event.currentTarget) onClose();
