@@ -1072,10 +1072,12 @@
   .reading-add__icon svg { width: 16px; height: 16px; }
   .reading-add input { min-width: 0; height: 36px; padding: 0 6px; color: var(--ink); background: transparent; border: 0; outline: 0; font-size: 14px; }
   .reading-add input::placeholder { color: var(--ink-3); }
-  .reading-add > button, .reading-add__actions > button { height: 36px; min-width: 72px; padding: 0 16px; color: var(--primary-ink); background: var(--primary-fill); border: 0; border-radius: var(--radius-control); font-size: 13.5px; font-weight: 500; transition: background 0.3s var(--ease-out); white-space: nowrap; }
-  .reading-add > button:hover:not(:disabled), .reading-add__actions > button:hover:not(:disabled) { background: var(--primary-fill-hover); }
-  .reading-add > button:disabled, .reading-add__actions > button:disabled { color: var(--ink-3); background: var(--panel-2); }
-  .reading-add__actions { display: flex; align-items: center; gap: 6px; }
+  .reading-add > button, .reading-add__actions > button, .reading-add .reading-sync > button { height: 36px; min-width: 72px; padding: 0 16px; color: var(--primary-ink); background: var(--primary-fill); border: 0; border-radius: var(--radius-control); font-size: 13.5px; font-weight: 500; transition: background 0.3s var(--ease-out); white-space: nowrap; }
+  .reading-add > button:hover:not(:disabled), .reading-add__actions > button:hover:not(:disabled), .reading-add .reading-sync > button:hover:not(:disabled) { background: var(--primary-fill-hover); }
+  .reading-add > button:disabled, .reading-add__actions > button:disabled, .reading-add .reading-sync > button:disabled { color: var(--ink-3); background: var(--panel-2); }
+  /* 次要动作单独占一行，落在输入框同一列并从卡片内左对齐——否则它会被塞进
+     34px 宽的首列，按钮溢出到卡片外面。 */
+  .reading-add__actions { grid-column: 2 / -1; grid-row: 2; display: flex; align-items: center; gap: 6px; padding-top: 2px; }
   .reading-add__browser { color: var(--accent) !important; background: var(--accent-wash) !important; border: 1px solid var(--accent) !important; min-width: 104px !important; }
   .reading-add__error, .reading-add__status { grid-column: 2 / -1; padding: 4px 6px 2px; font-size: 12px; }
   .reading-add__error { color: var(--danger); }
