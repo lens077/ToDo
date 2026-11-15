@@ -61,6 +61,76 @@ test.describe('阅读', () => {
     await expect(input).toHaveValue('');
   });
 
+  test('offers a clipboard link once and stays quiet after 忽略', async ({ page }) => {
+    await page.addInitScript(() => {
+      const state = window as unknown as { __clipboardReads: number };
+      state.__clipboardReads = 0;
+      Object.defineProperty(navigator, 'clipboard', {
+        configurable: true,
+        value: {
+          readText: async () => {
+            state.__clipboardReads += 1;
+            return 'https://example.org/from-clipboard';
+          },
+        },
+      });
+    });
+    await openReading(page);
+    const banner = page.locator('.reading-clipboard');
+    await expect(banner).toContainText('example.org');
+    // 忽略后同一条内容不再打扰。
+    await banner.getByRole('button', { name: '忽略' }).click();
+    await expect(banner).toHaveCount(0);
+  });
+
+  test('does not touch the clipboard when the setting is off', async ({ page }) => {
+    await page.addInitScript(() => {
+      window.localStorage.setItem('todo.app-settings.v1', JSON.stringify({ clipboardImport: false }));
+      const state = window as unknown as { __clipboardReads: number };
+      state.__clipboardReads = 0;
+      Object.defineProperty(navigator, 'clipboard', {
+        configurable: true,
+        value: {
+          readText: async () => {
+            state.__clipboardReads += 1;
+            return 'https://example.org/from-clipboard';
+          },
+        },
+      });
+    });
+    await openReading(page);
+    await expect(page.locator('.reading-clipboard')).toHaveCount(0);
+    expect(await page.evaluate(() => (window as unknown as { __clipboardReads: number }).__clipboardReads)).toBe(0);
+  });
+
+  test('switching clipboard reading off in 设置 stops the 阅读 banner', async ({ page }) => {
+    await page.addInitScript(() => {
+      const state = window as unknown as { __clipboardReads: number };
+      state.__clipboardReads = 0;
+      Object.defineProperty(navigator, 'clipboard', {
+        configurable: true,
+        value: {
+          readText: async () => {
+            state.__clipboardReads += 1;
+            return 'https://example.org/from-clipboard';
+          },
+        },
+      });
+    });
+    await page.goto('/');
+    await page.getByRole('button', { name: '设置', exact: true }).click();
+    const settings = page.getByRole('dialog', { name: '设置' });
+    const toggle = settings.getByRole('switch', { name: '读取剪贴板识别链接' });
+    await expect(toggle).toBeChecked();
+    await toggle.click();
+    await settings.getByRole('button', { name: '关闭设置' }).click();
+
+    await nav(page).click();
+    await expect(page.getByRole('heading', { name: '阅读', level: 1 })).toBeVisible();
+    await expect(page.locator('.reading-clipboard')).toHaveCount(0);
+    expect(await page.evaluate(() => (window as unknown as { __clipboardReads: number }).__clipboardReads)).toBe(0);
+  });
+
   test('reopening restores the last position, offers 从头开始, and shows the marker', async ({ page }) => {
     await openReading(page);
     await page.getByRole('button', { name: '继续阅读 · 42%' }).click();

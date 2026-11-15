@@ -1193,3 +1193,12 @@ Session 存为项目内 Markdown（`<project>/.virgo/sessions/s-<ts>.md`），�
 3. **站点 stagger（web）**：hero 入场 3 条 :nth-child 延迟规则收敛为 `calc((sibling-index() - 1) * 0.06s)` 单条（@supports 双向包裹，不支持的引擎回退原延迟）；顺带修正第 5 个子元素（.fine）此前延迟为 0 的次序问题。
 4. **验证**：`tsc -b` 绿；desktop vite build 绿（既有 dynamic-import 警告与本次无关）；e2e chromium+mobile 162 通过 / 0 失败（含知识搜索、开发会话 begin、确认完成门路径）；legacy-scan 复跑 web/src 0 条、desktop 余 1 条即上述误报；`make check-quick` 绿（53s）；`todo lint` no issues。
 5. **分支**：`modern-web-optimization`（已合入 main；提交 945ae8b / e1c29d5，rebase 前为 a55de99 / 7d454c4），任务 `mg31je`。
+
+## 2026-11-15 剪贴板读取开关 + 明示告知（通过）
+
+1. **问题**：应用只在进入阅读视图时读取一次剪贴板识别 http(s) 链接，但设置页没有任何告知，也没有关闭入口；用户无法拒绝这一行为。
+2. **设置项**：`AppSettings` 新增 `clipboardImport`（默认开，`todo.app-settings.v1` 内持久化，旧存档缺少该键时按默认值补齐）。
+3. **告知**：设置页新增「剪贴板」分组，说明读取时机（进入阅读视图时一次）、范围（只识别 http(s) 链接，其他文字不保存不上传）与关闭后果（自动发现并导入复制链接失效，需手动粘贴）；阅读视图标题旁常驻一行同样提示。
+4. **关闭后行为**：`ReadingView` 的读取 effect 以设置项为门闩，关闭时直接清空提示且不调用 `reading_clipboard_text` / `navigator.clipboard.readText()`；重新打开开关后立即恢复读取。手动粘贴、批量导入、「从浏览器保存」不受影响。
+5. **验证**：`tsc -b` 绿；`playwright test` 全量 165 passed / 16 skipped；新增 3 条 reading e2e——开启时提示链接且「忽略」后不再打扰、存档关闭时读取次数为 0、在设置页关闭开关后再进阅读无提示且读取次数为 0。
+

@@ -87,6 +87,29 @@ export function SettingsDialog({ onClose, onOpenProviderSettings, onOpenWizard, 
             </label>
           </section>
 
+          <section className="settings-group" aria-labelledby="settings-clipboard">
+            <h3 id="settings-clipboard">剪贴板</h3>
+            <label className="settings-row">
+              <span className="settings-row__copy">
+                <strong>读取剪贴板识别链接</strong>
+                <span>
+                  进入阅读视图时会读取一次剪贴板，只识别其中的 http(s) 链接，用来询问是否导入阅读库。复制的其他文字不会被保存，也不会上传。
+                  关闭后不再自动读取剪贴板：复制链接后自动发现并导入文章的功能会失效，需要在阅读视图里手动粘贴链接。
+                </span>
+              </span>
+              <span className="switch">
+                <input
+                  type="checkbox"
+                  role="switch"
+                  checked={settings.clipboardImport}
+                  aria-label="读取剪贴板识别链接"
+                  onChange={(event) => update({ clipboardImport: event.target.checked })}
+                />
+                <span className="switch__track" aria-hidden="true" />
+              </span>
+            </label>
+          </section>
+
           <section className="settings-group" aria-labelledby="settings-density">
             <h3 id="settings-density">布局密度</h3>
             <div className="settings-row settings-row--stack">

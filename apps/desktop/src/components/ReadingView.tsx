@@ -14,6 +14,7 @@ import {
   type ReadingFilter,
 } from '../lib/reading';
 import { Icon } from './Icon';
+import { useAppSettings } from '../lib/appSettings';
 import {
   markClipboardHandled,
   readClipboardLinks,
@@ -182,11 +183,17 @@ export function ReadingView({ model }: ReadingViewProps) {
   const [batchScope, setBatchScope] = React.useState<BatchScope>('all');
   const [batchDraft, setBatchDraft] = React.useState('');
   const [clipboard, setClipboard] = React.useState<ClipboardCandidate | null>(null);
+  const [settings] = useAppSettings();
   const counts = React.useMemo(() => countByState(model.articles), [model.articles]);
   const batchUrls = React.useMemo(() => extractBatchUrls(batchDraft, batchScope), [batchDraft, batchScope]);
 
   // 每次进阅读视图看一眼剪贴板；同一段内容只在第一次提示（指纹写在 localStorage）。
+  // 设置里关掉剪贴板读取后不再调用任何读取接口。
   React.useEffect(() => {
+    if (!settings.clipboardImport) {
+      setClipboard(null);
+      return;
+    }
     let cancelled = false;
     void readClipboardLinks().then((candidate) => {
       if (!cancelled) setClipboard(candidate);
@@ -194,7 +201,7 @@ export function ReadingView({ model }: ReadingViewProps) {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [settings.clipboardImport]);
 
   const dismissClipboard = () => {
     if (clipboard) markClipboardHandled(clipboard.fingerprint);
@@ -249,7 +256,7 @@ export function ReadingView({ model }: ReadingViewProps) {
             <span>{counts.read} 篇已读</span>
           </p>
         </div>
-        <p className="view-heading__note">粘贴任意链接，正文与图片会保存到本机；标记与笔记只记在本机，不写入项目。</p>
+        <p className="view-heading__note">粘贴任意链接，正文、标记与笔记只保存到本机。进入本视图时会读取一次剪贴板识别链接，可在设置里关闭。</p>
       </header>
 
       <form

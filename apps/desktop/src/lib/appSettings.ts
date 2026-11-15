@@ -69,6 +69,12 @@ export interface AppSettings {
    * the settings dialog; see lib/analytics.ts for exactly what is sent.
    */
   usageAnalytics: boolean;
+  /**
+   * Entering the reading view reads the clipboard once to spot copied http(s)
+   * links. Off means no clipboard read happens at all: auto-discovery of
+   * copied article links stops, manual paste into the reading input remains.
+   */
+  clipboardImport: boolean;
   mobileTabBar: MobileTabBarPreference;
 }
 
@@ -79,6 +85,7 @@ export const defaultAppSettings: AppSettings = {
   density: 'normal',
   openSession: 'reuse',
   usageAnalytics: true,
+  clipboardImport: true,
   mobileTabBar: defaultMobileTabBar,
 };
 
@@ -115,6 +122,7 @@ function normalize(value: unknown): AppSettings {
     density: isDensity(raw.density) ? raw.density : defaultAppSettings.density,
     openSession: isOpenSessionMode(raw.openSession) ? raw.openSession : defaultAppSettings.openSession,
     usageAnalytics: typeof raw.usageAnalytics === 'boolean' ? raw.usageAnalytics : defaultAppSettings.usageAnalytics,
+    clipboardImport: typeof raw.clipboardImport === 'boolean' ? raw.clipboardImport : defaultAppSettings.clipboardImport,
     mobileTabBar: normalizeMobileTabBar(raw.mobileTabBar),
   };
 }
