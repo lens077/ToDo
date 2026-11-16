@@ -1201,3 +1201,18 @@ Session 存为项目内 Markdown（`<project>/.virgo/sessions/s-<ts>.md`），�
 3. **告知**：设置页新增「剪贴板」分组，说明读取时机（进入阅读视图时一次）、范围（只识别 http(s) 链接，其他文字不保存不上传）与关闭后果（自动发现并导入复制链接失效，需手动粘贴）；阅读视图标题旁常驻一行同样提示。
 4. **关闭后行为**：`ReadingView` 的读取 effect 以设置项为门闩，关闭时直接清空提示且不调用 `reading_clipboard_text` / `navigator.clipboard.readText()`；重新打开开关后立即恢复读取。手动粘贴、批量导入、「从浏览器保存」不受影响。
 5. **验证**：`tsc -b` 绿；`playwright test` 全量 165 passed / 16 skipped；新增 3 条 reading e2e——开启时提示链接且「忽略」后不再打扰、存档关闭时读取次数为 0、在设置页关闭开关后再进阅读无提示且读取次数为 0。
+
+## 2026-11-15 阅读「标记与笔记」卡片动作区排版（通过）
+
+1. **问题**：截图里的两处失配。编辑态底栏用 `margin-left: auto` 把「删除标记」推到卡片最右端，与「保存 / 取消」之间留出一整块空白；同行的「保存」是 30px 实心按钮，「取消」走 `.text-action` 是 32px 轮廓按钮，两者高度与内边距不一致。阅读态把「添加笔记」用 `justify-self: start` 单独放一行，底栏里只有一段 11.5px 的「删除」落在右端，新增笔记入口与卡片工具分处两行。
+2. **实现**：两种状态共用一条底栏 `.reader-note__bar`（时间在左，`.reader-note__actions` 贴右），危险动作「删除标记 / 删除」作为动作组第一项，与确认动作分开但不再被单独甩到卡片另一端；「保存 / 取消」共用一套 28px 高、`0 11px` 内边距、12px 字号（实心 / 轮廓两种外观）；「编辑 / 删除」是卡片工具，悬停或键盘焦点内淡入，触摸设备（`hover: none`）与 ≤1000px 布局常显。
+3. **顺带修正**：页头原写「标记与笔记 N」而阅读列表卡片写「N 条笔记」，两处指的其实是同一份标注数组；框选一次未写笔记就会让两处数字对不上，页头改为「N 条标记 · M 条笔记」，列表卡片按 `annotation_count` 的本义改称「N 处标记」。
+4. **验证**：`tsc -b` 绿；`pnpm build`（desktop）绿；`playwright test --project=chromium` 154 passed / 16 skipped，`--project=mobile` 11 passed；reading.spec 更新两条断言（列表卡片「1 处标记」、页头「1 条标记 · 1 条笔记」）；`todo contract check` ok。窄屏（1000px 以下）笔记区被 40% 高度约束截断属于既有布局，本次未改动。
+
+## 2026-11-15 阅读窄列「标记与笔记」改为贴底抽屉（通过）
+
+1. **问题**：≤1000px 时 `.reader__columns` 改为单列两行，`.reader-notes` 在 auto 行里按 `max-height: 40%` 取高，百分比相对不确定高度的行解析后只量到 73px（10/900/760/390 四个宽度实测一致）；卡内容需要 103px、列表 `scrollH 131 / clientH 28`，结果只剩标题、第一张卡被裁成细边，且外层没有滚动容器，下面的卡都读不到。
+2. **实现**：窄列不再上下叠。`.reader__columns` 只保留一行，正文独占高度；`.reader-notes` 改为 `position: absolute` 的贴底抽屉（`max-height: 72%`、上圆角、`--shadow-dialog`、`z-index: 3`），收起时 `translateY` 移出并 `visibility: hidden`，打开时淡入 scrim（`--scrim`，`z-index: 2`）并 0.28s 弹入；`.reader-sheet-scrim` 显式 `display: block`（基础层曾写成 `display: none` 覆盖掉窄列规则，导致打开时没有遮罩）。
+3. **交互**：右下角常驻药丸开关（`highlighter` 图标 + 「标记与笔记」+ 琥珀计数，`aria-expanded` / `aria-controls`），标题右侧新增只在窄列渲染的关闭按钮；Escape 收起抽屉并跳过 `textarea`（编辑中的草稿不被取消）；点中正文标记时抽屉若开着就不回滚正文，避免把它挤到视野外。是否渲染抽屉外壳由 `matchMedia('(max-width: 1000px)')` 决定，宽列仍是常驻右栏、不出现开关。
+4. **验证**：`tsc -b` 绿；desktop `vite build` 绿；`playwright --project=chromium` 155 passed / 16 skipped（新增 `narrow widths fold the notes into a bottom sheet`：开关可见、抽屉收起时 `toBeHidden`、正文高度 >600px、打开后笔记卡完整落在抽屉内、Escape 与关闭按钮都能收起），`--project=mobile` 11 passed；1000 / 760 / 390 三个宽度浅色截图与 390 深色截图确认外观。
+5. **遗留**：抽屉不能拖拽调整高度；抽屉打开时正文被 scrim 遮住，暂不支持边读边写。

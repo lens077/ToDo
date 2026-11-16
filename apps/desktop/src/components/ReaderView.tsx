@@ -108,6 +108,14 @@ function NoteCard({ annotation, selected, editing, onSelect, onEdit, onCancel, o
     }
   };
 
+  // One time element for both states: the card's timestamp is a prop of the
+  // footer, not a second copy that could drift from 编辑 to 收起.
+  const stamp = (
+    <time className="reader-note__time" dateTime={new Date(annotation.updated_at).toISOString()} title={absoluteTime(annotation.updated_at)}>
+      {relativeTime(annotation.updated_at)}
+    </time>
+  );
+
   return (
     <article
       className={`reader-note${selected ? ' is-selected' : ''}${editing ? ' is-editing' : ''}`}
@@ -138,32 +146,52 @@ function NoteCard({ annotation, selected, editing, onSelect, onEdit, onCancel, o
               if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') void save();
             }}
           />
-          <div className="reader-note__actions">
-            <button type="submit" className="reader-note__save" disabled={saving}>{saving ? '保存中…' : '保存'}</button>
-            <button type="button" className="text-action" disabled={saving} onClick={onCancel}>取消</button>
-            <button type="button" className="text-action reader-note__delete" disabled={saving} onClick={onDelete}>删除标记</button>
+          <div className="reader-note__bar">
+            {stamp}
+            <div className="reader-note__actions">
+              <button type="button" className="reader-note__tool reader-note__delete" disabled={saving} onClick={onDelete}>删除标记</button>
+              <button type="button" className="reader-note__cancel" disabled={saving} onClick={onCancel}>取消</button>
+              <button type="submit" className="reader-note__save" disabled={saving}>{saving ? '保存中…' : '保存'}</button>
+            </div>
           </div>
         </form>
       ) : (
         <>
-          {annotation.note ? (
-            <p className="reader-note__text">{annotation.note}</p>
-          ) : (
-            <button type="button" className="reader-note__add" onClick={onEdit}>添加笔记</button>
-          )}
-          <footer className="reader-note__meta">
-            <time dateTime={new Date(annotation.updated_at).toISOString()} title={absoluteTime(annotation.updated_at)}>
-              {relativeTime(annotation.updated_at)}
-            </time>
-            {annotation.note && (
-              <button type="button" className="reader-note__edit" onClick={onEdit}>编辑</button>
-            )}
-            <button type="button" className="reader-note__edit reader-note__delete" onClick={onDelete}>删除</button>
-          </footer>
+          {annotation.note && <p className="reader-note__text">{annotation.note}</p>}
+          <div className="reader-note__bar">
+            {stamp}
+            <div className="reader-note__actions">
+              <button type="button" className="reader-note__tool reader-note__delete" onClick={onDelete}>删除</button>
+              {annotation.note ? (
+                <button type="button" className="reader-note__tool" onClick={onEdit}>编辑</button>
+              ) : (
+                <button type="button" className="reader-note__tool reader-note__add" onClick={onEdit}>添加笔记</button>
+              )}
+            </div>
+          </div>
         </>
       )}
     </article>
   );
+}
+
+/**
+ * The reader switches from two columns to a bottom sheet at 1000px. The sheet
+ * chrome (close button, scrim, toggle) is only rendered in that form — a
+ * permanently visible toggle on a wide window would be a second, redundant way
+ * to look at a pane that is already on screen.
+ */
+function useNarrowReader(): boolean {
+  const query = '(max-width: 1000px)';
+  const [narrow, setNarrow] = React.useState(() => window.matchMedia(query).matches);
+  React.useEffect(() => {
+    const list = window.matchMedia(query);
+    const update = () => setNarrow(list.matches);
+    update();
+    list.addEventListener('change', update);
+    return () => list.removeEventListener('change', update);
+  }, []);
+  return narrow;
 }
 
 export function ReaderView({ detail, model }: ReaderViewProps) {
@@ -193,9 +221,27 @@ export function ReaderView({ detail, model }: ReaderViewProps) {
   const [pendingSelection, setPendingSelection] = React.useState<PendingSelection | null>(null);
   const [banner, setBanner] = React.useState<'resumed' | null>(null);
   const [copied, setCopied] = React.useState(false);
+  // ≤1000px 的列宽下正文与笔记不再上下叠：笔记收进贴底的抽屉，正文独占
+  // 高度。宽列里这个状态不参与布局，但保留着，切回窄列时恢复用户的偏好。
+  const [sheetOpen, setSheetOpen] = React.useState(false);
+  const narrow = useNarrowReader();
+  // 抽屉开着时 Escape 先收抽屉（编辑中的草稿不动），再交给外层。
+  React.useEffect(() => {
+    if (!narrow || !sheetOpen) return undefined;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape' || event.defaultPrevented) return;
+      if ((event.target as HTMLElement | null)?.closest('textarea')) return;
+      setSheetOpen(false);
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [narrow, sheetOpen]);
 
   const state = readingState(detail);
   const annotations = detail.annotations;
+  // 列表卡片上的「N 条笔记」数与页头不一致会让人以为丢了内容：两处都按
+  // 「标记数 / 写了笔记的标记数」并列说明。
+  const noteCount = annotations.filter((annotation) => annotation.note.trim().length > 0).length;
   // The latest annotations for the mount effect, which must not re-run when
   // a note is edited: re-mounting would drop the reader's scroll position.
   const annotationsRef = React.useRef(annotations);
@@ -404,11 +450,13 @@ export function ReaderView({ detail, model }: ReaderViewProps) {
   }, [detail.id, flushProgress]);
 
   // ── Actions ─────────────────────────────────────────────────────────────
+  // 在正文里点中标记时，笔记抽屉若开着就留在原地（用户正在对照），否则
+  // 让正文拿到焦点，不替他弹出抽屉。
   const focusAnnotation = (id: string) => {
     const annotator = annotatorRef.current;
     if (!annotator) return;
     annotator.setSelected(id);
-    annotator.scrollIntoView(id, paneRef.current ?? undefined);
+    if (!sheetOpen) annotator.scrollIntoView(id, paneRef.current ?? undefined);
     setSelectedId(id);
     setToolbar(null);
   };
@@ -575,9 +623,15 @@ export function ReaderView({ detail, model }: ReaderViewProps) {
           </div>
         </div>
 
-        <aside className="reader-notes" aria-label="标记与笔记">
+        <aside className={`reader-notes${sheetOpen ? ' is-open' : ''}`} id="reader-notes" aria-label="标记与笔记">
           <header className="reader-notes__header">
-            <h2>标记与笔记 <span>{annotations.length}</span></h2>
+            <h2>标记与笔记 <span>{annotations.length} 条标记 · {noteCount} 条笔记</span></h2>
+            {/* 只给窄列（抽屉形态）用：宽列里笔记常驻右侧，这个按钮不渲染。 */}
+            {narrow && (
+              <button type="button" className="reader-notes__close" aria-label="收起标记与笔记" onClick={() => setSheetOpen(false)}>
+                <Icon name="close" />
+              </button>
+            )}
           </header>
           {annotations.length === 0 ? (
             <p className="reader-notes__empty">选中正文任意段落即可添加标记，再为标记写笔记。</p>
@@ -601,6 +655,22 @@ export function ReaderView({ detail, model }: ReaderViewProps) {
           <p className="reader-notes__hint"><Icon name="highlighter" /> 选中正文任意段落即可添加标记</p>
         </aside>
       </div>
+      {narrow && sheetOpen && <div className="reader-sheet-scrim" onClick={() => setSheetOpen(false)} aria-hidden="true" />}
+      {/* 窄列的常驻入口：抽屉收起时，这是唯一能看见标记数的地方。 */}
+      {narrow && (
+        <button
+          type="button"
+          className={`reader-notes-toggle${sheetOpen ? ' is-open' : ''}`}
+          aria-label={`标记与笔记，${annotations.length} 条标记 · ${noteCount} 条笔记`}
+          aria-expanded={sheetOpen}
+          aria-controls="reader-notes"
+          onClick={() => setSheetOpen((open) => !open)}
+        >
+          <Icon name="highlighter" />
+          <span>标记与笔记</span>
+          <span className="reader-notes-toggle__count">{annotations.length}</span>
+        </button>
+      )}
     </section>
   );
 }

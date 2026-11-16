@@ -30,7 +30,7 @@ test.describe('阅读', () => {
     await expect(cards).toHaveCount(2);
     const partial = cards.filter({ hasText: '可持续的个人知识系统' });
     await expect(partial.getByRole('button', { name: '继续阅读 · 42%' })).toBeVisible();
-    await expect(partial.locator('.reading-card__notes')).toContainText('1 条笔记');
+    await expect(partial.locator('.reading-card__notes')).toContainText('1 处标记');
     await page.getByRole('group', { name: '按阅读状态筛选' }).getByRole('button', { name: /^进行中/ }).click();
     await expect(cards).toHaveCount(1);
     await page.getByRole('group', { name: '按阅读状态筛选' }).getByRole('button', { name: /^已读/ }).click();
@@ -151,6 +151,7 @@ test.describe('阅读', () => {
     const note = page.getByTestId('reader-note');
     await expect(note).toHaveCount(1);
     await expect(note).toContainText('知识不是囤积，而是流动起来');
+    await expect(page.getByRole('complementary', { name: '标记与笔记' })).toContainText('1 条标记 · 1 条笔记');
     await note.getByRole('button', { name: /知识的价值不在于拥有/ }).click();
     await expect(note).toHaveClass(/is-selected/);
   });
@@ -200,6 +201,40 @@ test.describe('阅读', () => {
     await expect(page.locator('.reader__meta')).toContainText(/已读$/);
     await page.getByRole('button', { name: '标为未读' }).click();
     await expect(page.getByRole('button', { name: '标为已读' })).toBeVisible();
+  });
+
+  // ≤1000px 时笔记不再是右栏，而是从底部拉出的抽屉；此前它在 auto 行里按
+  // 40% 取高，只量到 73px，卡被裁掉也滚不到。
+  test('narrow widths fold the notes into a bottom sheet', async ({ page }) => {
+    await page.setViewportSize({ width: 1000, height: 800 });
+    await openReading(page);
+    await page.getByRole('button', { name: '继续阅读 · 42%' }).click();
+    const notes = page.getByRole('complementary', { name: '标记与笔记' });
+    const toggle = page.getByRole('button', { name: /标记与笔记，1 条标记 · 1 条笔记/ });
+    await expect(toggle).toBeVisible();
+    await expect(notes).toBeHidden();
+    // 正文拿到全部高度，而不是被笔记挤成两半。
+    const paneHeight = await page.locator('.reader-pane').evaluate((element) => element.getBoundingClientRect().height);
+    expect(paneHeight).toBeGreaterThan(600);
+
+    await toggle.click();
+    await expect(toggle).toHaveAttribute('aria-expanded', 'true');
+    await expect(notes).toBeVisible();
+    await expect(page.getByTestId('reader-note')).toHaveCount(1);
+    // 卡片整个落在抽屉里，而不是被裁成一条细边。
+    const card = await page.getByTestId('reader-note').first().boundingBox();
+    const sheet = await notes.boundingBox();
+    expect(card).not.toBeNull();
+    expect(sheet).not.toBeNull();
+    expect(card!.height).toBeGreaterThan(80);
+    expect(card!.y + card!.height).toBeLessThanOrEqual(sheet!.y + sheet!.height + 1);
+
+    await page.keyboard.press('Escape');
+    await expect(notes).toBeHidden();
+
+    await toggle.click();
+    await page.getByRole('button', { name: '收起标记与笔记' }).click();
+    await expect(notes).toBeHidden();
   });
 });
 

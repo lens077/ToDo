@@ -1240,7 +1240,11 @@
   .reader-toolbar__remove { color: var(--ink-2); }
   .reader-toolbar__remove:hover { color: var(--danger); }
   .reader-notes { display: grid; grid-template-rows: auto minmax(0, 1fr) auto; min-height: 0; background: var(--bg); border-left: 1px solid var(--hairline); }
-  .reader-notes__header { padding: 16px 18px 12px; border-bottom: 1px solid var(--hairline); }
+  /* 抽屉形态会贴边；标题要跟卡片同一条边线，圆角才不会切到字。 */
+  .reader-notes__header { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 16px 18px 12px; border-bottom: 1px solid var(--hairline); }
+  .reader-notes__close { display: none; align-items: center; justify-content: center; width: 28px; height: 28px; padding: 0; color: var(--ink-3); background: transparent; border: 1px solid var(--hairline-2); border-radius: var(--radius-control); }
+  .reader-notes__close:hover { color: var(--ink); background: var(--panel-2); }
+  .reader-notes__close svg { width: 14px; height: 14px; }
   .reader-notes__header h2 { display: flex; align-items: baseline; gap: 8px; font-size: 14px; }
   .reader-notes__header h2 span { color: var(--ink-3); font-family: var(--mono); font-size: 12px; font-weight: 400; }
   .reader-notes__list { display: grid; align-content: start; gap: 10px; min-height: 0; overflow-y: auto; padding: 14px 18px; }
@@ -1253,22 +1257,36 @@
   .reader-note__quote q { quotes: '“' '”'; }
   .reader-note__quote:hover { color: var(--accent); }
   .reader-note__text { color: var(--ink); font-size: 13.5px; line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere; }
-  .reader-note__add { justify-self: start; padding: 0; color: var(--accent); background: transparent; border: 0; font-size: 12.5px; }
-  .reader-note__add:hover { text-decoration: underline; }
-  .reader-note__meta { display: flex; align-items: center; gap: 10px; color: var(--ink-3); font-family: var(--mono); font-size: 11px; }
-  .reader-note__edit { margin-left: auto; padding: 0; color: var(--ink-3); background: transparent; border: 0; font-family: var(--font); font-size: 11.5px; opacity: 0; transition: opacity 0.2s var(--ease-out); }
-  .reader-note__edit + .reader-note__edit { margin-left: 0; }
-  .reader-note:hover .reader-note__edit, .reader-note:focus-within .reader-note__edit { opacity: 1; }
-  .reader-note__edit:hover { color: var(--ink); }
-  .reader-note__delete:hover { color: var(--danger); }
+  /* 一张卡片只有一条动作条，两种状态共用：时间占左端，动作成组贴右端。
+     此前编辑态用 justify 把「删除标记」推到最右，和「保存 / 取消」之间留出
+     一大块空白；阅读态又把「添加笔记」单独放一行，只有框选后的小字「删除」
+     落在右端。现在危险动作是动作组的第一个，与确认动作分开但不被单独甩到
+     卡片另一头。 */
+  .reader-note__bar { display: flex; align-items: center; gap: 10px; min-height: 24px; color: var(--ink-3); font-family: var(--mono); font-size: 11px; }
+  .reader-note__time { font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .reader-note__actions { display: flex; align-items: center; gap: 10px; margin-left: auto; }
+  .reader-note__tool { min-height: 24px; padding: 0 2px; color: var(--ink-3); background: transparent; border: 0; border-radius: var(--radius-control); font-family: var(--font); font-size: 11.5px; white-space: nowrap; transition: color 0.2s var(--ease-out), opacity 0.2s var(--ease-out); }
+  .reader-note__tool:hover:not(:disabled) { color: var(--ink); }
+  .reader-note__tool.reader-note__add { color: var(--accent); font-size: 12px; font-weight: 500; }
+  .reader-note__tool.reader-note__add:hover:not(:disabled) { text-decoration: underline; }
+  .reader-note__delete:hover:not(:disabled) { color: var(--danger); }
+  /* 编辑 / 删除 是卡片工具：悬停或键盘焦点内出现，触摸设备常显。 */
+  .reader-note__actions .reader-note__tool:not(.reader-note__add) { opacity: 0; }
+  .reader-note.is-editing .reader-note__actions .reader-note__tool,
+  .reader-note:hover .reader-note__actions .reader-note__tool,
+  .reader-note:focus-within .reader-note__actions .reader-note__tool { opacity: 1; }
+  @media (hover: none) { .reader-note__actions .reader-note__tool { opacity: 1; } }
   .reader-note__form { display: grid; gap: 8px; }
   .reader-note__form textarea { width: 100%; padding: 8px 10px; resize: vertical; color: var(--ink); background: var(--bg); border: 1px solid var(--hairline); border-radius: var(--radius-control); font-size: 13.5px; line-height: 1.55; }
   .reader-note__form textarea:focus { border-color: var(--accent); outline: 0; box-shadow: 0 0 0 3px var(--accent-wash); }
-  .reader-note__actions { display: flex; gap: 6px; }
-  .reader-note__save { min-height: 30px; padding: 0 12px; color: var(--primary-ink); background: var(--primary-fill); border: 0; border-radius: var(--radius-control); font-size: 12.5px; font-weight: 500; }
+  /* 保存（实心主操作）与 取消（轮廓）：同高、同内边距、同字号。
+     此前保存 30px / 取消走 .text-action 32px，同一行里两个按钮不齐。 */
+  .reader-note__save, .reader-note__cancel { min-height: 28px; padding: 0 11px; border: 1px solid transparent; border-radius: var(--radius-control); font-family: var(--font); font-size: 12px; white-space: nowrap; transition: background 0.3s var(--ease-out), color 0.3s var(--ease-out), border-color 0.3s var(--ease-out); }
+  .reader-note__cancel { color: var(--ink-2); background: transparent; border-color: var(--hairline-2); }
+  .reader-note__cancel:hover:not(:disabled) { color: var(--ink); background: var(--panel-2); }
+  .reader-note__save { color: var(--primary-ink); background: var(--primary-fill); font-weight: 500; }
   .reader-note__save:hover:not(:disabled) { background: var(--primary-fill-hover); }
-  .reader-note__actions .reader-note__delete { margin-left: auto; opacity: 1; }
-  .reader-note__actions .reader-note__delete:hover { color: var(--danger); border-color: var(--danger); }
+  .reader-note__save:disabled, .reader-note__cancel:disabled { color: var(--ink-3); background: var(--panel-2); border-color: transparent; }
 }
 
 @layer utilities {
@@ -2011,11 +2029,55 @@
 .priority-scope-dialog__actions .button-primary:hover:not(:disabled) { background: var(--primary-fill-hover); }
 
 @media (max-width: 1000px) {
-  .reader__columns { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) auto; }
-  .reader-notes { max-height: 40%; border-left: 0; border-top: 1px solid var(--hairline); }
+  /* 正文独占高度，笔记改为贴底抽屉。旧的上下叠放把笔记塞进 auto 行里按
+     40% 取高，百分比解析成 73px，连一张卡都放不下；抽屉给固定上限，正文
+     与笔记各自滚动，互不挤压。 */
+  .reader__columns { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); }
+  .reader-notes {
+    position: absolute;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    z-index: 3;
+    max-height: 72%;
+    border-top: 1px solid var(--hairline);
+    border-left: 0;
+    border-radius: var(--radius-panel) var(--radius-panel) 0 0;
+    box-shadow: var(--shadow-dialog);
+    transform: translateY(calc(100% + 8px));
+    visibility: hidden;
+    /* visibility 拖到动画结束再关，关闭时卡片不会在滑出途中消失。 */
+    transition: transform 0.28s var(--ease-out), visibility 0s linear 0.28s;
+  }
+  .reader-notes.is-open { transform: none; visibility: visible; transition: transform 0.28s var(--ease-out), visibility 0s; }
+  .reader-notes__close { display: inline-flex; }
   .reader-notes__hint { display: none; }
+  /* 笔记卡的工具（编辑 / 删除）靠悬停出现；触屏与窄屏没有悬停，常显。 */
+  .reader-note__actions .reader-note__tool { opacity: 1; }
+  .reader-sheet-scrim { display: block; position: absolute; inset: 0; z-index: 2; background: var(--scrim); animation: sheet-fade 0.28s var(--ease-out) both; }
+  .reader-notes-toggle {
+    position: absolute;
+    right: 16px;
+    bottom: 16px;
+    z-index: 1;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    min-height: 34px;
+    padding: 0 12px;
+    color: var(--ink);
+    background: var(--panel);
+    border: 1px solid var(--hairline-2);
+    border-radius: 999px;
+    box-shadow: var(--shadow-menu);
+    font-size: 12.5px;
+  }
+  .reader-notes-toggle svg { width: 14px; height: 14px; color: var(--accent); }
+  .reader-notes-toggle__count { padding: 0 6px; color: var(--primary-ink); background: var(--primary-fill); border-radius: 999px; font-family: var(--mono); font-size: 11px; line-height: 17px; }
+  .reader-notes-toggle.is-open { opacity: 0; pointer-events: none; }
   .unranked-tray__list { grid-template-columns: 1fr; }
 }
+@keyframes sheet-fade { from { opacity: 0; } to { opacity: 1; } }
 @media (max-width: 760px) {
   .quadrant-grid { margin: 0 18px; }
   .unranked-tray { margin-inline: 18px; }

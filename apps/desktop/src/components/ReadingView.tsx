@@ -112,7 +112,9 @@ function ReadingCard({ article, busy, opening, onOpen, onSetRead, onRemove, onRe
             {article.annotation_count > 0 && (
               <>
                 <span aria-hidden="true">·</span>
-                <span className="reading-card__notes"><Icon name="capture" />{article.annotation_count} 条笔记</span>
+                {/* annotation_count 是标记总数，不是写了笔记的条数；按标记数说，
+                    和阅读页「标记与笔记」页头一致。 */}
+                <span className="reading-card__notes"><Icon name="capture" />{article.annotation_count} 处标记</span>
               </>
             )}
           </span>

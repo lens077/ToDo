@@ -54,6 +54,8 @@ columns:
       ↳ 2026-11-12 实测：check-quick 245s（rust fmt+clippy+workspace test+contract check 约 190s，desktop web build + 静态站点约 40s）。目标 <120s；待定位耗时来源（疑似 clippy 全量 + 未命中增量缓存的 web 构建），不阻塞 onboarding。 <!--n:xfayi6-->
 - [x] 现代 Web 特性优化：IME 回车防护 + 站点 stagger 动画现代化 <!--t:mg31je--> #desktop #frontend !2
       ↳ 2026-11-14 modern-web-guidance 扫描驱动：知识搜索/会话目标输入加 isComposing+keyCode229 防护（WebKit bug 165004 乱序场景）、ConfirmCompleteDialog window 级 Enter 加防护、web 站点 hero stagger 改 sibling-index()（@supports 回退）。验证：tsc 绿、desktop build 绿、e2e 162 通过 0 失败、legacy-scan web 清零、desktop 余 1 条为 TaskCard 文章级快捷键（指南 dropWhen 排除的误报）。已合入 main 并推送（commits 945ae8b/e1c29d5，rebase 前为 a55de99/7d454c4），见 docs/verification-log.md 2026-11-14 <!--n:mg31je-->
+- [x] 阅读：窄屏（≤1000px）上下布局下「标记与笔记」只剩标题且无法展开 <!--t:zj3fjt--> #desktop #reading !2
+      ↳ 已改为贴底抽屉（方案 B）。≤1000px：.reader__columns 只剩一行，正文独占高度；.reader-notes 变 position:absolute 贴底的抽屉（max-height 72%、圆角、shadow-dialog、z-index 3），收起时 translateY 移出可视区并 visibility:hidden，打开时淡入 scrim（z-index 2）+ 0.28s 弹入；标题右侧新增只在窄列渲染的关闭按钮，右下角常驻药丸开关（highlighter 图标 + 「标记与笔记」+ 琥珀计数），Escape 收起抽屉且编辑中的草稿不被取消。组件用 matchMedia('(max-width:1000px)') 决定是否渲染抽屉外壳，宽列仍是常驻右栏、不出现开关。实测 1000/760/390：抽屉开合后笔记卡完整（189px 高，卡 103px 全在框内），正文高度 600~670px 不再被挤。验证：tsc 绿、vite build 绿、playwright chromium 155 passed/16 skipped（新增「narrow widths fold the notes into a bottom sheet」覆盖开关/抽屉可见/Escape/关闭按钮）、mobile 11 passed；浅色与深色两种外观均截图确认。已知遗留：抽屉不能拖拽调整高度；抽屉打开时正文被 scrim 遮住，不能边读边写。 <!--n:zj3fjt-->
 
 ## Doing
 - [ ] 人工验收看板任务写回 TODO.md <!--t:h4m9zc--> #desktop #manual !1 ^3000
