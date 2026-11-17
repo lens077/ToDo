@@ -13,6 +13,9 @@
 /.agent-teams/
 /.scratch/
 /.loomy-attachments/
+/.idea/
+/.zcode/
+/.workbuddy/
 **/.impeccable/config.local.json
 *.log
 .DS_Store

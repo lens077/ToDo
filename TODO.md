@@ -62,5 +62,9 @@ columns:
 - [ ] 用 todo 自身管理本项目后续开发 <!--t:1pevv2--> #process !2 🔗2e112404a57360d0d054543cbbdff4ace9862afd..9142b5b6dfed7ee34d7991c60a882c398496a43a
 - [x] sync-server B1：crates/sync-server API+鉴权+SSE+单测（规格见 docs/sync-server-spec.md） <!--t:5uhqjl--> #sync #backend !1
 - [x] sync-web C1：网页端小前端 MVP——快速保存/列表搜索/阅读详情/SSE 近实时（部署走 virgo-sync 静态托管） <!--t:kot9n4--> #sync #frontend !1
+- [ ] Trae 部署平台接入：Makefile trae-deploy + scripts/deploy-site-trae.sh（发布 web/dist 静态站） <!--t:ovy2ij--> #site #deploy !3 ◐80
+      ↳ 2026-11-18 立项并随本轮提交入库：Makefile 新增 trae-deploy 与 TRAE_* 变量、新增 scripts/deploy-site-trae.sh（权限预检/站点按名复用/禁并发/临时目录上传/等终态读地址），发布 web/dist 静态站。代码就绪；剩余：在 Trae 会话终端真实跑一次 make trae-deploy（普通 shell 预检会被拦）。 <!--n:ovy2ij-->
+- [ ] 多包依赖升级：Tauri 2.12.5 / vite 8.3.8 / express 5.3 / Playwright 1.65.1 等 <!--t:e9zhyn--> #deps #ci !3 ◐80
+      ↳ 2026-11-18 立项并随本轮提交入库：Tauri api/cli 2.12.5、plugin-dialog 2.8.4、plugin-global-shortcut 2.4.1、vite 8.3.8、@vitejs/plugin-react 6.3.0、express 5.3、@playwright/test 与 playwright 1.65.x，pnpm-lock.yaml 同步更新。依赖已改；剩余：升级后跑一次完整 make check-quick 与 e2e 确认无回归。 <!--n:e9zhyn-->
 
 ## Done
