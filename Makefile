@@ -23,9 +23,17 @@ SYNC_TAG ?= $(shell git rev-parse --short HEAD)
 SYNC_CHART_DIR ?= apps/sync-server/deploy/chart/todo-sync
 SYNC_NAMESPACE ?= todo
 
+# Trae 部署平台（预览/分享用）：CLI 由 Trae 的 deployment 插件提供，
+# 只在 Trae 会话的终端里带凭据与会话上下文，会话外的 shell 会被预检拦下。
+TRAE_CLI ?= $(lastword $(sort $(wildcard $(HOME)/.trae-cn/plugins/trae-remote-official/deployment/*/skills/deployment/scripts/trae-deploy)))
+TRAE_SITE_NAME ?= Virgo 官网
+TRAE_SITE_ID ?=
+TRAE_ACCESS ?= public
+TRAE_APP_TAGS ?= 123,289
+
 .PHONY: help install dev icon check check-quick hooks build bundle-macos package-macos package-macos-signed \
         comm-build build-mac-arm64 build-win-x64 build-linux-x64 build-android \
-        site-build pages-deploy pages-deploy-eo site-image k8s-deploy argo-apply site-deploy \
+        site-build pages-deploy pages-deploy-eo site-image k8s-deploy argo-apply site-deploy trae-deploy \
         sponsor-image sponsor-k8s-deploy sponsor-argo-apply \
         sync-secret sync-image sync-k8s-deploy sync-argo-apply
 
@@ -50,6 +58,7 @@ help: ## List available build and packaging targets
 	  'make pages-deploy-eo      EdgeOne Pages（virgo-site）' \
 	  'make k8s-deploy           virgo.apikv.com（k1 集群，立即 helm 部署）' \
 	  'make argo-apply           注册 ArgoCD Application（GitOps）' \
+	  'make trae-deploy          发布到 Trae 部署平台（含权限预检，需在 Trae 会话终端运行）' \
 	  '' \
 	  '链接库同步服务：' \
 	  'make sync-secret          创建 todo 命名空间与随机 token Secret' \
@@ -209,3 +218,11 @@ sync-argo-apply: ## Register the todo-sync ArgoCD application
 	kubectl apply -f deploy/argocd/application-todo-sync.yaml
 
 site-deploy: pages-deploy pages-deploy-eo k8s-deploy ## Deploy the landing site to all three origins
+
+# Trae 部署平台（预览/分享）：把 web/dist 发成可访问站点。首次运行新建
+# 「$(TRAE_SITE_NAME)」，之后按站点名复用（也可 TRAE_SITE_ID=<id> 指定）。
+# 发布前先跑 CLI 的 check 预检权限与运行时上下文；站点上已有进行中的部署时只提示，
+# 不会并发创建。CLI 只在 Trae 会话的终端里可用，会话外的 shell 会在预检处失败。
+trae-deploy: site-build ## Publish the landing site to the Trae deployment platform
+	@TRAE_DEPLOY="$(TRAE_CLI)" TRAE_SITE_NAME="$(TRAE_SITE_NAME)" TRAE_SITE_ID="$(TRAE_SITE_ID)" \
+	  TRAE_ACCESS="$(TRAE_ACCESS)" TRAE_APP_TAGS="$(TRAE_APP_TAGS)" ./scripts/deploy-site-trae.sh
