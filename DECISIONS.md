@@ -245,3 +245,15 @@
 重开触发条件(满足其一即重评):① 单项目活跃任务 >20,000;② `todo serve` 常驻多客户端轮询使重复解析成为可测 CPU 热点;③ 实测快照 p95 >500 ms。
 
 如推翻本决策:接线点在 `serve.rs` 与 `ops.rs` 的 snapshot 路径换 `Projection::open + update_file`,数据层已就绪(`tests/projection.rs` 全绿)。
+
+---
+
+## 决策⑦:未签名先行上线(2026-11-19 用户拍板,取代「签好才发」)
+
+对应 `TODO.md` `d3l8hn`。原产品决策是「Developer ID 签名与公证完成前不放安装包,也不放未签名版本」(原 site-copy.md 第 6 屏、原 macos-release.md 约束)。2026-11-19 用户拍板:**不等签名公证,以 ad-hoc 签名的未签名构建直接上线**。
+
+- 发布物:v0.1.0,macOS arm64 的 `Sumery Virgo.app.zip` 与 `todo` CLI `.tar.gz`,随官网三端(Cloudflare Pages / EdgeOne / virgo.apikv.com)`/downloads/` 静态分发,附 SHA256SUMS。
+- 站点如实告知未签名状态与两种 Gatekeeper 放行方式(系统设置「仍要打开」/ `xattr -cr "/Applications/Sumery Virgo.app"`)。
+- 签名与公证版本随后补上;在此之前,未签名版本即正式发布版本。
+- 工程落点:`scripts/package-macos.sh` 新增 `RELEASE_QUALIFIER` 显式开关(默认仍产出不可分发的 `-local-unnotarized` 验收包);发布路径见 `docs/macos-release.md`「未签名公开分发」;产物目录 `web/public/downloads/` 已加 `.gitignore`。
+- 回开条件:Apple Developer 凭据到位后,走既有签名工作流(`docs/macos-release.md`「创建正式发布」),站点下载区切回签名产物,未签名产物下架。

@@ -75,9 +75,16 @@ HOST_TRIPLE="$(rustc -vV | awk '/^host:/ { host = $2 } END { print host }')"
 CLI_BIN="$ROOT/target/release/todo"
 # The bundle is named after tauri.conf.json productName ("Sumery Virgo").
 APP_BUNDLE="$ROOT/target/release/bundle/macos/Sumery Virgo.app"
+# 未签名产物的文件名后缀：默认 -local-unnotarized（本地验收包，不可分发）。
+# 显式传入 RELEASE_QUALIFIER（含空值，如 RELEASE_QUALIFIER=）可改命名，
+# 用于产品决策允许的未签名公开分发；见 docs/macos-release.md。
 ARTIFACT_QUALIFIER=""
 if [[ "$SIGN_AND_NOTARIZE" == "0" ]]; then
-  ARTIFACT_QUALIFIER="-local-unnotarized"
+  if [[ -n "${RELEASE_QUALIFIER+x}" ]]; then
+    ARTIFACT_QUALIFIER="$RELEASE_QUALIFIER"
+  else
+    ARTIFACT_QUALIFIER="-local-unnotarized"
+  fi
 fi
 CLI_ARCHIVE="todo-${VERSION}-${HOST_TRIPLE}${ARTIFACT_QUALIFIER}.tar.gz"
 APP_ARCHIVE="Sumery-Virgo-${VERSION}-${HOST_TRIPLE}${ARTIFACT_QUALIFIER}.app.zip"

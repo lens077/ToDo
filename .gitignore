@@ -55,3 +55,6 @@ apps/desktop/icon/out/
 /twitter-text/
 /x-downloader/
 /.trae-html-share-packages/
+
+# Unsigned release downloads staged into the site (built locally, see docs/macos-release.md)
+/web/public/downloads/

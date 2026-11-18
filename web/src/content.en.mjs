@@ -3,7 +3,12 @@
 // Evidence, Capture, Triage, restore point. The build fails if the two files
 // do not have the same shape.
 
-const notify = "mailto:support@looke.cloud?subject=" + encodeURIComponent("Tell me when Virgo launches");
+const mailto = "mailto:support@looke.cloud?subject=" + encodeURIComponent("Sumery Virgo feedback");
+const dl = {
+  app: "/downloads/Sumery-Virgo-0.1.0-aarch64-apple-darwin.app.zip",
+  cli: "/downloads/todo-0.1.0-aarch64-apple-darwin.tar.gz",
+  sums: "/downloads/SHA256SUMS",
+};
 
 export default {
   hreflang: "en",
@@ -13,7 +18,7 @@ export default {
   meta: {
     title: "Sumery Virgo · Reconcile your task list with your code · A local task reconciler for developers who work with AI agents",
     description:
-      "Sumery Virgo gathers the TODO.md files in a project into one view, finds evidence for each item in your Git history and reports only the differences — whether something is done stays your call. Runs locally, no account. macOS version coming soon.",
+      "Sumery Virgo gathers the TODO.md files in a project into one view, finds evidence for each item in your Git history and reports only the differences — whether something is done stays your call. Runs locally, no account. The macOS build (Apple Silicon) is ready to download.",
   },
   ui: {
     skip: "Skip to content",
@@ -25,25 +30,25 @@ export default {
   brand: { kicker: "SUMERY · VIRGO", name: "Virgo", sub: "Local · Markdown is the single source of truth" },
   status: {
     label: "Status",
-    text: "Not released yet. The macOS build is finishing signing and notarization. Leave us an email and we'll write back on launch day.",
-    cta: { label: "Write to us", href: notify, event: { name: "notify", data: { from: "status" } } },
+    text: "Released: v0.1.0. The macOS (Apple Silicon) build is ready to download; the archive is not Apple-signed or notarized, so the first open needs a manual override.",
+    cta: { label: "Write to us", href: mailto, event: { name: "feedback", data: { from: "status" } } },
   },
   nav: [
     { href: "#how", label: "How it works" },
     { href: "#bounds", label: "Boundaries" },
     { href: "#views", label: "Views" },
     { href: "#free", label: "Free & sponsorship" },
-    { href: "#get", label: "Launch notice" },
+    { href: "#get", label: "Download" },
   ],
   hero: {
     title: ["Your task list,", "checked against your code."],
     lede:
       "Push a repository forward with an agent and the task list soon stops looking like the code: finished work left unticked, ticked items that aren't really done, and an agent that reads a stale line and does completed work all over again. Virgo gathers the project's <code>TODO.md</code> files into one view, looks for evidence of each item in your Git history and reports only the differences — <strong>whether something is done is still your call.</strong>",
     actions: [
-      { kind: "primary", label: "Tell me at launch", href: notify, event: { name: "notify", data: { from: "hero" } } },
+      { kind: "primary", label: "Download for macOS", href: dl.app, event: { name: "download", data: { from: "hero" } } },
       { kind: "ghost", label: "See how it reconciles", href: "#how" },
     ],
-    fine: "The launch notice is a single email, not a subscription.",
+    fine: "v0.1.0 · Apple Silicon · unsigned build, one-time Gatekeeper override.",
   },
   how: {
     id: "how",
@@ -142,16 +147,21 @@ export default {
   },
   get: {
     id: "get",
-    title: "Launch day isn't here yet.",
+    title: "Download Sumery Virgo.",
     sub: null,
     body: [
-      "The macOS build is going through Developer ID signing and notarization. Until it's signed we won't post an installer — not even an unsigned “use it for now” build. Other platforms come after macOS; nothing is promised for them yet.",
-      "Leave an email and we'll write back on launch day. No sign-up and no mailing list — just one email, and the body can be empty.",
+      `v0.1.0, macOS (Apple Silicon), free, no sign-up. Unzip the download and drag <code>Sumery Virgo.app</code> into Applications; checksums are in <a href="${dl.sums}" rel="noopener">SHA256SUMS</a>.`,
+      `The archive has no Developer ID signature or notarization yet (the Apple developer fee hasn't been paid), so Gatekeeper stops the first open. Pick either override: in System Settings → Privacy & Security, click “Open Anyway”; or run <code>xattr -cr "/Applications/Sumery Virgo.app"</code> in a terminal. One override, and it opens normally afterwards.`,
+      `A signed and notarized build will follow; until then this unsigned build is the official release. CLI users can also download the <code>todo</code> CLI on its own. Other platforms come after macOS; nothing is promised for them yet. If it won't open, or anything else breaks, <a href="${mailto}">write to us</a>.`,
     ],
-    cta: { label: "Tell me at launch", href: notify, event: { name: "notify", data: { from: "get" } } },
+    cta: { label: "Download Sumery Virgo v0.1.0", href: dl.app, event: { name: "download", data: { from: "get" } } },
     tableCaption: "Release status by platform",
     columns: ["Platform", "Status"],
-    rows: [["macOS · Apple Silicon", "Coming soon"]],
+    rows: [
+      ["macOS · Apple Silicon", `v0.1.0 · <a href="${dl.app}">Download .app.zip</a>`],
+      ["macOS CLI · Apple Silicon", `<a href="${dl.cli}">Download todo .tar.gz</a>`],
+      ["Other platforms", "Not released"],
+    ],
   },
   footer: {
     sub: "Sumery Virgo · Local · Markdown is the single source of truth",

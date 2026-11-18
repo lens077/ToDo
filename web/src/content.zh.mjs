@@ -2,7 +2,12 @@
 // 事实以 PRODUCT.md / CONTEXT.md 为准。改这里时同步改 content.en.mjs——
 // 构建会检查两份结构一致。
 
-const notify = "mailto:support@looke.cloud?subject=" + encodeURIComponent("Virgo 上线时通知我");
+const mailto = "mailto:support@looke.cloud?subject=" + encodeURIComponent("Sumery Virgo 意见反馈");
+const dl = {
+  app: "/downloads/Sumery-Virgo-0.1.0-aarch64-apple-darwin.app.zip",
+  cli: "/downloads/todo-0.1.0-aarch64-apple-darwin.tar.gz",
+  sums: "/downloads/SHA256SUMS",
+};
 
 export default {
   hreflang: "zh-Hans",
@@ -12,7 +17,7 @@ export default {
   meta: {
     title: "Sumery Virgo · 任务与代码现实对账 · 给 AI 协作开发者的本地任务对账器",
     description:
-      "Sumery Virgo 把项目里的 TODO.md 汇总成一个视图，用 Git 里的改动给每一项找物证，只报告差异，完成与否由你决定。本地运行，不需要登录。macOS 版即将推出。",
+      "Sumery Virgo 把项目里的 TODO.md 汇总成一个视图，用 Git 里的改动给每一项找物证，只报告差异，完成与否由你决定。本地运行，不需要登录。macOS 版（Apple Silicon）v0.1.0 可直接下载。",
   },
   ui: {
     skip: "跳到正文",
@@ -24,25 +29,25 @@ export default {
   brand: { kicker: "SUMERY · VIRGO", name: "Virgo", sub: "本地 · Markdown 是唯一事实源" },
   status: {
     label: "当前状态",
-    text: "尚未发布。macOS 版在签名与公证收尾。留一封邮件，上线时我们回信。",
-    cta: { label: "写信给我们", href: notify, event: { name: "notify", data: { from: "status" } } },
+    text: "已发布 v0.1.0。macOS（Apple Silicon）可直接下载；安装包未做 Apple 签名与公证，首次打开需手动放行。",
+    cta: { label: "写信给我们", href: mailto, event: { name: "feedback", data: { from: "status" } } },
   },
   nav: [
     { href: "#how", label: "怎么用" },
     { href: "#bounds", label: "边界" },
     { href: "#views", label: "视图" },
     { href: "#free", label: "免费与赞助" },
-    { href: "#get", label: "上线通知" },
+    { href: "#get", label: "下载" },
   ],
   hero: {
     title: ["任务与代码，", "对一次账。"],
     lede:
       "和 agent 一起推进一个仓库，任务清单很快就不是代码的样子了：做完的没勾，勾了的其实没做完，agent 读到过期的一行，把已经完成的工作再做一遍。Virgo 把项目里的 <code>TODO.md</code> 汇总成一个视图，用 Git 里的改动给每一项找物证，只报告差异——<strong>完成与否，还是你来定。</strong>",
     actions: [
-      { kind: "primary", label: "上线时通知我", href: notify, event: { name: "notify", data: { from: "hero" } } },
+      { kind: "primary", label: "下载 macOS 版", href: dl.app, event: { name: "download", data: { from: "hero" } } },
       { kind: "ghost", label: "看它怎么对账", href: "#how" },
     ],
-    fine: "上线通知是一封邮件，不是订阅。",
+    fine: "v0.1.0 · Apple Silicon · 未签名版本，首次打开需放行一次。",
   },
   how: {
     id: "how",
@@ -141,16 +146,21 @@ export default {
   },
   get: {
     id: "get",
-    title: "还没到发布那一天。",
+    title: "下载 Sumery Virgo。",
     sub: null,
     body: [
-      "macOS 版在做 Developer ID 签名与公证；签好之前不放安装包，也不放「先用着」的未签名版本。其他平台等 macOS 之后再说，现在不承诺。",
-      "留一封邮件，上线那天我们回信告诉你。不需要注册，也没有邮件列表——就是一封信，正文空着也行。",
+      `v0.1.0，macOS（Apple Silicon），免费，不用注册。下载解压后，把 <code>Sumery Virgo.app</code> 拖进「应用程序」即可；文件校验和见 <a href="${dl.sums}" rel="noopener">SHA256SUMS</a>。`,
+      `安装包还没做 Developer ID 签名与公证（Apple 开发者年费还没花），首次打开会被 Gatekeeper 拦一次，两种放行方式任选其一：系统设置 → 隐私与安全性 → 点「仍要打开」；或在终端执行 <code>xattr -cr "/Applications/Sumery Virgo.app"</code>。放行一次，之后正常打开。`,
+      `签名与公证版本会随后补上；在那之前，这个未签名版本就是正式发布版本。命令行用户也可以单独下载 <code>todo</code> CLI。其他平台等 macOS 之后再说，现在不承诺。遇到打不开或别的问题，<a href="${mailto}">写信告诉我们</a>。`,
     ],
-    cta: { label: "上线时通知我", href: notify, event: { name: "notify", data: { from: "get" } } },
+    cta: { label: "下载 Sumery Virgo v0.1.0", href: dl.app, event: { name: "download", data: { from: "get" } } },
     tableCaption: "各平台发布状态",
     columns: ["平台", "状态"],
-    rows: [["macOS · Apple Silicon", "即将推出"]],
+    rows: [
+      ["macOS · Apple Silicon", `v0.1.0 · <a href="${dl.app}">下载 .app.zip</a>`],
+      ["macOS CLI · Apple Silicon", `<a href="${dl.cli}">下载 todo .tar.gz</a>`],
+      ["其他平台", "未发布"],
+    ],
   },
   footer: {
     sub: "Sumery Virgo · 本地 · Markdown 是唯一事实源",

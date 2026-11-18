@@ -3,6 +3,8 @@
 本文档供发布维护者使用，说明如何生成 macOS CLI 与 `Sumery Virgo.app`，以及如何用 Developer ID 完成签名和 Apple 公证。
 
 > 本仓库没有可用于发布的 Developer ID 证书或 Apple 公证凭据。所有依赖真实凭据的验收项均标记为 `〔待验证〕`。本地 ad-hoc 签名不能替代 Developer ID 签名。
+>
+> 2026-11-19 产品决策变更（`DECISIONS.md` 决策⑦）：在凭据到位之前，**允许以 ad-hoc 签名的未签名构建公开分发**，作为正式发布版本；签名与公证版本到位后切回。见下文「未签名公开分发」。
 
 ## 发布约束
 
@@ -12,7 +14,7 @@
 - 发布工作流的第三方 Actions 固定到完整 commit SHA。更新 action 时，先审查新 commit，再更新 SHA 后的版本注释。
 - `workflow_dispatch` 生成受保护的工作流产物，但不创建 GitHub Release。
 - 推送与应用版本匹配的 `v*` 标签时，工作流在全部检查通过后创建 GitHub Release。
-- 本地未提供发布凭据时，`scripts/package-macos.sh` 只生成带 `local-unnotarized` 后缀的验收包。不要分发这些验收包。
+- 本地未提供发布凭据时，`scripts/package-macos.sh` 默认生成带 `-local-unnotarized` 后缀的验收包。默认验收包仍不可分发；显式传入 `RELEASE_QUALIFIER`（含空值）后改命名，用于决策⑦允许的公开分发。
 
 ## Bundle 配置
 
@@ -94,6 +96,31 @@ make package-macos OUTPUT_DIR=target/my-release
 5. 给文件名添加 `local-unnotarized` 后缀，并打印不可分发警告。
 
 这条路径只验证构建、bundle 完整性与打包。Ad-hoc 签名不验证发布者身份，也不验证 Developer ID、Apple 公证或 Gatekeeper 放行。
+
+## 未签名公开分发（决策⑦）
+
+产品决策（`DECISIONS.md` 决策⑦，2026-11-19）允许在 Developer ID 凭据到位前，把 ad-hoc 签名的构建作为正式发布版本，随官网三端静态分发。发布步骤：
+
+1. 用空 qualifier 产出公开命名的产物：
+
+```bash
+OUTPUT_DIR="$(pwd)/target/site-downloads" RELEASE_QUALIFIER= SIGN_AND_NOTARIZE=0 \
+  ./scripts/package-macos.sh
+```
+
+2. 把产物复制进站点静态目录（该目录已加入 `.gitignore`，产物不进 Git）：
+
+```bash
+mkdir -p web/public/downloads
+cp target/site-downloads/*.tar.gz target/site-downloads/*.app.zip target/site-downloads/SHA256SUMS \
+  web/public/downloads/
+```
+
+3. 确认 `web/src/content.zh.mjs` / `content.en.mjs` 里 `dl` 常量的文件名与版本一致。
+4. `make site-build` 后按三端部署（`make site-deploy`）。
+5. 站点下载区必须如实保留未签名状态说明与两种 Gatekeeper 放行方式（系统设置「仍要打开」/ `xattr -cr "/Applications/Sumery Virgo.app"`）。
+
+换版本时：改 `apps/desktop/src-tauri/tauri.conf.json` 的 `version`、`content.*.mjs` 的 `dl` 常量与下载区文案，重跑以上步骤。凭据到位后，走「创建正式发布」的签名工作流，并把站点下载区切回签名产物。
 
 ## 创建正式发布
 
