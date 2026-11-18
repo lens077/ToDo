@@ -42,7 +42,7 @@ _Avoid_: Daily task list, separate inbox
 
 ## Progress
 
-进度只在这里做摘要；逐条任务见 `TODO.md`，逐阶段验证证据见 `docs/verification-log.md`。
+进度只在这里做摘要；逐条任务见 `TODO.md`，逐阶段验证证据见 `docs/verification-log.md`。换机/交接入口见 `docs/handoff-2026-11-18.md`。
 
 - Workspace / Project Profile / Knowledge / Session / Overview（蓝图 Phase 1–7）已实现、通过测试，并在 M0-B 按模块提交（6 个提交 / 51 文件，2026-11-07）后 push 到 `origin/main`；审计结论见 `docs/audits/2026-11-03-audit.md`。
 - M0 收口已完成：完整门禁恢复，`git status` 曾清零，本地与 `origin/main` 同步（M0-A 2026-11-06、M0-B 2026-11-07、D-M0-2 push 2026-11-07）。
