@@ -1216,3 +1216,14 @@ Session 存为项目内 Markdown（`<project>/.virgo/sessions/s-<ts>.md`），�
 3. **交互**：右下角常驻药丸开关（`highlighter` 图标 + 「标记与笔记」+ 琥珀计数，`aria-expanded` / `aria-controls`），标题右侧新增只在窄列渲染的关闭按钮；Escape 收起抽屉并跳过 `textarea`（编辑中的草稿不被取消）；点中正文标记时抽屉若开着就不回滚正文，避免把它挤到视野外。是否渲染抽屉外壳由 `matchMedia('(max-width: 1000px)')` 决定，宽列仍是常驻右栏、不出现开关。
 4. **验证**：`tsc -b` 绿；desktop `vite build` 绿；`playwright --project=chromium` 155 passed / 16 skipped（新增 `narrow widths fold the notes into a bottom sheet`：开关可见、抽屉收起时 `toBeHidden`、正文高度 >600px、打开后笔记卡完整落在抽屉内、Escape 与关闭按钮都能收起），`--project=mobile` 11 passed；1000 / 760 / 390 三个宽度浅色截图与 390 深色截图确认外观。
 5. **遗留**：抽屉不能拖拽调整高度；抽屉打开时正文被 scrim 遮住，暂不支持边读边写。
+
+## 2026-11-19 v0.1.0 未签名先行上线（决策⑦，通过）
+
+1. **决策**：用户拍板不等 Developer ID 签名与公证，以 ad-hoc 构建直接公开分发（`DECISIONS.md` 决策⑦）；发布路径固化在 `docs/macos-release.md`「未签名公开分发」。
+2. **产物**：`make package-macos` 路径新增 `RELEASE_QUALIFIER` 显式开关后，以 `RELEASE_QUALIFIER= SIGN_AND_NOTARIZE=0` 产出公开命名产物——`Sumery-Virgo-0.1.0-aarch64-apple-darwin.app.zip`（9.1M）、`todo-0.1.0-aarch64-apple-darwin.tar.gz`（4.9M）、`SHA256SUMS`；app 包内 ad-hoc 深签名 `codesign --verify --deep --strict` 通过。产物入 `web/public/downloads/` 随仓库提交（CI 从仓库构建，不进 Git 会让 CI 部署丢 `/downloads/`，已实测确认后回滚 .gitignore）。
+3. **站点改版（zh/en 同构）**：状态条「尚未发布…」→「已发布 v0.1.0…需手动放行」；hero 主按钮改「下载 macOS 版」直链产物；第 6 屏改「下载 Sumery Virgo」，写明未签名状态、两种 Gatekeeper 放行方式（系统设置「仍要打开」/ `xattr -cr "/Applications/Sumery Virgo.app"`）、平台表含 macOS 与 CLI 下载行；`build.mjs` 双语 shape 校验通过。
+4. **依赖修复**：`cargo update` 对齐 Rust 侧 tauri 2.12.7 / plugin-dialog 2.8.4 / plugin-global-shortcut 2.4.1——此前 tauri build 因 NPM 与 crate 主次版本失配直接失败（任务 `e9zhyn` 的遗留回归）。
+5. **测试修复**：`watch.rs::reading_target_without_a_write_does_not_reload` 加沉降排空（FSEvents 延迟重放建立期写入污染 250ms 静默断言）；同族失败游走问题另立任务 `onfv6x`。
+6. **部署链**：本地 `make pages-deploy` / `pages-deploy-eo` 直接发布 CF + EO；k8s 端 helm 直连被 ArgoCD 所有权拦（ExternalSecret `virgo-tcr` ownership metadata，符合 GitOps 约定），改走 CI：push main → `deploy.yml` 三 job 全绿（44361246385，镜像 `f771581@sha256:7fffd4f0…`）→ bot 回写 `values-prod.yaml`（294bc52）→ GitLab 镜像 → ArgoCD `virgo-prod` Synced → `deploy/virgo` rollout 成功。
+7. **线上验证**：virgo.apikv.com / virgo-overseas.pages.dev / virgo-pages.apikv.com 三端——zh/en 状态条已翻转、hero 主按钮与平台表链接指向 `/downloads/` 产物、两个下载 URL 均 200、SHA256SUMS 内容正确；浏览器实测生产域（状态条 / hero / 导航「下载」/ 表行 / SHA256SUMS 链接）。端到端：从 CF Pages 真实下载 app.zip，SHA256 `e78673f6…` 与 SHA256SUMS 一致，ditto 解压 + ad-hoc 签名验证通过，`spctl --assess` 如预期 `rejected`（与站点放行说明相符）。
+8. **门禁**：`verify-quick` 绿（27–32s 多次）；期间暴露 watch 测试簇红/绿漂移（见任务 `onfv6x`）。任务 `d3l8hn` 关闭，回开条件立项 `b1gxqf`。

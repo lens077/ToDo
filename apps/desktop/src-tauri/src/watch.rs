@@ -363,6 +363,17 @@ mod tests {
             assert_eq!(fs::read_to_string(&target).unwrap(), "unchanged");
             thread::sleep(Duration::from_millis(15));
         }
+        // macOS 的 FSEvents 可能带着延迟重放监听建立前的建立期写入；先排空
+        // 到流静默，避免建立期事件污染下面要验证的「只读不重载」属性。
+        let settle = Instant::now() + Duration::from_secs(3);
+        loop {
+            match receiver.recv_timeout(Duration::from_millis(300)) {
+                Ok(_) if Instant::now() < settle => continue,
+                Ok(signal) => panic!("watcher kept signalling during settle: {signal:?}"),
+                Err(RecvTimeoutError::Timeout) => break,
+                Err(error) => panic!("watcher disconnected during settle: {error}"),
+            }
+        }
         assert!(matches!(
             receiver.recv_timeout(Duration::from_millis(250)),
             Err(RecvTimeoutError::Timeout)

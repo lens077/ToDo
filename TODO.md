@@ -19,8 +19,8 @@ columns:
 - [ ] 人工验收外部编辑后界面刷新 <!--t:w8s5rt--> #desktop #manual !1 ^4000
 - [ ] 按既定触发条件让 todo serve 与桌面端使用 SQLite 投影 <!--t:b6r1vy--> #cli #perf !3 ^8000
       ↳ 2026-11-07 决策⑥：benchmark_projection_10k_tasks 实测（release）parse 59ms / 投影全量重建 28ms / 增量更新 132ms；内存快照以 10 倍余量满足交互阈值，暂不接入。重开触发：活跃任务 >20k、常驻 serve 轮询 CPU 热点、快照 p95 >500ms。详见 DECISIONS.md 决策⑥ <!--n:b6r1vy-->
-- [ ] 产出可分发的桌面端 release 构建 <!--t:d3l8hn--> #desktop #release !3 ^9000 ◐80
-      ↳ release workflow、打包脚本与发布文档已完成；待真实 Developer ID 签名与 Apple 公证凭据验收 <!--n:d3l8hn-->
+- [x] 产出可分发的桌面端 release 构建 <!--t:d3l8hn--> #desktop #release !3 ^9000 🔗9142b5b6dfed7ee34d7991c60a882c398496a43a..f771581925deb34870a4e4092cb9819373474a04
+      ↳ 2026-11-19 决策⑦拍板：不等签名公证，ad-hoc 构建直接公开分发。v0.1.0（app.zip 9.1M + CLI 4.9M + SHA256SUMS）随官网 /downloads/ 上线（CF Pages 已验证 200）。签名路径移至新任务 b1gxqf <!--n:d3l8hn-->
 - [ ] 落地「目前免费 + 赞助」：赞助屏与收款入口 <!--t:aiw1hs--> #product #site !1
       ↳ 2026-10-26 已定：下载与使用免费、功能不阉割、不做授权校验与试用；赞助 ¥1/¥6/¥18/¥30/¥68/¥88 + 自定义，国际 Ko-fi/GitHub Sponsors 只入计划不实施。2026-11-12 支付宝入口已上线（生产网关 + ¥1 端到端实测，6 档位按钮三端生效，见 verification-log）。剩：赞助屏文案打磨（docs/site-copy.md 第 5 屏）、致谢区、隐私政策（只覆盖 Umami 统计）、爱发电入口（7gi5ls，前置已满足） <!--n:aiw1hs-->
 - [x] 拍板首次运行 onboarding 方案（见 docs/onboarding-spec.md） <!--t:jrnlos--> #product #onboarding !2
@@ -56,6 +56,10 @@ columns:
       ↳ 2026-11-14 modern-web-guidance 扫描驱动：知识搜索/会话目标输入加 isComposing+keyCode229 防护（WebKit bug 165004 乱序场景）、ConfirmCompleteDialog window 级 Enter 加防护、web 站点 hero stagger 改 sibling-index()（@supports 回退）。验证：tsc 绿、desktop build 绿、e2e 162 通过 0 失败、legacy-scan web 清零、desktop 余 1 条为 TaskCard 文章级快捷键（指南 dropWhen 排除的误报）。已合入 main 并推送（commits 945ae8b/e1c29d5，rebase 前为 a55de99/7d454c4），见 docs/verification-log.md 2026-11-14 <!--n:mg31je-->
 - [x] 阅读：窄屏（≤1000px）上下布局下「标记与笔记」只剩标题且无法展开 <!--t:zj3fjt--> #desktop #reading !2
       ↳ 已改为贴底抽屉（方案 B）。≤1000px：.reader__columns 只剩一行，正文独占高度；.reader-notes 变 position:absolute 贴底的抽屉（max-height 72%、圆角、shadow-dialog、z-index 3），收起时 translateY 移出可视区并 visibility:hidden，打开时淡入 scrim（z-index 2）+ 0.28s 弹入；标题右侧新增只在窄列渲染的关闭按钮，右下角常驻药丸开关（highlighter 图标 + 「标记与笔记」+ 琥珀计数），Escape 收起抽屉且编辑中的草稿不被取消。组件用 matchMedia('(max-width:1000px)') 决定是否渲染抽屉外壳，宽列仍是常驻右栏、不出现开关。实测 1000/760/390：抽屉开合后笔记卡完整（189px 高，卡 103px 全在框内），正文高度 600~670px 不再被挤。验证：tsc 绿、vite build 绿、playwright chromium 155 passed/16 skipped（新增「narrow widths fold the notes into a bottom sheet」覆盖开关/抽屉可见/Escape/关闭按钮）、mobile 11 passed；浅色与深色两种外观均截图确认。已知遗留：抽屉不能拖拽调整高度；抽屉打开时正文被 scrim 遮住，不能边读边写。 <!--n:zj3fjt-->
+- [ ] 接入 Developer ID 签名与公证并把站点下载区切回签名产物（决策⑦回开） <!--t:b1gxqf--> #desktop #release !3
+      ↳ Apple Developer 会员 + .p12 + App Store Connect API key 到位后，走 docs/macos-release.md「创建正式发布」签名工作流；站点下载区切签名产物、下架未签名包（决策⑦回开条件） <!--n:b1gxqf-->
+- [ ] 修复 watch 测试簇 FSEvents 延迟投递导致的间歇性失败（verify-quick 红/绿漂移） <!--t:onfv6x--> #desktop #test !2
+      ↳ 根因：macOS FSEvents 把建立期写入事件延迟批量重放，污染 250ms 静默断言，失败在 reading_target_without_a_write_does_not_reload 与 parent_watch_survives_two_atomic_replacements 等同族测试间游走；notify 依赖未变，疑与 2026-11-19 nightly 切换相关。reading_target 已加沉降排空（本日提交），其余同族测试待同样处理 <!--n:onfv6x-->
 
 ## Doing
 - [ ] 人工验收看板任务写回 TODO.md <!--t:h4m9zc--> #desktop #manual !1 ^3000
@@ -65,6 +69,6 @@ columns:
 - [ ] Trae 部署平台接入：Makefile trae-deploy + scripts/deploy-site-trae.sh（发布 web/dist 静态站） <!--t:ovy2ij--> #site #deploy !3 ◐80
       ↳ 2026-11-18 立项并随本轮提交入库：Makefile 新增 trae-deploy 与 TRAE_* 变量、新增 scripts/deploy-site-trae.sh（权限预检/站点按名复用/禁并发/临时目录上传/等终态读地址），发布 web/dist 静态站。代码就绪；剩余：在 Trae 会话终端真实跑一次 make trae-deploy（普通 shell 预检会被拦）。 <!--n:ovy2ij-->
 - [ ] 多包依赖升级：Tauri 2.12.5 / vite 8.3.8 / express 5.3 / Playwright 1.65.1 等 <!--t:e9zhyn--> #deps #ci !3 ◐80
-      ↳ 2026-11-18 立项并随本轮提交入库：Tauri api/cli 2.12.5、plugin-dialog 2.8.4、plugin-global-shortcut 2.4.1、vite 8.3.8、@vitejs/plugin-react 6.3.0、express 5.3、@playwright/test 与 playwright 1.65.x，pnpm-lock.yaml 同步更新。依赖已改；剩余：升级后跑一次完整 make check-quick 与 e2e 确认无回归。 <!--n:e9zhyn-->
+      ↳ 2026-11-19 补：cargo update 对齐 Rust 侧 tauri 2.12.7 / plugin-dialog 2.8.4 / plugin-global-shortcut 2.4.1（此前 tauri build 因版本失配被拦，v0.1.0 发布构建已用此组合）。verify-quick 多次通过；watch 测试簇间歇失败另立 onfv6x。剩余：完整 make check-quick + e2e <!--n:e9zhyn-->
 
 ## Done

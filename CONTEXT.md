@@ -46,9 +46,10 @@ _Avoid_: Daily task list, separate inbox
 
 - Workspace / Project Profile / Knowledge / Session / Overview（蓝图 Phase 1–7）已实现、通过测试，并在 M0-B 按模块提交（6 个提交 / 51 文件，2026-11-07）后 push 到 `origin/main`；审计结论见 `docs/audits/2026-11-03-audit.md`。
 - M0 收口已完成：完整门禁恢复，`git status` 曾清零，本地与 `origin/main` 同步（M0-A 2026-11-06、M0-B 2026-11-07、D-M0-2 push 2026-11-07）。
-- 阻塞项仅剩：可分发的桌面端 release —— 缺 Developer ID 签名与 Apple 公证凭据（`TODO.md` `d3l8hn`，◐80）。
+- 桌面端 release 已上线：2026-11-19 决策⑦拍板不等签名公证，v0.1.0 未签名构建随官网 `/downloads/` 三端公开分发（`TODO.md` `d3l8hn` 已关闭）；签名路径回开条件见 `TODO.md` `b1gxqf`。
 - 赞助与收款已上线：支付宝生产网关全链路 2026-11-12 实测通过（`TODO.md` `3nd6da` 已关闭）；剩余赞助屏文案、致谢区、隐私政策与爱发电入口见 `TODO.md` `aiw1hs` / `7gi5ls`。
 - 2026-11-13：阅读功能两项落地——微信内联样式保留（readabilityrs `clean_styles(false)` + ammonia 声明级 style 过滤，存量文章需重新解析）与另存为 HTML/Markdown（目录选择器 + `img/` 图片目录 + 标题文件名，任务2）；自动门禁全绿，真机验收待办（`TODO.md` `wst7k4` / `sv2md9`）。
 - 2026-11-14：现代 Web 特性优化（分支 `modern-web-optimization`）——桌面端三处 Enter 提交加 IME 组字防护（isComposing + keyCode 229，覆盖 WebKit 乱序 bug），站点 hero stagger 换 sibling-index() 带 @supports 回退；tsc / vite build / e2e 162 通过全绿，详见 `docs/verification-log.md` 2026-11-14（`TODO.md` `mg31je`）。
 - 2026-11-15：阅读交互三处落地——剪贴板读取可在设置中关闭并明示用途（commit `87cb1f3`，无独立任务，见 `docs/verification-log.md`）、笔记卡动作区统一（`4818259`）、窄屏「标记与笔记」改贴底抽屉（`TODO.md` `zj3fjt`，`d9c95a0`）；tsc / vite build / Playwright（chromium + mobile）全绿。
-- 工作区未提交（截至 2026-11-18）：Trae 部署平台接入（`Makefile` 新增 `trae-deploy` 与 `TRAE_*` 变量、新增 `scripts/deploy-site-trae.sh`，发布 `web/dist` 静态站）与多包依赖升级（Tauri api/cli 2.12.5、dialog 2.8.4、global-shortcut 2.4.1、vite 8.3.8、@vitejs/plugin-react 6.3.0、express 5.3、Playwright 1.65.1，含 `pnpm-lock.yaml`）。已在 `TODO.md` 立项（`ovy2ij` / `e9zhyn`，各 ◐80）：剩余分别是「在 Trae 会话终端实测 `make trae-deploy`」与「升级后跑完整 `make check-quick` + e2e 验无回归」，未实测前不算完成；`.idea/`、`.zcode/` 为本地 IDE/agent 目录，已加入 `.gitignore`。
+- 2026-11-19：v0.1.0 未签名先行上线（决策⑦）——官网状态条 / hero / 下载区改版（zh/en），产物入库 `web/public/downloads/` 并随三端部署；`package-macos.sh` 新增 `RELEASE_QUALIFIER`；Cargo.lock 对齐 tauri 2.12.7（修复 tauri build 版本失配）；watch 测试簇间歇失败另立 `onfv6x`（reading_target 已加沉降排空）。验证：verify-quick 绿（27–32s 多次）、CF Pages 横幅与下载 200、EO 下载 200；详见 `docs/verification-log.md` 2026-11-19。
+- Trae 部署与依赖升级（2026-11-18 立项 `ovy2ij` / `e9zhyn`，各 ◐80）：代码已随 `084944f` / `0cbdb99` 入库（`.idea/`、`.zcode/` 已加入 `.gitignore`）；剩余分别是「在 Trae 会话终端实测 `make trae-deploy`」与「升级后跑完整 `make check-quick` + e2e 验无回归」，未实测前不算完成。
