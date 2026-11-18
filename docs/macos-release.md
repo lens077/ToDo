@@ -108,7 +108,7 @@ OUTPUT_DIR="$(pwd)/target/site-downloads" RELEASE_QUALIFIER= SIGN_AND_NOTARIZE=0
   ./scripts/package-macos.sh
 ```
 
-2. 把产物复制进站点静态目录（该目录已加入 `.gitignore`，产物不进 Git）：
+2. 把产物复制进站点静态目录并随仓库提交：`deploy.yml` 的 CI 从仓库构建站点与镜像，产物必须在 Git 里，CI 部署出的三端才完整。
 
 ```bash
 mkdir -p web/public/downloads

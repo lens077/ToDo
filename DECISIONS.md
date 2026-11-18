@@ -255,5 +255,5 @@
 - 发布物:v0.1.0,macOS arm64 的 `Sumery Virgo.app.zip` 与 `todo` CLI `.tar.gz`,随官网三端(Cloudflare Pages / EdgeOne / virgo.apikv.com)`/downloads/` 静态分发,附 SHA256SUMS。
 - 站点如实告知未签名状态与两种 Gatekeeper 放行方式(系统设置「仍要打开」/ `xattr -cr "/Applications/Sumery Virgo.app"`)。
 - 签名与公证版本随后补上;在此之前,未签名版本即正式发布版本。
-- 工程落点:`scripts/package-macos.sh` 新增 `RELEASE_QUALIFIER` 显式开关(默认仍产出不可分发的 `-local-unnotarized` 验收包);发布路径见 `docs/macos-release.md`「未签名公开分发」;产物目录 `web/public/downloads/` 已加 `.gitignore`。
+- 工程落点:`scripts/package-macos.sh` 新增 `RELEASE_QUALIFIER` 显式开关(默认仍产出不可分发的 `-local-unnotarized` 验收包);发布路径见 `docs/macos-release.md`「未签名公开分发」;产物目录 `web/public/downloads/` 随仓库提交(deploy.yml 的 CI 从仓库构建,产物必须在 Git 里)。
 - 回开条件:Apple Developer 凭据到位后,走既有签名工作流(`docs/macos-release.md`「创建正式发布」),站点下载区切回签名产物,未签名产物下架。
