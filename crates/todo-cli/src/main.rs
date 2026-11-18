@@ -1,3 +1,5 @@
+#![allow(clippy::large_unopt_stack_frames)]
+
 mod hooks;
 
 use todo_cli::serve;

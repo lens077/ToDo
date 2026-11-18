@@ -629,8 +629,8 @@ pub fn set_priority_changes(
         root + 1
     };
     let mut changes = Vec::new();
-    for task_index in root..end {
-        let tokens: Vec<_> = document.tasks[task_index]
+    for (task_index, task) in document.tasks.iter().enumerate().take(end).skip(root) {
+        let tokens: Vec<_> = task
             .metadata
             .iter()
             .enumerate()
@@ -640,7 +640,7 @@ pub fn set_priority_changes(
             .collect();
         if let Some(value) = priority {
             let already_normalized = tokens.len() == 1
-                && matches!(document.tasks[task_index].metadata[tokens[0]].kind, TokenKind::Priority(current) if current == value);
+                && matches!(task.metadata[tokens[0]].kind, TokenKind::Priority(current) if current == value);
             if already_normalized {
                 continue;
             }

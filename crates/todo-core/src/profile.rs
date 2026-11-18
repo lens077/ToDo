@@ -120,7 +120,7 @@ pub fn scan_environment(root: &Path) -> ObservedEnvironment {
                 ("tauri", "tauri"),
             ] {
                 if hints.iter().any(|name| name == dependency)
-                    && !observed.runtimes.contains(&runtime.to_string())
+                    && !observed.runtimes.iter().any(|seen| seen == runtime)
                 {
                     observed.runtimes.push(runtime.into());
                 }
@@ -254,7 +254,7 @@ pub fn scan_environment(root: &Path) -> ObservedEnvironment {
                 }
                 if let Some((name, _)) = line.split_once('=') {
                     let name = name.trim();
-                    if !name.is_empty() && !observed.env_var_names.contains(&name.to_string()) {
+                    if !name.is_empty() && !observed.env_var_names.iter().any(|seen| seen == name) {
                         observed.env_var_names.push(name.to_string());
                     }
                 }
@@ -480,8 +480,8 @@ mod tests {
         assert!(!observed.commands.iter().any(|c| c.name == ".PHONY"));
         assert_eq!(observed.services, vec!["web", "db"]);
         assert_eq!(observed.ports, vec!["8080:80"]);
-        assert!(observed.runtimes.contains(&"node".to_string()));
-        assert!(observed.runtimes.contains(&"react".to_string()));
+        assert!(observed.runtimes.iter().any(|seen| seen == "node"));
+        assert!(observed.runtimes.iter().any(|seen| seen == "react"));
     }
 
     #[test]
@@ -510,8 +510,8 @@ mod tests {
             ("go.mod", "module x\n"),
         ]);
         let observed = scan_environment(dir.path());
-        assert!(observed.runtimes.contains(&"rust".to_string()));
-        assert!(observed.runtimes.contains(&"go".to_string()));
+        assert!(observed.runtimes.iter().any(|seen| seen == "rust"));
+        assert!(observed.runtimes.iter().any(|seen| seen == "go"));
         assert_eq!(observed.package_manager.as_deref(), None);
     }
 

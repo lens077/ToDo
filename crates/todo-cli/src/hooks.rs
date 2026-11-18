@@ -75,6 +75,7 @@ fn hook_command(executable: Option<&Path>) -> String {
 }
 
 #[cfg(test)]
+#[allow(clippy::items_after_test_module)]
 mod tests {
     use super::*;
 
