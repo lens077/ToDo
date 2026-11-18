@@ -99,28 +99,64 @@ make package-macos OUTPUT_DIR=target/my-release
 
 ## 未签名公开分发（决策⑦）
 
-产品决策（`DECISIONS.md` 决策⑦，2026-11-19）允许在 Developer ID 凭据到位前，把 ad-hoc 签名的构建作为正式发布版本，随官网三端静态分发。发布步骤：
+产品决策（`DECISIONS.md` 决策⑦，2026-11-19）允许在 Developer ID 凭据到位前，把 ad-hoc 签名的构建作为正式发布版本公开分发。
 
-1. 用空 qualifier 产出公开命名的产物：
+### 下载策略（参照 Scorpius）
+
+产物落三处，各司其职：
+
+| 副本 | 位置 | 作用 |
+| --- | --- | --- |
+| 站点 git | `web/public/dl/releases/<version>/` | 三端 CI 构建源，唯一完整副本（`deploy.yml` 从仓库构建） |
+| EdgeOne 边缘 | `https://virgo-pages.apikv.com/dl/releases/<version>/` | **官方下载链接指向这里**（`content.*.mjs` 的 `dl` 常量），随 `make pages-deploy-eo` 分发 |
+| 对象存储桶 | `releases-virgo/<version>/`（S3/MinIO 协议，私有） | 冷备；边缘出问题时人工恢复的第三份 |
+
+路径对齐规则（借 Scorpius）：站点路径、桶对象键同为 `dl|releases…/<version>/<file>` 前缀不同的同一文件名，人肉对照不需要第二份索引。换版本时三处同步：`release-stage` → 提交 → 部署三端 → `bucket-push`。
+
+为什么不从主站直下：virgo.apikv.com 经 Pangolin 隧道到 k1 集群，实测 ~0.6 MB/s；EdgeOne 边缘 ~3.4 MB/s。安装包是站点里唯一的大文件，把它留在隧道外是下载体验的全部差别。
+
+### 安全边界（参照 Scorpius 的取舍）
+
+- Scorpius 的限流/一次性令牌保护的是「兑换令牌」这类计算端点；Virgo 的下载是纯静态边缘命中，没有可被滥用的计算路径，因此**不设令牌、不限流**——文件字节本来公开。Sponsor/对账 API 的既有安全边界不变。
+- 边缘域 `virgo-pages.apikv.com` 只做静态镜像，**永不接管主域**（主域带 sponsor-api 路径语义），与 Scorpius 的「镜像不接管主站」同一条规则。
+- 桶保持私有、凭据只在 Scorpius/.env（不入库）；需要临时分享桶内容时用工具自行预签名，不放公开链接。
+- 需要边缘限流/防盗链时，在 EdgeOne 控制台对该域名配规则（平台能力，不进代码）。
+
+### 发布步骤
+
+1. 构建产物（公开命名）：
 
 ```bash
 OUTPUT_DIR="$(pwd)/target/site-downloads" RELEASE_QUALIFIER= SIGN_AND_NOTARIZE=0 \
   ./scripts/package-macos.sh
 ```
 
-2. 把产物复制进站点静态目录并随仓库提交：`deploy.yml` 的 CI 从仓库构建站点与镜像，产物必须在 Git 里，CI 部署出的三端才完整。
+2. staged 进站点并确认 `web/src/content.zh.mjs` / `content.en.mjs` 里 `dl` 常量的版本与文件名一致：
 
 ```bash
-mkdir -p web/public/downloads
-cp target/site-downloads/*.tar.gz target/site-downloads/*.app.zip target/site-downloads/SHA256SUMS \
-  web/public/downloads/
+make release-stage
 ```
 
-3. 确认 `web/src/content.zh.mjs` / `content.en.mjs` 里 `dl` 常量的文件名与版本一致。
-4. `make site-build` 后按三端部署（`make site-deploy`）。
-5. 站点下载区必须如实保留未签名状态说明与两种 Gatekeeper 放行方式（系统设置「仍要打开」/ `xattr -cr "/Applications/Sumery Virgo.app"`）。
+3. 提交（产物随 git 走三端 CI 构建源），发布三端：
 
-换版本时：改 `apps/desktop/src-tauri/tauri.conf.json` 的 `version`、`content.*.mjs` 的 `dl` 常量与下载区文案，重跑以上步骤。凭据到位后，走「创建正式发布」的签名工作流，并把站点下载区切回签名产物。
+```bash
+make site-deploy          # 或按端：make pages-deploy / pages-deploy-eo / k8s-deploy
+```
+
+4. 桶冷备（手动）：
+
+```bash
+make bucket-push
+```
+
+5. 验证下载命中边缘且完整：
+
+```bash
+curl -sI "https://virgo-pages.apikv.com/dl/releases/$(VERSION)/Sumery-Virgo-$(VERSION)-aarch64-apple-darwin.app.zip" | head -1   # 应为 200
+curl -sL "https://virgo-pages.apikv.com/dl/releases/$(VERSION)/SHA256SUMS" | shasum -a 256 -c -
+```
+
+凭据到位后，走「创建正式发布」的签名工作流，站点下载区切回签名产物，未签名产物从三处同批下架。
 
 ## 创建正式发布
 

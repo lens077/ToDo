@@ -3,10 +3,14 @@
 // 构建会检查两份结构一致。
 
 const mailto = "mailto:support@looke.cloud?subject=" + encodeURIComponent("Sumery Virgo 意见反馈");
+// 下载统一走 EdgeOne 边缘：主站 virgo.apikv.com 经 Pangolin 隧道，实测 ~0.6 MB/s，
+// 边缘 ~3.4 MB/s。产物路径与桶对象键保持一致（dl/releases/<version>/<file>），
+// 桶为冷备；发布与换版本流程见 docs/macos-release.md「未签名公开分发」。
+const CDN = "https://virgo-pages.apikv.com";
 const dl = {
-  app: "/downloads/Sumery-Virgo-0.1.0-aarch64-apple-darwin.app.zip",
-  cli: "/downloads/todo-0.1.0-aarch64-apple-darwin.tar.gz",
-  sums: "/downloads/SHA256SUMS",
+  app: `${CDN}/dl/releases/0.1.0/Sumery-Virgo-0.1.0-aarch64-apple-darwin.app.zip`,
+  cli: `${CDN}/dl/releases/0.1.0/todo-0.1.0-aarch64-apple-darwin.tar.gz`,
+  sums: `${CDN}/dl/releases/0.1.0/SHA256SUMS`,
 };
 
 export default {

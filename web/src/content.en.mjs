@@ -4,10 +4,15 @@
 // do not have the same shape.
 
 const mailto = "mailto:support@looke.cloud?subject=" + encodeURIComponent("Sumery Virgo feedback");
+// Downloads always go through the EdgeOne edge: the primary host routes
+// through a Pangolin tunnel (~0.6 MB/s measured) while the edge serves
+// ~3.4 MB/s. Paths mirror the bucket object keys (dl/releases/<version>/<file>);
+// the bucket is a cold spare. See docs/macos-release.md, "Unsigned distribution".
+const CDN = "https://virgo-pages.apikv.com";
 const dl = {
-  app: "/downloads/Sumery-Virgo-0.1.0-aarch64-apple-darwin.app.zip",
-  cli: "/downloads/todo-0.1.0-aarch64-apple-darwin.tar.gz",
-  sums: "/downloads/SHA256SUMS",
+  app: `${CDN}/dl/releases/0.1.0/Sumery-Virgo-0.1.0-aarch64-apple-darwin.app.zip`,
+  cli: `${CDN}/dl/releases/0.1.0/todo-0.1.0-aarch64-apple-darwin.tar.gz`,
+  sums: `${CDN}/dl/releases/0.1.0/SHA256SUMS`,
 };
 
 export default {

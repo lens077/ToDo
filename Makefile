@@ -55,10 +55,14 @@ help: ## List available build and packaging targets
 	  '官网（三端）：' \
 	  'make site-deploy          构建并发布到全部三端' \
 	  'make pages-deploy         Cloudflare Pages（virgo-overseas）' \
-	  'make pages-deploy-eo      EdgeOne Pages（virgo-site）' \
+	  'make pages-deploy-eo      EdgeOne Pages（virgo-site，官方下载链接指向的边缘）' \
 	  'make k8s-deploy           virgo.apikv.com（k1 集群，立即 helm 部署）' \
 	  'make argo-apply           注册 ArgoCD Application（GitOps）' \
 	  'make trae-deploy          发布到 Trae 部署平台（含权限预检，需在 Trae 会话终端运行）' \
+	  '' \
+	  '发布产物（决策⑦）：' \
+	  'make release-stage        构建产物 staged 进 web/public/dl/releases/$(VERSION)' \
+	  'make bucket-push          冷备：产物推对象存储桶（复用 Scorpius cosput/.env）' \
 	  '' \
 	  '链接库同步服务：' \
 	  'make sync-secret          创建 todo 命名空间与随机 token Secret' \
@@ -218,6 +222,37 @@ sync-argo-apply: ## Register the todo-sync ArgoCD application
 	kubectl apply -f deploy/argocd/application-todo-sync.yaml
 
 site-deploy: pages-deploy pages-deploy-eo k8s-deploy ## Deploy the landing site to all three origins
+
+# 发布产物（决策⑦下载策略）。产物落三处：站点 git（三端 CI 构建源，唯一完整副本）、
+# EdgeOne 边缘（官方下载链接指向这里，随 makers 部署分发）、对象存储桶（私有冷备）。
+# 下载统一指向边缘绝对 URL：主站经 Pangolin 隧道实测 ~0.6 MB/s，边缘 ~3.4 MB/s。
+# 产物路径 dl/releases/<version>/<file> 与桶对象键保持一致（借 Scorpius 的命名规则）。
+# 桶凭据在 Scorpius/.env（S3_ENDPOINT/S3_BUCKET/S3_ACCESS_KEY/S3_SECRET_KEY），
+# 上传工具复用 Scorpius 的 cmd/cosput（S3/MinIO 协议）；两者都不在本仓库内。
+SCORPIUS_DIR  ?= $(HOME)/lens077/Scorpius
+COSPUT_DIR    ?= $(SCORPIUS_DIR)/server/cmd/cosput
+COSPUT_ENV    ?= $(SCORPIUS_DIR)/.env
+BUCKET_PREFIX ?= releases-virgo/$(VERSION)
+STAGE_DIR     ?= target/site-downloads
+
+release-stage: ## 把构建产物 staged 进 web/public/dl/releases/$(VERSION)（随 git 提交）
+	@stage="$(STAGE_DIR)"; dest="web/public/dl/releases/$(VERSION)"; \
+	 ls "$$stage"/*.app.zip "$$stage"/*.tar.gz >/dev/null 2>&1 \
+	   || { echo "release-stage: $$stage 里没有产物 —— 先构建（docs/macos-release.md「未签名公开分发」第 1 步）"; exit 1; }; \
+	 mkdir -p "$$dest"; \
+	 cp "$$stage"/*.app.zip "$$stage"/*.tar.gz "$$stage/SHA256SUMS" "$$dest/"; \
+	 echo "已 staged："; ls -lh "$$dest"; \
+	 echo "下一步：确认 web/src/content.*.mjs 的 dl 常量版本一致 → 提交 → make site-deploy"
+
+bucket-push: ## 冷备：产物推到对象存储桶（手动执行，复用 Scorpius cosput 与 .env）
+	@test -d "$(COSPUT_DIR)" || { echo "bucket-push: 找不到 cosput（$(COSPUT_DIR)）；SCORPIUS_DIR=… 指向 Scorpius 检出"; exit 1; }
+	@test -f "$(COSPUT_ENV)" || { echo "bucket-push: 缺凭据文件 $(COSPUT_ENV)（S3_ENDPOINT/S3_BUCKET/S3_ACCESS_KEY/S3_SECRET_KEY）"; exit 1; }
+	@files="$(CURDIR)/web/public/dl/releases/$(VERSION)"; \
+	 ls "$$files"/*.app.zip "$$files"/*.tar.gz >/dev/null 2>&1 \
+	   || { echo "bucket-push: $$files 里没有产物 —— 先 make release-stage"; exit 1; }; \
+	 cd "$(SCORPIUS_DIR)/server" && set -a && . "$(COSPUT_ENV)" && set +a && \
+	 go run ./cmd/cosput -prefix "$(BUCKET_PREFIX)" "$$files"/*; \
+	 echo "已推送 $(BUCKET_PREFIX)/（桶保持私有，冷备用途）"
 
 # Trae 部署平台（预览/分享）：把 web/dist 发成可访问站点。首次运行新建
 # 「$(TRAE_SITE_NAME)」，之后按站点名复用（也可 TRAE_SITE_ID=<id> 指定）。

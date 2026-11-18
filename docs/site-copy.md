@@ -41,7 +41,7 @@ wordmark：`Virgo`
 > `TODO.md` 汇总成一个视图，用 Git 里的改动给每一项找物证，只报告差异——**完成与否，
 > 还是你来定。**
 
-按钮：`下载 macOS 版`（直链 `/downloads/` 安装包） · `看它怎么对账`
+按钮：`下载 macOS 版`（直链 EdgeOne 边缘 `/dl/releases/` 安装包） · `看它怎么对账`
 小字：`v0.1.0 · Apple Silicon · 未签名版本，首次打开需放行一次。`
 
 ## 2 · 怎么用
@@ -173,7 +173,7 @@ wordmark：`Virgo`
 | macOS CLI · Apple Silicon | 下载 todo .tar.gz |
 | 其他平台 | 未发布 |
 
-按钮：`下载 Sumery Virgo v0.1.0`（直链 `/downloads/Sumery-Virgo-0.1.0-aarch64-apple-darwin.app.zip`）
+按钮：`下载 Sumery Virgo v0.1.0`（直链 `https://virgo-pages.apikv.com/dl/releases/0.1.0/Sumery-Virgo-0.1.0-aarch64-apple-darwin.app.zip`）
 
 ## 页脚
 
