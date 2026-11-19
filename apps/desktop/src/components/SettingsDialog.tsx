@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { LAYOUT_DENSITIES, OPEN_SESSION_MODES, defaultAppSettings, useAppSettings } from '../lib/appSettings';
+import { EXPORT_NAMING_MODES, LAYOUT_DENSITIES, OPEN_SESSION_MODES, defaultAppSettings, useAppSettings } from '../lib/appSettings';
 import { readProviderSettings } from '../lib/providerSettings';
 import { Icon } from './Icon';
 import { MobileTabBarEditor } from './MobileTabBarEditor';
@@ -118,6 +118,53 @@ export function SettingsDialog({ onClose, onOpenProviderSettings, onOpenWizard, 
                 <span className="switch__track" aria-hidden="true" />
               </span>
             </label>
+          </section>
+
+          <section className="settings-group" aria-labelledby="settings-export-naming">
+            <h3 id="settings-export-naming">另存为命名</h3>
+            <div className="settings-row settings-row--stack">
+              <span className="settings-row__copy">
+                <strong>导出目录与文件名</strong>
+                <span>{EXPORT_NAMING_MODES.find((item) => item.value === settings.exportNaming)?.note}</span>
+              </span>
+              <div className="segmented" role="radiogroup" aria-label="另存为命名">
+                {EXPORT_NAMING_MODES.map((item) => (
+                  <label key={item.value} className={`segmented__option${settings.exportNaming === item.value ? ' is-active' : ''}`}>
+                    <input
+                      type="radio"
+                      name="export-naming"
+                      value={item.value}
+                      checked={settings.exportNaming === item.value}
+                      onChange={() => update({ exportNaming: item.value })}
+                    />
+                    <span>{item.label}</span>
+                  </label>
+                ))}
+              </div>
+              {settings.exportNaming === 'custom' && (
+                <div className="settings-export-affixes" role="group" aria-label="自定义前后缀">
+                  <label>
+                    <span>前缀（加在最前）</span>
+                    <input
+                      type="text"
+                      value={settings.exportPrefix}
+                      placeholder="例如：SV · "
+                      onChange={(event) => update({ exportPrefix: event.target.value })}
+                    />
+                  </label>
+                  <label>
+                    <span>后缀（加在最后）</span>
+                    <input
+                      type="text"
+                      value={settings.exportSuffix}
+                      placeholder="例如： (Sumery Virgo)"
+                      onChange={(event) => update({ exportSuffix: event.target.value })}
+                    />
+                  </label>
+                  <span className="settings-export-affixes__note">预览：{settings.exportPrefix || ''}文章标题{settings.exportSuffix || ''}</span>
+                </div>
+              )}
+            </div>
           </section>
 
           <section className="settings-group" aria-labelledby="settings-density">

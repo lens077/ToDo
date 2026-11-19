@@ -1829,6 +1829,12 @@
 
   /* Segmented choice: one track, the active segment lifted to paper. */
   .settings-row--stack { grid-template-columns: minmax(0, 1fr); }
+  /* 另存为命名的自定义前后缀输入（sv2md9）：两列输入 + 实时命名预览。 */
+  .settings-export-affixes { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; padding: 12px; background: var(--panel-2); border: 1px dashed var(--hairline-2); border-radius: var(--radius-control); }
+  .settings-export-affixes label { display: grid; gap: 5px; font-size: 12px; color: var(--ink-2); }
+  .settings-export-affixes input { min-width: 0; padding: 6px 9px; color: var(--ink); background: var(--panel); border: 1px solid var(--hairline-2); border-radius: 6px; font: inherit; font-size: 13px; }
+  .settings-export-affixes input:focus-visible { outline: 2px solid var(--accent-wash-2); border-color: var(--accent); }
+  .settings-export-affixes__note { grid-column: 1 / -1; color: var(--ink-3); font-size: 12px; overflow-wrap: anywhere; }
   .segmented { display: inline-grid; grid-auto-flow: column; grid-auto-columns: 1fr; gap: 2px; justify-self: start; padding: 2px; background: var(--panel-2); border: 1px solid var(--hairline); border-radius: var(--radius-control); }
   .segmented__option { position: relative; display: grid; min-height: 28px; padding: 0 16px; place-items: center; color: var(--ink-2); border-radius: 6px; font-size: 12.5px; cursor: pointer; transition: background 0.3s var(--ease-out), color 0.3s var(--ease-out), box-shadow 0.3s var(--ease-out); }
   .segmented__option input { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; opacity: 0; cursor: pointer; }

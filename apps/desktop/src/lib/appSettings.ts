@@ -46,6 +46,26 @@ export interface MobileTabBarPreference {
 export const MOBILE_TAB_MIN = 2;
 export const MOBILE_TAB_MAX = 6;
 
+/**
+ * How 「另存为 HTML / Markdown」 names the wrapper directory and file.
+ *
+ * - `product-suffix`: 「标题 - Sumery Virgo」 (default) — exports are
+ *   recognizable at a glance.
+ * - `plain`: title only, no affixes.
+ * - `custom`: the user's own prefix and/or suffix; both empty ≙ `plain`.
+ */
+export type ExportNamingMode = 'product-suffix' | 'plain' | 'custom';
+
+export const EXPORT_NAMING_MODES: ReadonlyArray<{ value: ExportNamingMode; label: string; note: string }> = [
+  { value: 'product-suffix', label: '带产品后缀', note: '「标题 - Sumery Virgo」，导出的目录与文件一眼认出出处。' },
+  { value: 'plain', label: '仅标题', note: '不加任何前后缀。' },
+  { value: 'custom', label: '自定义', note: '用下面的前缀 / 后缀，可只用其一；都留空等同「仅标题」。' },
+];
+
+function isExportNamingMode(value: unknown): value is ExportNamingMode {
+  return value === 'product-suffix' || value === 'plain' || value === 'custom';
+}
+
 export const defaultMobileTabBar: MobileTabBarPreference = {
   order: ['goal', 'reading', 'capture', 'overview'],
   version: 1,
@@ -75,6 +95,15 @@ export interface AppSettings {
    * copied article links stops, manual paste into the reading input remains.
    */
   clipboardImport: boolean;
+  /**
+   * Naming of the reader 「另存为」 wrapper directory and file. Only affects
+   * exports made after the change; illegal characters are filtered by the
+   * Rust side either way.
+   */
+  exportNaming: ExportNamingMode;
+  /** Custom affixes, applied only when `exportNaming` is `custom`. */
+  exportPrefix: string;
+  exportSuffix: string;
   mobileTabBar: MobileTabBarPreference;
 }
 
@@ -86,6 +115,9 @@ export const defaultAppSettings: AppSettings = {
   openSession: 'reuse',
   usageAnalytics: true,
   clipboardImport: true,
+  exportNaming: 'product-suffix',
+  exportPrefix: '',
+  exportSuffix: '',
   mobileTabBar: defaultMobileTabBar,
 };
 
@@ -123,6 +155,9 @@ function normalize(value: unknown): AppSettings {
     openSession: isOpenSessionMode(raw.openSession) ? raw.openSession : defaultAppSettings.openSession,
     usageAnalytics: typeof raw.usageAnalytics === 'boolean' ? raw.usageAnalytics : defaultAppSettings.usageAnalytics,
     clipboardImport: typeof raw.clipboardImport === 'boolean' ? raw.clipboardImport : defaultAppSettings.clipboardImport,
+    exportNaming: isExportNamingMode(raw.exportNaming) ? raw.exportNaming : defaultAppSettings.exportNaming,
+    exportPrefix: typeof raw.exportPrefix === 'string' ? raw.exportPrefix : defaultAppSettings.exportPrefix,
+    exportSuffix: typeof raw.exportSuffix === 'string' ? raw.exportSuffix : defaultAppSettings.exportSuffix,
     mobileTabBar: normalizeMobileTabBar(raw.mobileTabBar),
   };
 }

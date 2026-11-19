@@ -494,6 +494,39 @@ fn open_exported_file(path: String) -> Result<(), String> {
         .map_err(|error| format!("无法打开文件：{error}"))
 }
 
+/// Reveals a reader-export wrapper directory (「打开目录」) in the system file
+/// manager. Restricted to existing directories — same reasoning as
+/// [`open_exported_file`]: the path arrives from the renderer. `explorer` may
+/// exit non-zero on success, so only the spawn is checked.
+#[tauri::command]
+fn open_exported_dir(path: String) -> Result<(), String> {
+    let dir_path = std::path::PathBuf::from(&path);
+    let meta = std::fs::metadata(&dir_path).map_err(|error| format!("目录不存在：{error}"))?;
+    if !meta.is_dir() {
+        return Err("路径不是目录".into());
+    }
+    let mut command = if cfg!(target_os = "macos") {
+        let mut command = std::process::Command::new("open");
+        command.arg(&dir_path);
+        command
+    } else if cfg!(target_os = "windows") {
+        let mut command = std::process::Command::new("explorer");
+        command.arg(&dir_path);
+        command
+    } else {
+        let mut command = std::process::Command::new("xdg-open");
+        command.arg(&dir_path);
+        command
+    };
+    command
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .map(|_| ())
+        .map_err(|error| format!("无法打开目录：{error}"))
+}
+
 /// The label of the one window 「复用同一窗口」 keeps for the agent host.
 ///
 /// It is not in `capabilities/default.json`, so a page loaded into it gets no
@@ -841,6 +874,7 @@ pub fn run() {
             ai_to_task,
             open_external,
             open_exported_file,
+            open_exported_dir,
             open_session_window,
             desktop_status,
             reading::reading_list,

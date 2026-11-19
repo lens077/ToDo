@@ -15,7 +15,7 @@ import {
 } from '../lib/reading';
 import { Icon } from './Icon';
 import { ReaderContextMenu } from './ReaderContextMenu';
-import { useArticleExport, openExportedFile, type ExportNotice } from '../hooks/useArticleExport';
+import { useArticleExport, openExportedFile, openExportedDir, type ExportNotice } from '../hooks/useArticleExport';
 import { useAppSettings } from '../lib/appSettings';
 import {
   markClipboardHandled,
@@ -435,6 +435,11 @@ export function ReadingView({ model }: ReadingViewProps) {
           {exportNotice.path && (
             <button type="button" onClick={() => void openExportedFile(exportNotice, reportExportNotice)}>
               <Icon name="external" /> 打开
+            </button>
+          )}
+          {exportNotice.dir && (
+            <button type="button" onClick={() => void openExportedDir(exportNotice, reportExportNotice)}>
+              <Icon name="folder" /> 打开目录
             </button>
           )}
         </p>

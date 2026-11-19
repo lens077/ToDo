@@ -172,11 +172,31 @@ impl ReadingExportFormat {
     }
 }
 
-/// 一次「另存为」的产物：主文件绝对路径与保存进 `img/` 的图片数。
+/// 一次「另存为」的产物：主文件绝对路径、包裹目录绝对路径与保存进 `img/` 的图片数。
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct ReadingExportResult {
     pub path: String,
+    /// 包裹目录：正文文件与 `img/` 都在这里面（2026-11-19 起，导出不再散落）。
+    pub dir: String,
     pub images: u32,
+}
+
+/// 「另存为」命名：目录与文件名共用的前后缀。前后缀由调用方从设置解析而来
+/// （产品后缀 / 仅标题 / 自定义），这里只负责净化与限长。
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ReadingExportNaming {
+    pub prefix: String,
+    pub suffix: String,
+}
+
+impl Default for ReadingExportNaming {
+    /// 默认带产品后缀：导出产物一眼认出出处。
+    fn default() -> Self {
+        Self {
+            prefix: String::new(),
+            suffix: " - Sumery Virgo".into(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1149,20 +1169,36 @@ type: reading
         Ok(markdown)
     }
 
-    /// 另存为：把正文与图片写进用户选择的目录，图片放 `img/`，文件名用
-    /// 文章标题（重名自动加序号）。返回主文件路径。
+    /// 另存为：在用户选择的目录里为这篇文章建一个「包裹目录」，正文与
+    /// `img/` 都收在里面（同一篇文章两种格式复用同一目录，图片不重复下载）；
+    /// 目录与文件名共用 `naming` 前后缀（默认带产品后缀），重名自动加序号。
+    /// 返回主文件路径与包裹目录。
     pub fn export_article(
         &self,
         id: &str,
         format: ReadingExportFormat,
         dir: &Path,
+        naming: &ReadingExportNaming,
     ) -> Result<ReadingExportResult> {
         let detail = self.get(id)?;
         fs::create_dir_all(dir).map_err(|source| Error::Io {
             path: dir.to_path_buf(),
             source,
         })?;
-        let img_dir = dir.join("img");
+        // 目录与文件名同款：先截标题留出前后缀预算，总长不超过 MAX_EXPORT_STEM_CHARS。
+        let prefix = sanitize_export_affix(&naming.prefix, false);
+        let suffix = sanitize_export_affix(&naming.suffix, true);
+        let budget = MAX_EXPORT_STEM_CHARS
+            .saturating_sub(prefix.chars().count() + suffix.chars().count())
+            .max(MIN_EXPORT_STEM_BUDGET);
+        let stem = export_stem(&detail.article.title, id, budget);
+        let name = format!("{prefix}{stem}{suffix}");
+        let wrapper = unique_export_dir(dir, &name);
+        fs::create_dir_all(&wrapper).map_err(|source| Error::Io {
+            path: wrapper.clone(),
+            source,
+        })?;
+        let img_dir = wrapper.join("img");
         fs::create_dir_all(&img_dir).map_err(|source| Error::Io {
             path: img_dir.clone(),
             source,
@@ -1174,14 +1210,13 @@ type: reading
             &img_dir,
             &detail.article.url,
         );
-        let stem = export_stem(&detail.article.title, id);
         let (path, body) = match format {
             ReadingExportFormat::Html => (
-                unique_export_path(dir, &stem, format.extension()),
+                unique_export_path(&wrapper, &name, format.extension()),
                 export_html_document(&detail, &html),
             ),
             ReadingExportFormat::Markdown => (
-                unique_export_path(dir, &stem, format.extension()),
+                unique_export_path(&wrapper, &name, format.extension()),
                 export_markdown_document(&detail, markdown.as_deref()),
             ),
         };
@@ -1191,6 +1226,7 @@ type: reading
         })?;
         Ok(ReadingExportResult {
             path: path.to_string_lossy().into_owned(),
+            dir: wrapper.to_string_lossy().into_owned(),
             images,
         })
     }
@@ -2754,6 +2790,10 @@ pub fn reading_stats(text: &str) -> (u32, u32) {
 // ── Export as HTML / Markdown ───────────────────────────────────────────────
 
 const MAX_EXPORT_STEM_CHARS: usize = 80;
+/// 前后缀各自的上限：设置里的自定义字符串太长会把标题挤出预算之外。
+const MAX_EXPORT_AFFIX_CHARS: usize = 40;
+/// 前后缀占满预算时标题至少保住的字符数，避免只剩前后缀的空壳目录名。
+const MIN_EXPORT_STEM_BUDGET: usize = 8;
 
 /// 把 HTML 与 Markdown 里的图片引用统一落地到 `img_dir`：本地 `images/<file>`
 /// 直接从 `image_dir` 复制；本地化失败时残留的远程 http(s) URL 尽力下载，
@@ -2866,8 +2906,9 @@ fn parent_dir(img_dir: &Path, file: &str) -> PathBuf {
     }
 }
 
-/// 导出文件名取自文章标题：去掉各平台非法字符与控制符，限长，空标题回退到 id。
-fn export_stem(title: &str, id: &str) -> String {
+/// 导出文件名取自文章标题：去掉各平台非法字符与控制符，限长（`max_chars`，
+/// 调用方先给前后缀留出预算），空标题回退到 id。
+fn export_stem(title: &str, id: &str, max_chars: usize) -> String {
     let cleaned: String = title
         .chars()
         .filter(|c| {
@@ -2878,8 +2919,8 @@ fn export_stem(title: &str, id: &str) -> String {
     while stem.ends_with('.') {
         stem.pop();
     }
-    if stem.chars().count() > MAX_EXPORT_STEM_CHARS {
-        stem = stem.chars().take(MAX_EXPORT_STEM_CHARS).collect();
+    if stem.chars().count() > max_chars {
+        stem = stem.chars().take(max_chars).collect();
         while stem.ends_with('.') {
             stem.pop();
         }
@@ -2888,6 +2929,52 @@ fn export_stem(title: &str, id: &str) -> String {
         stem = format!("article-{id}");
     }
     stem
+}
+
+/// 前后缀的净化：同一套非法字符集，内部空格保留（如「 (Sumery Virgo)」的分隔
+/// 空格、「SV · 」的尾随空格都是有意输入）。后缀去尾部空白与尾部点（文件与
+/// 目录名不允许以点结尾），前缀去首部空白；限长防止溢出预算。
+fn sanitize_export_affix(raw: &str, is_suffix: bool) -> String {
+    let cleaned: String = raw
+        .chars()
+        .filter(|c| {
+            !matches!(c, '/' | '\\' | ':' | '*' | '?' | '"' | '<' | '>' | '|') && !c.is_control()
+        })
+        .collect();
+    let mut affix = if is_suffix {
+        cleaned.trim_end().to_string()
+    } else {
+        cleaned.trim_start().to_string()
+    };
+    if is_suffix {
+        while affix.ends_with('.') {
+            affix.pop();
+            affix = affix.trim_end().to_string();
+        }
+    }
+    if affix.chars().count() > MAX_EXPORT_AFFIX_CHARS {
+        affix = affix.chars().take(MAX_EXPORT_AFFIX_CHARS).collect();
+        if is_suffix {
+            while affix.ends_with('.') {
+                affix.pop();
+                affix = affix.trim_end().to_string();
+            }
+        }
+    }
+    affix
+}
+
+/// 目标目录里已有同名包裹目录时直接复用（同一篇文章两种格式共用 img/）；
+/// 同名但被文件占用（罕见）时加序号，不覆盖任何已有内容。
+fn unique_export_dir(dir: &Path, name: &str) -> PathBuf {
+    let first = dir.join(name);
+    if !first.exists() || first.is_dir() {
+        return first;
+    }
+    (2..)
+        .map(|index| dir.join(format!("{name}-{index}")))
+        .find(|candidate| !candidate.exists() || candidate.is_dir())
+        .unwrap_or(first)
 }
 
 /// 目标目录里已有同名导出时追加序号（-2、-3……），不覆盖旧文件。
@@ -4110,19 +4197,31 @@ mod reading_context_tests {
             .unwrap();
         let out_dir = tempfile::tempdir().unwrap();
         let result = store
-            .export_article(&id, ReadingExportFormat::Html, out_dir.path())
+            .export_article(
+                &id,
+                ReadingExportFormat::Html,
+                out_dir.path(),
+                &ReadingExportNaming::default(),
+            )
             .unwrap();
         // 已本地化的 1.jpg 复制进 img/；下载失败的远程图保留原 URL。
         assert_eq!(result.images, 1);
-        assert!(out_dir.path().join("img").join("1.jpg").exists());
+        let wrapper = Path::new(&result.dir);
+        assert!(wrapper.join("img").join("1.jpg").exists());
+        assert!(out_dir
+            .path()
+            .join("给AI写了800行规则 - Sumery Virgo")
+            .is_dir());
         let html = fs::read_to_string(&result.path).unwrap();
         assert!(html.contains(r#"src="img/1.jpg""#));
         assert!(html.contains("https://invalid.example/x.png"));
         assert!(html.contains("border: 1px solid green"));
         assert!(html.contains("原文链接"));
+        // 默认命名：包裹目录与文件名同款（标题 + 产品后缀），文件收在目录里。
         assert!(result
             .path
-            .ends_with(&format!("{}.html", export_stem("给AI写了800行规则", &id))));
+            .ends_with("给AI写了800行规则 - Sumery Virgo.html"));
+        assert_eq!(Path::new(&result.path).parent(), Some(wrapper));
     }
 
     #[test]
@@ -4130,15 +4229,18 @@ mod reading_context_tests {
         let (_d, store) = store();
         let id = seed(&store);
         let out_dir = tempfile::tempdir().unwrap();
+        let naming = ReadingExportNaming::default();
         let first = store
-            .export_article(&id, ReadingExportFormat::Html, out_dir.path())
+            .export_article(&id, ReadingExportFormat::Html, out_dir.path(), &naming)
             .unwrap();
         let second = store
-            .export_article(&id, ReadingExportFormat::Html, out_dir.path())
+            .export_article(&id, ReadingExportFormat::Html, out_dir.path(), &naming)
             .unwrap();
         assert!(first.path.ends_with(".html"));
         assert!(second.path.ends_with("-2.html"));
         assert_ne!(first.path, second.path);
+        // 重名导出不建新目录：同一个包裹目录里排 -2。
+        assert_eq!(first.dir, second.dir);
     }
 
     #[test]
@@ -4161,7 +4263,12 @@ mod reading_context_tests {
             .unwrap();
         let out_dir = tempfile::tempdir().unwrap();
         let result = store
-            .export_article(&id, ReadingExportFormat::Markdown, out_dir.path())
+            .export_article(
+                &id,
+                ReadingExportFormat::Markdown,
+                out_dir.path(),
+                &ReadingExportNaming::default(),
+            )
             .unwrap();
         assert!(result.path.ends_with(".md"));
         let markdown = fs::read_to_string(&result.path).unwrap();
@@ -4188,7 +4295,12 @@ mod reading_context_tests {
             .unwrap();
         let out_dir = tempfile::tempdir().unwrap();
         let result = store
-            .export_article(&id, ReadingExportFormat::Markdown, out_dir.path())
+            .export_article(
+                &id,
+                ReadingExportFormat::Markdown,
+                out_dir.path(),
+                &ReadingExportNaming::default(),
+            )
             .unwrap();
         let markdown = fs::read_to_string(&result.path).unwrap();
         // 下载失败的远程图保留原 URL，而不是被静默丢掉。
@@ -4197,12 +4309,151 @@ mod reading_context_tests {
     }
 
     #[test]
+    fn export_both_formats_share_one_wrapper_dir() {
+        let (_d, store) = store();
+        let id = seed(&store);
+        let out_dir = tempfile::tempdir().unwrap();
+        let naming = ReadingExportNaming::default();
+        let html = store
+            .export_article(&id, ReadingExportFormat::Html, out_dir.path(), &naming)
+            .unwrap();
+        let markdown = store
+            .export_article(&id, ReadingExportFormat::Markdown, out_dir.path(), &naming)
+            .unwrap();
+        // 目录名由标题决定：两种格式落进同一个包裹目录，img/ 共享。
+        assert_eq!(html.dir, markdown.dir);
+        let wrapper = Path::new(&html.dir);
+        assert!(wrapper.join("img").is_dir());
+        assert_eq!(
+            wrapper
+                .read_dir()
+                .unwrap()
+                .filter(|entry| entry.is_ok())
+                .count(),
+            3, // .md + .html + img/
+        );
+    }
+
+    #[test]
+    fn export_without_affixes_uses_plain_title() {
+        let (_d, store) = store();
+        let id = seed(&store);
+        let connection = rusqlite::Connection::open(store.root().join("reading.sqlite")).unwrap();
+        connection
+            .execute(
+                "UPDATE articles SET title = ?2 WHERE id = ?1",
+                rusqlite::params![id, "纯标题文章"],
+            )
+            .unwrap();
+        let out_dir = tempfile::tempdir().unwrap();
+        let naming = ReadingExportNaming {
+            prefix: String::new(),
+            suffix: String::new(),
+        };
+        let result = store
+            .export_article(&id, ReadingExportFormat::Html, out_dir.path(), &naming)
+            .unwrap();
+        assert!(result.dir.ends_with("纯标题文章"));
+        assert!(result.path.ends_with("纯标题文章.html"));
+    }
+
+    #[test]
+    fn export_custom_prefix_and_suffix_wrap_the_title() {
+        let (_d, store) = store();
+        let id = seed(&store);
+        let connection = rusqlite::Connection::open(store.root().join("reading.sqlite")).unwrap();
+        connection
+            .execute(
+                "UPDATE articles SET title = ?2 WHERE id = ?1",
+                rusqlite::params![id, "自定义文章"],
+            )
+            .unwrap();
+        let out_dir = tempfile::tempdir().unwrap();
+        let naming = ReadingExportNaming {
+            prefix: "SV · ".into(),
+            suffix: " (存档)".into(),
+        };
+        let result = store
+            .export_article(&id, ReadingExportFormat::Html, out_dir.path(), &naming)
+            .unwrap();
+        assert!(result.dir.ends_with("SV · 自定义文章 (存档)"));
+        assert!(result.path.ends_with("SV · 自定义文章 (存档).html"));
+    }
+
+    #[test]
+    fn export_affixes_are_sanitized_and_budgeted() {
+        // 非法字符被剥掉；内部空格保留（后缀的前导空格、前缀的尾随空格都是分隔符）。
+        assert_eq!(
+            sanitize_export_affix(r#"a/b\c:d*e?f"g<h>i|j"#, false),
+            "abcdefghij"
+        );
+        assert_eq!(
+            sanitize_export_affix(" (Sumery Virgo) ", true),
+            " (Sumery Virgo)"
+        );
+        assert_eq!(sanitize_export_affix("SV · ", false), "SV · ");
+        // 后缀只收尾部：前导空格是分隔符（「 标题 (SV)」），尾随空白与点收掉。
+        assert_eq!(sanitize_export_affix("  两端要收 ", true), "  两端要收");
+        assert_eq!(sanitize_export_affix("  两端要收 ", false), "两端要收 ");
+        assert_eq!(sanitize_export_affix("结尾带点...", true), "结尾带点");
+        // 超长前后缀被截到 40；标题预算保底 8，所以目录名最长 88。
+        let naming = ReadingExportNaming {
+            prefix: "前".repeat(40),
+            suffix: "后".repeat(40),
+        };
+        let prefix = sanitize_export_affix(&naming.prefix, false);
+        let suffix = sanitize_export_affix(&naming.suffix, true);
+        assert_eq!(prefix.chars().count(), 40);
+        assert_eq!(suffix.chars().count(), 40);
+        let budget = MAX_EXPORT_STEM_CHARS
+            .saturating_sub(prefix.chars().count() + suffix.chars().count())
+            .max(MIN_EXPORT_STEM_BUDGET);
+        assert_eq!(budget, MIN_EXPORT_STEM_BUDGET);
+        let stem = export_stem("标题内容很长很长很长", "id9", budget);
+        assert_eq!(stem.chars().count(), MIN_EXPORT_STEM_BUDGET);
+    }
+
+    #[test]
+    fn export_long_title_with_suffix_stays_within_budget() {
+        let (_d, store) = store();
+        let id = seed(&store);
+        let connection = rusqlite::Connection::open(store.root().join("reading.sqlite")).unwrap();
+        let long_title = "很长的标题需要被截断".repeat(10);
+        connection
+            .execute(
+                "UPDATE articles SET title = ?2 WHERE id = ?1",
+                rusqlite::params![id, long_title],
+            )
+            .unwrap();
+        let out_dir = tempfile::tempdir().unwrap();
+        let naming = ReadingExportNaming::default();
+        let result = store
+            .export_article(&id, ReadingExportFormat::Html, out_dir.path(), &naming)
+            .unwrap();
+        // 目录名 = 文件名主干，且总长不超过 80。
+        let name = Path::new(&result.dir)
+            .file_name()
+            .unwrap()
+            .to_string_lossy()
+            .into_owned();
+        assert!(name.chars().count() <= 80);
+        assert!(name.ends_with(" - Sumery Virgo"));
+        assert!(result.path.contains(&name));
+    }
+
+    #[test]
     fn export_stem_strips_forbidden_characters_and_truncates() {
-        assert_eq!(export_stem(r#"a/b\c:d*e?f"g<h>i|j"#, "id1"), "abcdefghij");
-        assert_eq!(export_stem("标题\n带  换行", "id2"), "标题带 换行");
-        assert_eq!(export_stem(&"长".repeat(100), "id3").chars().count(), 80);
-        assert_eq!(export_stem("...", "id4"), "article-id4");
-        assert_eq!(export_stem("", "id5"), "article-id5");
+        assert_eq!(
+            export_stem(r#"a/b\c:d*e?f"g<h>i|j"#, "id1", 80),
+            "abcdefghij"
+        );
+        assert_eq!(export_stem("标题\n带  换行", "id2", 80), "标题带 换行");
+        assert_eq!(
+            export_stem(&"长".repeat(100), "id3", 80).chars().count(),
+            80
+        );
+        assert_eq!(export_stem("...", "id4", 80), "article-id4");
+        assert_eq!(export_stem("", "id5", 80), "article-id5");
     }
 
     #[test]

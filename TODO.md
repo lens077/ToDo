@@ -46,7 +46,7 @@ columns:
 - [x] 阅读：解析保留微信内联样式（卡片/装饰标题不再丢失） <!--t:wst7k4--> #desktop #reading !2
       ↳ 根因是 readabilityrs clean_styles 默认删光 style 属性 + ammonia 白名单不放行；微信文章改为 clean_styles(false)，sanitize_html 放行 style 并做声明级过滤（url()/expression()/position:fixed 等整条丢弃）；存量文章点「重新解析」即按新管线重生。cargo test 40 通过，check-quick 绿 <!--n:wst7k4-->
 - [x] 阅读：另存为 HTML / Markdown（任务2） <!--t:sv2md9--> #desktop #reading !2
-      ↳ 阅读上下文面板新增「另存为 HTML / Markdown」：系统目录选择器选目录，正文存为「标题.html/.md」（重名自动 -2 序号），图片复制/尽力下载进 img/ 子目录并重写引用；Markdown 优先用已存 markdown，缺失时 htmd 现转。命令 reading_export_article，单测覆盖文件名净化/图片落地/远程兜底保留，check-quick 绿。2026-11-19 补右键入口（阅读页正文 + 列表卡片，ReaderContextMenu 复用任务菜单骨架并放宽呼吸感）、导出结果提示条（面板收起也可见）与提示条「打开」按钮（open_exported_file 只放行已存在的 .html/.md，Windows 走 explorer 防 cmd 元字符），导出逻辑提为 useArticleExport 共用 <!--n:sv2md9-->
+      ↳ 阅读上下文面板新增「另存为 HTML / Markdown」：系统目录选择器选目录，正文存为「标题.html/.md」（重名自动 -2 序号），图片复制/尽力下载进 img/ 子目录并重写引用；Markdown 优先用已存 markdown，缺失时 htmd 现转。命令 reading_export_article，单测覆盖文件名净化/图片落地/远程兜底保留，check-quick 绿。2026-11-19 补右键入口（阅读页正文 + 列表卡片）、导出提示条（收起也可见）与「打开」「打开目录」按钮（open_exported_file/dir 只放行 .html/.md 文件与已存在目录）；导出改为每篇文章一个包裹目录（正文 + img/ 同居），默认带「 - Sumery Virgo」产品后缀，设置→另存为命名可选仅标题或自定义前后缀（exportNaming/exportPrefix/exportSuffix，前端点击时解析随命令传入，Rust 再净化限长） <!--n:sv2md9-->
 - [x] 清理 sync-server 测试脏数据（example.com/*、/s/quick-1..3、clip-a/b、dbg-one、rust-lang/cargo） <!--t:t4gfbx--> #sync #backend !2
 - [x] Android APK 重打并真机复验同步 v2（进度/取消/热同步） <!--t:0x16fl--> #mobile #sync !2
       ↳ 2026-11-12 三端复验通过：手机首次同步拉 14 条（含进度）、PC 重启 dev 后热同步零变更；服务器/PC/手机 URL 集合 diff 为空。手机 3 条 failed 系服务器端 wc=0 的 3 条按设计转本机退避解析（save_pulled 第 4 分支），非缺陷。「取消」按钮未单独验证 <!--n:0x16fl-->

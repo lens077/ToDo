@@ -1250,3 +1250,13 @@ Session 存为项目内 Markdown（`<project>/.virgo/sessions/s-<ts>.md`），�
 3. **前端**：`ExportNotice` 增加 `path`（导出成功时携带），`openExportedFile` 辅助打开失败降级为错误提示；阅读页胶囊与列表通知条（`reading-notice--actions` 弹性布局，按钮贴右，消息占满可折行）在 `path` 存在时显示「打开」按钮；带按钮的成功提示自动收起从 6s 延长到 12s。
 4. **验证**：`cargo test -p todo-desktop` 全绿；clippy `-D warnings` 绿；tsc / vite build 绿；reading e2e 16 passed（浏览器端导出不会成功、无 path，按钮只在桌面端出现）；`make check-quick` 绿（32s）。tauri dev 检测到 lib.rs 变更自动重编译重启。
 5. **待真机验收**：列表卡或正文右键导出一次 → 提示条点「打开」→ 系统默认应用打开产物。
+
+## 2026-11-19 阅读另存为第四轮：包裹目录 + 可定制命名 + 「打开目录」（用户设计确认后实现，通过）
+
+1. **设计**：交互式设计稿 `docs/design/export-folder-design.html`（现状 vs 新方案目录树、可实时预览的命名规则、提示条与设置卡 mockup、实现落点表）经用户确认；设计稿选项钮按反馈改为空心圆环选中。
+2. **包裹目录**：`export_article` 在所选目录下为文章建「包裹目录」，正文文件与 `img/` 收在同处；同名目录复用（同一篇文章两种格式共享目录与 img/，图片不重复下载；不同文章撞名也复用，目录内文件按 -2 序号排——比设计稿草稿的「-2 新建目录」更简单可靠，已在设计稿修正）；返回结构新增 `dir`（包裹目录路径）。旧散落导出不迁移。
+3. **命名**：`ReadingExportNaming { prefix, suffix }`（`Default` = 产品后缀「 - Sumery Virgo」）；总长 ≤ 80（先截标题留预算，标题保底 8 字符，前后缀各限 40）；前后缀净化——同一套非法字符集，后缀保留前导分隔空格、收尾部空白与点，前缀保留尾随分隔空格、收首部空白。设置三键 `exportNaming: 'product-suffix' | 'plain' | 'custom'` + `exportPrefix/exportSuffix`（localStorage `todo.app-settings.v1`，旧档缺键按产品后缀补默认）；设置存在 webview 端 Rust 读不到，故导出命令加 `prefix/suffix` 参数，前端点击时经 `resolveExportNaming` 解析传入，Rust 再净化（纵深防御）。
+4. **打开**：新命令 `open_exported_dir`（只放行已存在目录，macOS open / Windows explorer / Linux xdg-open）；提示条在 path/dir 存在时显示「打开」+「打开目录」两枚按钮（阅读页胶囊与列表通知条同款），打开失败降级为错误提示。
+5. **设置 UI**：设置 → 阅读 → 「另存为命名」组（segmented 三档 + custom 展开前后缀输入与实时预览）。
+6. **门禁**：`cargo test -p todo-core reading` 51 通过（新增 6：包裹目录/两格式共用/无前后缀/自定义前后缀/前后缀净化与预算/长标题预算）；todo-desktop 测试全绿；clippy `-D warnings` 绿；tsc / vite build 绿；reading e2e 16 passed；`make check-quick` 绿（56s）；contract check ok。
+7. **待真机验收**：桌面 dev 已热更新——右键导出 → 目录应为「标题 - Sumery Virgo/」（内含同名文件 + img/）；设置切「仅标题」或自定义后再导出；提示条「打开」「打开目录」各点一次。

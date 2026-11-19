@@ -18,7 +18,7 @@ import {
 import { ReadingContextPanel } from './ReadingContextPanel';
 import { ReaderContextMenu } from './ReaderContextMenu';
 import { Icon } from './Icon';
-import { useArticleExport, openExportedFile, type ExportNotice } from '../hooks/useArticleExport';
+import { useArticleExport, openExportedFile, openExportedDir, type ExportNotice } from '../hooks/useArticleExport';
 
 interface ReaderViewProps {
   detail: ReadingArticleDetail;
@@ -634,6 +634,11 @@ export function ReaderView({ detail, model }: ReaderViewProps) {
               {exportNotice.path && (
                 <button type="button" onClick={() => void openExportedFile(exportNotice, reportExportNotice)}>
                   <Icon name="external" /> 打开
+                </button>
+              )}
+              {exportNotice.dir && (
+                <button type="button" onClick={() => void openExportedDir(exportNotice, reportExportNotice)}>
+                  <Icon name="folder" /> 打开目录
                 </button>
               )}
               <button type="button" className="reader-resume__close" aria-label="关闭导出提示" onClick={() => setExportNotice(null)}>

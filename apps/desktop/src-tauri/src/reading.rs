@@ -400,21 +400,29 @@ pub fn reading_export_project_index(
         .map_err(|error| error.to_string())
 }
 
-/// 另存为 HTML / Markdown：正文与图片写进用户选择的目录。远程兜底图的
-/// 下载会走网络，放在 blocking pool，避免卡住 UI 线程。
+/// 另存为 HTML / Markdown：正文与图片写进用户选的目录下一个「包裹目录」
+/// （正文 + img/ 同居一处）。`prefix` / `suffix` 是前端从设置解析出的命名
+/// 前后缀（产品后缀 / 仅标题 / 自定义）；远程兜底图的下载会走网络，放在
+/// blocking pool，避免卡住 UI 线程。
 #[tauri::command]
 pub async fn reading_export_article(
     state: State<'_, ReadingState>,
     id: String,
     format: ReadingExportFormat,
     dir: String,
+    prefix: Option<String>,
+    suffix: Option<String>,
 ) -> Result<todo_core::ReadingExportResult, String> {
     if dir.trim().is_empty() {
         return Err("保存目录为空".to_string());
     }
     let store = state.store()?;
     let dir = std::path::PathBuf::from(dir);
-    tauri::async_runtime::spawn_blocking(move || store.export_article(&id, format, &dir))
+    let naming = todo_core::ReadingExportNaming {
+        prefix: prefix.unwrap_or_default(),
+        suffix: suffix.unwrap_or_default(),
+    };
+    tauri::async_runtime::spawn_blocking(move || store.export_article(&id, format, &dir, &naming))
         .await
         .map_err(|error| format!("另存为任务中断：{error}"))?
         .map_err(|error| error.to_string())

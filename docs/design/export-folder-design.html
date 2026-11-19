@@ -1,0 +1,293 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>另存为：每篇文章一个目录（设计稿）</title>
+<style>
+  :root {
+    --font: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+    --mono: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+    --bg: #f7f7fa; --panel: #ffffff; --panel-2: #f1f1f6;
+    --ink: #1b1547; --ink-2: #4b5165; --ink-3: #6c7189;
+    --hairline: #e6e7ee; --hairline-2: #d3d4e0;
+    --accent: #b45309; --accent-wash: #fdf1dc; --accent-wash-2: #fbe3b5;
+    --primary-fill: #f5a524; --primary-ink: #1b1547;
+    --danger: #c93e33; --danger-wash: #fbeae8;
+    --teal-text: #177a71; --teal-wash: #e3f6f3;
+    --radius: 8px;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; padding: 40px 24px 80px; background: var(--bg); color: var(--ink); font-family: var(--font); font-size: 14px; line-height: 1.6; }
+  .page { max-width: 880px; margin: 0 auto; }
+  h1 { font-size: 22px; margin: 0 0 6px; }
+  .lede { color: var(--ink-2); margin: 0 0 30px; }
+  .badge { display: inline-block; margin-left: 10px; padding: 2px 10px; vertical-align: 3px; color: var(--accent); background: var(--accent-wash); border: 1px solid var(--accent); border-radius: 999px; font-size: 12px; font-weight: 500; }
+  section { margin: 0 0 28px; background: var(--panel); border: 1px solid var(--hairline); border-radius: 14px; padding: 22px 26px; box-shadow: 0 1px 2px -1px rgba(27,21,71,.08); }
+  h2 { font-size: 16px; margin: 0 0 14px; }
+  h2 small { color: var(--ink-3); font-weight: 400; font-size: 12.5px; margin-left: 8px; }
+  h3 { font-size: 13.5px; margin: 18px 0 8px; }
+  p { margin: 8px 0; color: var(--ink-2); }
+  .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; align-items: start; }
+  @media (max-width: 720px) { .cols { grid-template-columns: 1fr; } }
+
+  /* 目录树 */
+  .tree { margin: 0; padding: 14px 16px; background: var(--panel-2); border: 1px solid var(--hairline); border-radius: var(--radius); font-family: var(--mono); font-size: 12.5px; line-height: 1.75; color: var(--ink-2); overflow-x: auto; white-space: pre; }
+  .tree b { color: var(--ink); font-weight: 600; }
+  .tree .dir { color: var(--accent); font-weight: 600; }
+  .tree .dim { color: var(--ink-3); }
+  .tree .new { background: var(--accent-wash); border-radius: 4px; padding: 0 4px; }
+  .tree-caption { margin: 8px 2px 0; font-size: 12px; color: var(--ink-3); }
+  .cols .tree { font-size: 11px; }
+
+  /* 提示条 mockup */
+  .notice-wrap { display: grid; gap: 12px; }
+  .notice { display: flex; align-items: center; gap: 10px; max-width: 100%; margin: 0; padding: 7px 8px 7px 14px; border-radius: 999px; font-size: 12.5px; font-variant-numeric: tabular-nums; box-shadow: 0 8px 20px -12px rgba(27,21,71,.25); width: fit-content; }
+  .notice--pill { color: var(--accent); background: var(--accent-wash); border: 1px solid var(--accent); }
+  .notice--bar { color: var(--accent); background: var(--accent-wash); border: 1px solid var(--accent); border-radius: var(--radius); width: 100%; }
+  .notice--bar.dimmed { color: var(--danger); background: var(--danger-wash); border-color: var(--danger); }
+  .notice .msg { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+  .notice button { display: inline-flex; align-items: center; gap: 5px; flex: none; min-height: 24px; padding: 2px 10px; color: inherit; background: transparent; border: 1px solid currentColor; border-radius: 999px; font-size: 12px; font-weight: 500; cursor: pointer; transition: background-color .14s ease; }
+  .notice button:hover { background: rgba(180,83,9,.12); }
+  .notice--bar.dimmed button:hover { background: rgba(201,62,51,.12); }
+  .notice button.ghost { border-color: transparent; }
+  .notice svg { width: 12px; height: 12px; }
+
+  /* 设置卡 mockup */
+  .settings { max-width: 560px; border: 1px solid var(--hairline); border-radius: 12px; overflow: hidden; }
+  .settings h3 { margin: 0; padding: 14px 18px 4px; font-size: 14px; }
+  .settings .hint { padding: 0 18px; margin: 0 0 10px; font-size: 12.5px; color: var(--ink-3); }
+  .settings .body { padding: 4px 18px 18px; }
+  .radio-row { display: grid; gap: 8px; margin: 10px 0; }
+  .radio-row label { display: flex; align-items: flex-start; gap: 9px; padding: 9px 12px; border: 1px solid var(--hairline); border-radius: var(--radius); cursor: pointer; transition: border-color .14s ease, background-color .14s ease; }
+  .radio-row label:hover { border-color: var(--hairline-2); }
+  .radio-row label.checked { border-color: var(--accent); background: var(--accent-wash); }
+  .radio-row input[type='radio'] { appearance: none; width: 18px; height: 18px; margin: 2px 0 0; flex: none; border: 1.5px solid var(--hairline-2); border-radius: 50%; background: var(--panel); cursor: pointer; transition: border-color .14s ease, background-color .14s ease; }
+  .radio-row input[type='radio']:hover { border-color: var(--accent); }
+  .radio-row label.checked input[type='radio'] { border-color: var(--accent); border-width: 2.5px; background: var(--panel); }
+  .radio-row input[type='radio']:focus-visible { outline: 2px solid var(--accent-wash-2); outline-offset: 1px; }
+  .radio-row .t { font-weight: 500; font-size: 13px; }
+  .radio-row .d { color: var(--ink-3); font-size: 12px; }
+  .custom-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 10px 0 2px; padding: 12px; background: var(--panel-2); border: 1px dashed var(--hairline-2); border-radius: var(--radius); }
+  .custom-fields label { display: grid; gap: 5px; font-size: 12px; color: var(--ink-2); }
+  .custom-fields input { padding: 6px 9px; border: 1px solid var(--hairline-2); border-radius: 6px; font: inherit; font-size: 13px; color: var(--ink); background: var(--panel); }
+  .custom-fields input:focus { outline: 2px solid var(--accent-wash-2); border-color: var(--accent); }
+
+  /* 实时预览 */
+  .preview { position: sticky; top: 20px; }
+  .kv { display: grid; gap: 6px; margin-top: 10px; }
+  .kv .row { display: grid; grid-template-columns: 76px 1fr; gap: 10px; align-items: baseline; }
+  .kv .k { color: var(--ink-3); font-size: 12px; }
+  .kv .v { font-family: var(--mono); font-size: 12.5px; overflow-wrap: anywhere; }
+  .kv .v.hl { color: var(--accent); font-weight: 600; }
+  .rules { margin: 10px 0 0; padding-left: 18px; color: var(--ink-2); font-size: 13px; }
+  .rules li { margin: 4px 0; }
+  .rules code { font-family: var(--mono); font-size: 12px; background: var(--panel-2); padding: 1px 5px; border-radius: 4px; }
+  .tag { display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: 11.5px; font-weight: 500; }
+  .tag--new { color: var(--teal-text); background: var(--teal-wash); }
+  table.map { width: 100%; border-collapse: collapse; font-size: 13px; margin-top: 8px; }
+  table.map th, table.map td { padding: 8px 10px; border-bottom: 1px solid var(--hairline); text-align: left; vertical-align: top; }
+  table.map th { color: var(--ink-3); font-weight: 500; font-size: 12px; }
+  table.map td:first-child { white-space: nowrap; color: var(--ink); font-weight: 500; }
+  table.map code { font-family: var(--mono); font-size: 12px; }
+</style>
+</head>
+<body>
+<div class="page">
+  <h1>另存为：每篇文章一个目录<span class="badge">设计稿 · 待确认后实现</span></h1>
+  <p class="lede">解决导出散落问题：一篇文章一个「包裹目录」，正文与 <code style="font-family:var(--mono)">img/</code> 收在同一个目录里；目录与文件名默认带产品后缀，设置里可取消或自定义前后缀。提示条加「打开目录」。</p>
+
+  <section>
+    <h2>1 · 目录结构对比</h2>
+    <div class="cols">
+      <div>
+        <h3 style="color:var(--danger)">现状（散落）</h3>
+        <pre class="tree"><span class="dim">Downloads/</span>  <span class="dim">← 你选的保存目录</span>
+├── 登上GitHub Trending｜腾讯开源 LoopForge.md
+├── 登上GitHub Trending｜腾讯开源 LoopForge.html
+└── <span class="dir">img/</span>          <span class="dim">← 两份导出共用一个 img/，其他文章再导出也往里堆</span>
+    ├── 1.png
+    └── 2.png</pre>
+        <p class="tree-caption">多篇文章一起导出后，顶层文件与公共 img/ 混在一起，分不清哪张图属于哪篇。</p>
+      </div>
+      <div>
+        <h3 style="color:var(--teal-text)">新方案（包裹目录）<span class="tag tag--new" style="margin-left:8px">默认行为</span></h3>
+        <pre class="tree"><span class="dim">Downloads/</span>  <span class="dim">← 保存目录</span>
+└── <span class="new dir">登上GitHub Trending｜腾讯开源 LoopForge
+    - Sumery Virgo/</span>  <span class="dim">← 包裹目录</span>
+    ├── <b>…LoopForge - Sumery Virgo.md</b>
+    ├── <b>…LoopForge - Sumery Virgo.html</b>
+    └── <span class="dir">img/</span>
+        ├── 1.png
+        └── 2.png</pre>
+        <p class="tree-caption">每篇文章一个包裹目录；同一篇文章先后导出 MD 和 HTML：<b>复用同一个目录与 img/</b>（目录名由标题决定），图片不重复下载；不同文章各占一个目录，互不干扰。</p>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>2 · 命名规则 <small>改下面的输入，右侧实时预览</small></h2>
+    <div class="cols">
+      <div>
+        <p style="margin-top:0">文章标题</p>
+        <div class="custom-fields" style="grid-template-columns:1fr; margin:6px 0 14px;">
+          <label>标题<input id="title" value="登上GitHub Trending｜腾讯开源 LoopForge"></label>
+        </div>
+        <div class="radio-row" id="modes">
+          <label class="checked">
+            <input type="radio" name="mode" value="suffix" checked>
+            <span><span class="t">产品后缀（默认）</span><br><span class="d">目录与文件名都带「 - Sumery Virgo」，一眼认出是本产品导出的</span></span>
+          </label>
+          <label>
+            <input type="radio" name="mode" value="plain">
+            <span><span class="t">仅标题（取消后缀）</span><br><span class="d">设置里可关闭后缀，目录与文件名只含标题</span></span>
+          </label>
+          <label>
+            <input type="radio" name="mode" value="custom">
+            <span><span class="t">自定义前缀 / 后缀</span><br><span class="d">两个输入框，可只用其一；留空则等同「仅标题」</span></span>
+          </label>
+        </div>
+        <div class="custom-fields" id="customFields" style="display:none">
+          <label>前缀（加在最前）<input id="prefix" placeholder="例如：SV · "></label>
+          <label>后缀（加在最后）<input id="suffix" placeholder="例如： (Sumery Virgo)"></label>
+        </div>
+      </div>
+      <div class="preview">
+        <pre class="tree" id="previewTree"></pre>
+        <div class="kv">
+          <div class="row"><span class="k">目录名</span><span class="v hl" id="previewDir"></span></div>
+          <div class="row"><span class="k">文件名</span><span class="v" id="previewFile"></span></div>
+        </div>
+        <ul class="rules">
+          <li>非法字符（<code>/ \ : * ? " &lt; &gt; |</code> 与控制符）过滤，标题限长（总长 ≤ 80，先截标题再拼前后缀）</li>
+          <li>同名包裹目录已存在 → <b>复用</b>（同一篇文章两种格式共享目录与 img/；不同文章标题撞名也复用，目录内文件按 <code>-2</code> 序号排）</li>
+          <li>目录内重名文件仍按 <code>-2</code> 序号；老版本导出的散落文件不受影响，不迁移</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>3 · 提示条：打开 + 打开目录 <small>两处导出入口共用</small></h2>
+    <div class="notice-wrap">
+      <p class="notice notice--pill">
+        <span class="msg">已保存到 /Users/lens/Downloads/登上GitHub Trending｜腾讯开源 LoopForge - Sumery Virgo/…- Sumery Virgo.md（图片 10 张）</span>
+        <button type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M14 4h6v6"/><path d="M20 4 10 14"/><path d="M18 13v6H5V6h6"/></svg>打开</button>
+        <button type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h7l2 2h9v11H3zM3 10h18"/></svg>打开目录</button>
+        <button type="button" class="ghost" aria-label="关闭导出提示">✕</button>
+      </p>
+      <p class="notice notice--bar">
+        <span class="msg">已保存到 …/LoopForge - Sumery Virgo/（图片 10 张）</span>
+        <button type="button">打开</button>
+        <button type="button">打开目录</button>
+      </p>
+      <p class="notice notice--bar dimmed">
+        <span class="msg">只能打开另存为导出的 .html / .md 文件</span>
+      </p>
+      <p class="tree-caption">「打开」用系统默认应用打开正文文件（行为不变，目标变成目录内的文件）；「打开目录」在访达中显示<b>文章自己的包裹目录</b>，不是你选的那个大目录。成功提示自动收起保持 12s。</p>
+    </div>
+  </section>
+
+  <section>
+    <h2>4 · 设置：「另存为命名」<small>设置 → 阅读，紧挨「剪贴板」组</small></h2>
+    <div class="settings">
+      <h3 id="settings-export">阅读</h3>
+      <p class="hint">另存为 HTML / Markdown 时的目录与文件命名。</p>
+      <div class="body">
+        <div class="radio-row" id="settingsModes">
+          <label class="checked">
+            <input type="radio" name="smode" value="suffix" checked>
+            <span><span class="t">带产品后缀（默认）</span><br><span class="d">「标题 - Sumery Virgo」</span></span>
+          </label>
+          <label>
+            <input type="radio" name="smode" value="plain">
+            <span><span class="t">仅标题</span><br><span class="d">不加任何前后缀</span></span>
+          </label>
+          <label>
+            <input type="radio" name="smode" value="custom">
+            <span><span class="t">自定义</span><br><span class="d">下面填前缀 / 后缀，可只用其一，两个都空等同「仅标题」</span></span>
+          </label>
+        </div>
+        <div class="custom-fields" id="settingsCustom" style="display:none">
+          <label>前缀<input placeholder="例如：SV · "></label>
+          <label>后缀<input placeholder="例如： (Sumery Virgo)"></label>
+        </div>
+      </div>
+    </div>
+    <p class="tree-caption">设置持久化沿用 <code style="font-family:var(--mono)">todo.app-settings.v1</code>：新增 <code style="font-family:var(--mono)">exportNaming: 'product-suffix' | 'plain' | 'custom'</code> 与 <code style="font-family:var(--mono)">exportPrefix / exportSuffix</code>，旧存档缺键按「带产品后缀」补默认。改设置立即生效，只影响之后的导出。</p>
+  </section>
+
+  <section>
+    <h2>5 · 实现落点</h2>
+    <table class="map">
+      <tr><th>位置</th><th>改动</th></tr>
+      <tr><td>todo-core <code>export_article</code></td><td>先按命名规则算出目录名并创建（已存在则复用），正文与 img/ 落进目录；返回结构补 <code>dir</code>（包裹目录）字段；已实现 ✔</td></tr>
+      <tr><td>Rust 命令</td><td><code>open_exported_file</code> 保持；新增 <code>open_exported_dir</code>（只放行已存在目录，macOS open / Windows explorer / Linux xdg-open）；已实现 ✔</td></tr>
+      <tr><td>AppSettings</td><td>新增 <code>exportNaming / exportPrefix / exportSuffix</code>；设置存在 webview localStorage（Rust 读不到），导出命令加 <code>prefix/suffix</code> 参数，前端点击时经 <code>resolveExportNaming</code> 解析传入，Rust 侧再净化限长；设置页加「另存为命名」组；已实现 ✔</td></tr>
+      <tr><td>提示条</td><td>「打开」目标不变（目录内文件）；新增「打开目录」按钮；useArticleExport 的 notice 增加 dir 字段；已实现 ✔</td></tr>
+      <tr><td>单测 / e2e</td><td>导出单测改断言目录结构（包裹目录、两种格式共用、重名 -2、自定义命名、前后缀净化与预算）——51 通过；e2e 16 通过（浏览器端导出不会成功，提示条按钮只在桌面端出现）</td></tr>
+    </table>
+  </section>
+</div>
+
+<script>
+  const titleInput = document.getElementById('title');
+  const prefixInput = document.getElementById('prefix');
+  const suffixInput = document.getElementById('suffix');
+  const customFields = document.getElementById('customFields');
+  const previewTree = document.getElementById('previewTree');
+  const previewDir = document.getElementById('previewDir');
+  const previewFile = document.getElementById('previewFile');
+
+  const settingsCustom = document.getElementById('settingsCustom');
+  document.getElementById('settingsModes').addEventListener('change', (e) => {
+    settingsCustom.style.display = e.target.value === 'custom' ? 'grid' : 'none';
+    document.querySelectorAll('#settingsModes label').forEach((l) => l.classList.toggle('checked', l.querySelector('input').checked));
+  });
+
+  function clean(text) {
+    return text.replace(/[/\\:*?"<>|\x00-\x1f]/g, '').replace(/\s+/g, ' ').trim();
+  }
+  // 前后缀只过滤非法字符并去首尾空白，保留内部空格（如「 (Sumery Virgo)」）
+  function cleanAffix(text) {
+    return text.replace(/[/\\:*?"<>|\x00-\x1f]/g, '').trim();
+  }
+  function escapeHtml(text) {
+    return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  }
+  function names() {
+    const title = clean(titleInput.value) || '未命名文章';
+    const mode = document.querySelector('input[name="mode"]:checked').value;
+    let pre = '', suf = '';
+    if (mode === 'suffix') suf = ' - Sumery Virgo';
+    if (mode === 'custom') {
+      pre = cleanAffix(prefixInput.value);
+      suf = cleanAffix(suffixInput.value);
+    }
+    // 总长 ≤ 80：先给标题留出前后缀的预算再截断
+    const budget = Math.max(8, 80 - pre.length - suf.length);
+    const stem = pre + title.slice(0, budget) + suf;
+    return { dir: stem, stem };
+  }
+  function render() {
+    const { dir, stem } = names();
+    const shortTitle = stem.length > 46 ? stem.slice(0, 46) + '…' : stem;
+    previewTree.innerHTML =
+      '<span class="dim">Downloads/</span>\n'
+      + '└── <span class="new dir">' + escapeHtml(shortTitle) + '/</span>\n'
+      + '    ├── <b>' + escapeHtml(shortTitle) + '.md</b>\n'
+      + '    ├── <b>' + escapeHtml(shortTitle) + '.html</b>\n'
+      + '    └── <span class="dir">img/</span>';
+    previewDir.textContent = dir + '/';
+    previewFile.textContent = stem + '.md ｜ ' + stem + '.html';
+  }
+  document.getElementById('modes').addEventListener('change', (e) => {
+    customFields.style.display = e.target.value === 'custom' ? 'grid' : 'none';
+    document.querySelectorAll('#modes label').forEach((l) => l.classList.toggle('checked', l.querySelector('input').checked));
+    render();
+  });
+  [titleInput, prefixInput, suffixInput].forEach((el) => el.addEventListener('input', render));
+  render();
+</script>
+</body>
+</html>

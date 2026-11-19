@@ -11,6 +11,7 @@
  * place. 100% is read and sticky.
  */
 import { convertFileSrc, invoke } from '@tauri-apps/api/core';
+import type { AppSettings } from './appSettings';
 
 export interface ReadingArticle {
   id: string;
@@ -81,9 +82,27 @@ export interface ReadingArticleDetail extends ReadingArticle {
 /** 另存为的输出格式；与 Rust `ReadingExportFormat` 的小写 serde 命名一致。 */
 export type ReadingExportFormat = 'html' | 'markdown';
 
+/** 默认产品后缀：与 todo-core `ReadingExportNaming::default()` 保持一致。 */
+export const READING_EXPORT_PRODUCT_SUFFIX = ' - Sumery Virgo';
+
+/** 「另存为」包裹目录与文件名共用的前后缀（Rust 侧会再净化一遍）。 */
+export interface ReadingExportNaming {
+  prefix: string;
+  suffix: string;
+}
+
+/** 从设置解析出命名前后缀（点击导出时取当前值）。 */
+export function resolveExportNaming(settings: Pick<AppSettings, 'exportNaming' | 'exportPrefix' | 'exportSuffix'>): ReadingExportNaming {
+  if (settings.exportNaming === 'plain') return { prefix: '', suffix: '' };
+  if (settings.exportNaming === 'custom') return { prefix: settings.exportPrefix, suffix: settings.exportSuffix };
+  return { prefix: '', suffix: READING_EXPORT_PRODUCT_SUFFIX };
+}
+
 export interface ReadingExportResult {
-  /** 主文件（标题.html / 标题.md）的绝对路径。 */
+  /** 主文件（包裹目录里）的绝对路径。 */
   path: string;
+  /** 包裹目录：正文文件与 `img/` 都在这里面。 */
+  dir: string;
   /** 保存进 `img/` 的图片数量。 */
   images: number;
 }
@@ -612,17 +631,26 @@ export const reading = {
     if (index >= 0) mockArticles.splice(index, 1);
   },
 
-  /** 另存为 HTML / Markdown 到用户选择的目录；图片复制进 `img/`。 */
-  async exportArticle(id: string, format: ReadingExportFormat, dir: string): Promise<ReadingExportResult> {
-    if (isTauriRuntime()) return call<ReadingExportResult>('reading_export_article', { id, format, dir });
+  /** 另存为 HTML / Markdown：在所选目录下建包裹目录（正文 + img/），命名用前后缀。 */
+  async exportArticle(id: string, format: ReadingExportFormat, dir: string, naming: ReadingExportNaming): Promise<ReadingExportResult> {
+    if (isTauriRuntime()) {
+      return call<ReadingExportResult>('reading_export_article', { id, format, dir, prefix: naming.prefix, suffix: naming.suffix });
+    }
     const found = mockFind(id);
-    return { path: `${dir}/${found.title}.${format === 'html' ? 'html' : 'md'}`, images: 0 };
+    const name = `${naming.prefix}${found.title}${naming.suffix}`;
+    return { path: `${dir}/${name}.${format === 'html' ? 'html' : 'md'}`, dir: `${dir}/${name}`, images: 0 };
   },
 
   /** 用系统默认应用打开刚导出的文件；Rust 侧只放行已存在的 .html / .md。 */
   async openSavedFile(path: string): Promise<void> {
     if (isTauriRuntime()) return call<void>('open_exported_file', { path });
     throw new Error('浏览器版无法打开本机文件，请使用桌面端。');
+  },
+
+  /** 在访达 / 资源管理器中打开导出的包裹目录；Rust 侧只放行已存在的目录。 */
+  async openSavedDir(path: string): Promise<void> {
+    if (isTauriRuntime()) return call<void>('open_exported_dir', { path });
+    throw new Error('浏览器版无法打开本机目录，请使用桌面端。');
   },
 
   async upsertAnnotation(annotation: AnnotationInput): Promise<ReadingAnnotation> {
