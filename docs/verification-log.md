@@ -1242,3 +1242,11 @@ Session 存为项目内 Markdown（`<project>/.virgo/sessions/s-<ts>.md`），�
 2. **菜单呼吸感**：`.reader-context-menu` 在任务菜单骨架上放宽——容器 `padding 6→9px`、项间 `gap 3px`、项高 `30→36px`、内边距 `5px 9px→8px 11px`、圆角 `6→8px`，并去掉首项的 `margin-top: 4px`（那是任务菜单标题占位用的）；hover/focus 加 0.14s 背景色过渡，入场换成 `reader-menu-in`（上浮 5px + 0.97 缩放 + 淡入，0.18s ease-out）；`prefers-reduced-motion` 由既有全局规则兜底。
 3. **验证**：tsc 绿；desktop vite build 绿；reading e2e 16 passed（新增「列表卡片右键同样弹出另存为菜单，不必先进文章」：菜单可见、Markdown 项触发提示、再次右键换 HTML 项）；Playwright 截图确认菜单外观（项距舒展、圆角、边缘回弹正常）。
 4. **待真机验收**：桌面 dev 已热更新——列表卡右键 + 阅读页正文右键各导出一次，检查产物。
+
+## 2026-11-19 阅读另存为第三轮：导出结果「打开」按钮（用户反馈，通过）
+
+1. **需求**：导出成功的提示条只有路径文字，用户要能一键打开刚存的文件核对（提示条右端加按钮）。
+2. **Rust 受限打开**：新命令 `open_exported_file(path)`——只放行扩展名为 `.html/.md` 的已存在普通文件（路径来自渲染层，防止借系统默认处理器启动任意载荷）；Windows 走 `explorer` 而非 `cmd start`（保存目录是用户选的，cmd 会解释目录名里的 shell 元字符，explorer 直接传参无此问题；explorer 成功时也可能退非零码，只校验 spawn）；macOS `open` / Linux `xdg-open` 与 `open_web_url` 同模式。已在 `lib.rs` 注册。
+3. **前端**：`ExportNotice` 增加 `path`（导出成功时携带），`openExportedFile` 辅助打开失败降级为错误提示；阅读页胶囊与列表通知条（`reading-notice--actions` 弹性布局，按钮贴右，消息占满可折行）在 `path` 存在时显示「打开」按钮；带按钮的成功提示自动收起从 6s 延长到 12s。
+4. **验证**：`cargo test -p todo-desktop` 全绿；clippy `-D warnings` 绿；tsc / vite build 绿；reading e2e 16 passed（浏览器端导出不会成功、无 path，按钮只在桌面端出现）；`make check-quick` 绿（32s）。tauri dev 检测到 lib.rs 变更自动重编译重启。
+5. **待真机验收**：列表卡或正文右键导出一次 → 提示条点「打开」→ 系统默认应用打开产物。

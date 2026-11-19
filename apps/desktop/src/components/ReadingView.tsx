@@ -15,7 +15,7 @@ import {
 } from '../lib/reading';
 import { Icon } from './Icon';
 import { ReaderContextMenu } from './ReaderContextMenu';
-import { useArticleExport, type ExportNotice } from '../hooks/useArticleExport';
+import { useArticleExport, openExportedFile, type ExportNotice } from '../hooks/useArticleExport';
 import { useAppSettings } from '../lib/appSettings';
 import {
   markClipboardHandled,
@@ -199,9 +199,11 @@ export function ReadingView({ model }: ReadingViewProps) {
   const [exportNotice, setExportNotice] = React.useState<ExportNotice | null>(null);
   const reportExportNotice = React.useCallback((notice: ExportNotice) => setExportNotice(notice), []);
   const { exportArticle, exportBusy } = useArticleExport(exportMenu?.id ?? '', reportExportNotice);
+  // 带「打开」按钮的成功通知停留更久，其余 6 秒。
   React.useEffect(() => {
     if (!exportNotice) return undefined;
-    const timer = window.setTimeout(() => setExportNotice(null), 6000);
+    const ttl = exportNotice.path ? 12000 : 6000;
+    const timer = window.setTimeout(() => setExportNotice(null), ttl);
     return () => window.clearTimeout(timer);
   }, [exportNotice]);
   const counts = React.useMemo(() => countByState(model.articles), [model.articles]);
@@ -425,11 +427,16 @@ export function ReadingView({ model }: ReadingViewProps) {
 
       {exportNotice && (
         <p
-          className={`reading-notice${exportNotice.kind === 'error' ? '' : ' reading-notice--ok'}`}
+          className={`reading-notice${exportNotice.kind === 'error' ? '' : ' reading-notice--ok'}${exportNotice.path ? ' reading-notice--actions' : ''}`}
           role={exportNotice.kind === 'error' ? 'alert' : 'status'}
           data-testid="reading-export-notice"
         >
-          {exportNotice.message}
+          <span className="reading-notice__message">{exportNotice.message}</span>
+          {exportNotice.path && (
+            <button type="button" onClick={() => void openExportedFile(exportNotice, reportExportNotice)}>
+              <Icon name="external" /> 打开
+            </button>
+          )}
         </p>
       )}
 

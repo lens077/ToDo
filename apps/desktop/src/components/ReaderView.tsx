@@ -18,7 +18,7 @@ import {
 import { ReadingContextPanel } from './ReadingContextPanel';
 import { ReaderContextMenu } from './ReaderContextMenu';
 import { Icon } from './Icon';
-import { useArticleExport, type ExportNotice } from '../hooks/useArticleExport';
+import { useArticleExport, openExportedFile, type ExportNotice } from '../hooks/useArticleExport';
 
 interface ReaderViewProps {
   detail: ReadingArticleDetail;
@@ -228,10 +228,11 @@ export function ReaderView({ detail, model }: ReaderViewProps) {
   const [exportNotice, setExportNotice] = React.useState<ExportNotice | null>(null);
   const reportExportNotice = React.useCallback((notice: ExportNotice) => setExportNotice(notice), []);
   const { exportArticle, exportBusy } = useArticleExport(detail.id, reportExportNotice);
-  // 提示条停留 6 秒后自动收起，也可手动关闭。
+  // 提示条自动收起：带「打开」按钮的成功提示停留更久，其余 6 秒。
   React.useEffect(() => {
     if (!exportNotice) return undefined;
-    const timer = window.setTimeout(() => setExportNotice(null), 6000);
+    const ttl = exportNotice.path ? 12000 : 6000;
+    const timer = window.setTimeout(() => setExportNotice(null), ttl);
     return () => window.clearTimeout(timer);
   }, [exportNotice]);
   // ≤1000px 的列宽下正文与笔记不再上下叠：笔记收进贴底的抽屉，正文独占
@@ -630,6 +631,11 @@ export function ReaderView({ detail, model }: ReaderViewProps) {
               data-testid="reader-export-notice"
             >
               <span>{exportNotice.message}</span>
+              {exportNotice.path && (
+                <button type="button" onClick={() => void openExportedFile(exportNotice, reportExportNotice)}>
+                  <Icon name="external" /> 打开
+                </button>
+              )}
               <button type="button" className="reader-resume__close" aria-label="关闭导出提示" onClick={() => setExportNotice(null)}>
                 <Icon name="close" />
               </button>

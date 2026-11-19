@@ -619,6 +619,12 @@ export const reading = {
     return { path: `${dir}/${found.title}.${format === 'html' ? 'html' : 'md'}`, images: 0 };
   },
 
+  /** 用系统默认应用打开刚导出的文件；Rust 侧只放行已存在的 .html / .md。 */
+  async openSavedFile(path: string): Promise<void> {
+    if (isTauriRuntime()) return call<void>('open_exported_file', { path });
+    throw new Error('浏览器版无法打开本机文件，请使用桌面端。');
+  },
+
   async upsertAnnotation(annotation: AnnotationInput): Promise<ReadingAnnotation> {
     if (isTauriRuntime()) return call<ReadingAnnotation>('reading_annotation_upsert', { annotation });
     const found = mockFind(annotation.article_id);

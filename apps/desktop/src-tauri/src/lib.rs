@@ -448,6 +448,52 @@ fn open_external(url: String) -> Result<(), String> {
     open_web_url(&url)
 }
 
+/// Opens a file the reader exported (「另存为 HTML / Markdown」) with the OS
+/// default app, so the saved article can be checked immediately.
+///
+/// The path arrives from the renderer, so it is restricted the same way
+/// [`open_external`] restricts URLs: only the two extensions `export_article`
+/// writes, only existing regular files. That way a page cannot use this to
+/// launch arbitrary payloads via whatever handler is registered for them.
+/// Windows goes through `explorer` rather than `cmd start`: the save
+/// directory is user-chosen, and cmd would interpret shell metacharacters in
+/// it. `explorer` may exit non-zero on success, so only the spawn is checked.
+#[tauri::command]
+fn open_exported_file(path: String) -> Result<(), String> {
+    let file_path = std::path::PathBuf::from(&path);
+    let extension = file_path
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .map(|ext| ext.to_ascii_lowercase());
+    if !matches!(extension.as_deref(), Some("html" | "md")) {
+        return Err("只能打开另存为导出的 .html / .md 文件".into());
+    }
+    let meta = std::fs::metadata(&file_path).map_err(|error| format!("文件不存在：{error}"))?;
+    if !meta.is_file() {
+        return Err("路径不是文件".into());
+    }
+    let mut command = if cfg!(target_os = "macos") {
+        let mut command = std::process::Command::new("open");
+        command.arg(&file_path);
+        command
+    } else if cfg!(target_os = "windows") {
+        let mut command = std::process::Command::new("explorer");
+        command.arg(&file_path);
+        command
+    } else {
+        let mut command = std::process::Command::new("xdg-open");
+        command.arg(&file_path);
+        command
+    };
+    command
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .map(|_| ())
+        .map_err(|error| format!("无法打开文件：{error}"))
+}
+
 /// The label of the one window 「复用同一窗口」 keeps for the agent host.
 ///
 /// It is not in `capabilities/default.json`, so a page loaded into it gets no
@@ -794,6 +840,7 @@ pub fn run() {
             ai_link,
             ai_to_task,
             open_external,
+            open_exported_file,
             open_session_window,
             desktop_status,
             reading::reading_list,
