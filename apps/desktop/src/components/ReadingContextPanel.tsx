@@ -5,9 +5,8 @@
  * re-fetch can never clobber them (the Rust UPDATE doesn't mention them).
  */
 import * as React from 'react';
-import { open } from '@tauri-apps/plugin-dialog';
-import { isTauriRuntime } from '../lib/readingSync';
-import { reading, type ReadingArticleDetail, type ReadingContextInput, type ReadingExportFormat } from '../lib/reading';
+import { reading, type ReadingArticleDetail, type ReadingContextInput } from '../lib/reading';
+import { useArticleExport, type ExportNotice } from '../hooks/useArticleExport';
 
 interface ReadingContextPanelProps {
   detail: ReadingArticleDetail;
@@ -96,24 +95,14 @@ export function ReadingContextPanel({ detail, onDetailChanged }: ReadingContextP
     }
   }, [detail.id, onDetailChanged]);
 
-  const exportArticle = React.useCallback(async (format: ReadingExportFormat) => {
-    if (!isTauriRuntime()) {
-      setError('浏览器版不支持另存到本机目录，请使用桌面端。');
+  const reportExportNotice = React.useCallback((notice: ExportNotice) => {
+    if (notice.kind === 'error') {
+      setError(notice.message);
       return;
     }
-    setBusy(true);
-    try {
-      const dir = await open({ directory: true, multiple: false, title: '选择保存目录（将写入文章文件与 img/ 图片目录）' });
-      if (typeof dir !== 'string') return;
-      const result = await reading.exportArticle(detail.id, format, dir);
-      setStatus(`已保存到 ${result.path}（图片 ${result.images} 张）`);
-      setError(null);
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
-    } finally {
-      setBusy(false);
-    }
-  }, [detail.id]);
+    setStatus(notice.message);
+  }, []);
+  const { exportArticle, exportBusy } = useArticleExport(detail.id, reportExportNotice);
 
   const addLink = React.useCallback(
     async (kind: 'project' | 'task') => {
@@ -175,10 +164,10 @@ export function ReadingContextPanel({ detail, onDetailChanged }: ReadingContextP
           <button type="button" className="rctx__tool" disabled={busy} onClick={() => void refetch()}>
             重新解析
           </button>
-          <button type="button" className="rctx__tool" disabled={busy} onClick={() => void exportArticle('html')}>
+          <button type="button" className="rctx__tool" disabled={busy || exportBusy} onClick={() => void exportArticle('html')}>
             另存为 HTML
           </button>
-          <button type="button" className="rctx__tool" disabled={busy} onClick={() => void exportArticle('markdown')}>
+          <button type="button" className="rctx__tool" disabled={busy || exportBusy} onClick={() => void exportArticle('markdown')}>
             另存为 Markdown
           </button>
         </div>
@@ -258,10 +247,11 @@ export function ReadingContextPanel({ detail, onDetailChanged }: ReadingContextP
               </button>
             </div>
           </div>
-          {status && <p className="rctx__status" role="status">{status}</p>}
-          {error && <p className="rctx__status rctx__status--error" role="alert">{error}</p>}
         </div>
       )}
+      {/* 导出等操作的结果提示放在展开体外：面板收起时按钮仍可见，结果也要看得见。 */}
+      {status && <p className="rctx__status" role="status">{status}</p>}
+      {error && <p className="rctx__status rctx__status--error" role="alert">{error}</p>}
     </section>
   );
 }

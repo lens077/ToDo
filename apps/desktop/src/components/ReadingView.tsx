@@ -14,6 +14,8 @@ import {
   type ReadingFilter,
 } from '../lib/reading';
 import { Icon } from './Icon';
+import { ReaderContextMenu } from './ReaderContextMenu';
+import { useArticleExport, type ExportNotice } from '../hooks/useArticleExport';
 import { useAppSettings } from '../lib/appSettings';
 import {
   markClipboardHandled,
@@ -64,6 +66,8 @@ interface ReadingCardProps {
   onSetRead: (id: string, read: boolean) => void;
   onRemove: (id: string) => void;
   onRetry: (id: string) => void;
+  /** 右键卡片直接弹「另存为」菜单，不必先进文章（sv2md9）。 */
+  onExportMenu: (id: string, position: { x: number; y: number }) => void;
 }
 
 /** 微信的 og:description 是「原创 作者 公众号」连排，主次作者之间补间隔符。 */
@@ -71,7 +75,7 @@ function displayExcerpt(excerpt: string): string {
   return excerpt.replace(/^(原创[，,]?\s*)(\S+)\s+(.+)$/, '$1$2 · $3');
 }
 
-function ReadingCard({ article, busy, opening, onOpen, onSetRead, onRemove, onRetry }: ReadingCardProps) {
+function ReadingCard({ article, busy, opening, onOpen, onSetRead, onRemove, onRetry, onExportMenu }: ReadingCardProps) {
   const state = readingState(article);
   const percent = state === 'read' ? 100 : article.progress_percent;
   const parsing = article.parse_status === 'pending';
@@ -86,6 +90,10 @@ function ReadingCard({ article, busy, opening, onOpen, onSetRead, onRemove, onRe
       data-article={article.id}
       data-parse-status={article.parse_status}
       aria-label={article.title}
+      onContextMenu={(event) => {
+        event.preventDefault();
+        onExportMenu(article.id, { x: event.clientX, y: event.clientY });
+      }}
     >
       <button type="button" className="reading-card__open" onClick={() => onOpen(article.id)} disabled={busy || opening || unavailable} aria-label={`打开：${article.title}`}>
         <Cover article={article} />
@@ -186,6 +194,16 @@ export function ReadingView({ model }: ReadingViewProps) {
   const [batchDraft, setBatchDraft] = React.useState('');
   const [clipboard, setClipboard] = React.useState<ClipboardCandidate | null>(null);
   const [settings] = useAppSettings();
+  // 列表卡片右键另存为（sv2md9）：菜单记录文章与弹出位置，导出结果与阅读页同一套提示。
+  const [exportMenu, setExportMenu] = React.useState<{ id: string; x: number; y: number } | null>(null);
+  const [exportNotice, setExportNotice] = React.useState<ExportNotice | null>(null);
+  const reportExportNotice = React.useCallback((notice: ExportNotice) => setExportNotice(notice), []);
+  const { exportArticle, exportBusy } = useArticleExport(exportMenu?.id ?? '', reportExportNotice);
+  React.useEffect(() => {
+    if (!exportNotice) return undefined;
+    const timer = window.setTimeout(() => setExportNotice(null), 6000);
+    return () => window.clearTimeout(timer);
+  }, [exportNotice]);
   const counts = React.useMemo(() => countByState(model.articles), [model.articles]);
   const batchUrls = React.useMemo(() => extractBatchUrls(batchDraft, batchScope), [batchDraft, batchScope]);
 
@@ -405,6 +423,16 @@ export function ReadingView({ model }: ReadingViewProps) {
 
       {model.error && <p className="reading-notice" role="alert">{model.error}</p>}
 
+      {exportNotice && (
+        <p
+          className={`reading-notice${exportNotice.kind === 'error' ? '' : ' reading-notice--ok'}`}
+          role={exportNotice.kind === 'error' ? 'alert' : 'status'}
+          data-testid="reading-export-notice"
+        >
+          {exportNotice.message}
+        </p>
+      )}
+
       {model.loading ? (
         <p className="ai-loading" role="status">正在读取阅读库…</p>
       ) : model.articles.length === 0 ? (
@@ -429,9 +457,21 @@ export function ReadingView({ model }: ReadingViewProps) {
               onSetRead={(id, read) => void model.setRead(id, read)}
               onRemove={(id) => void model.remove(id)}
               onRetry={(id) => void model.retryParse(id)}
+              onExportMenu={(id, position) => {
+                if (exportBusy) return;
+                setExportMenu({ id, ...position });
+              }}
             />
           ))}
         </div>
+      )}
+      {exportMenu && (
+        <ReaderContextMenu
+          x={exportMenu.x}
+          y={exportMenu.y}
+          onExport={(format) => void exportArticle(format)}
+          onClose={() => setExportMenu(null)}
+        />
       )}
     </section>
   );

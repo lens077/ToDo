@@ -16,7 +16,9 @@ import {
   type ReadingArticleDetail,
 } from '../lib/reading';
 import { ReadingContextPanel } from './ReadingContextPanel';
+import { ReaderContextMenu } from './ReaderContextMenu';
 import { Icon } from './Icon';
+import { useArticleExport, type ExportNotice } from '../hooks/useArticleExport';
 
 interface ReaderViewProps {
   detail: ReadingArticleDetail;
@@ -221,6 +223,17 @@ export function ReaderView({ detail, model }: ReaderViewProps) {
   const [pendingSelection, setPendingSelection] = React.useState<PendingSelection | null>(null);
   const [banner, setBanner] = React.useState<'resumed' | null>(null);
   const [copied, setCopied] = React.useState(false);
+  // 另存为（sv2md9）：正文右键菜单 + 导出结果提示条。
+  const [exportMenu, setExportMenu] = React.useState<{ x: number; y: number } | null>(null);
+  const [exportNotice, setExportNotice] = React.useState<ExportNotice | null>(null);
+  const reportExportNotice = React.useCallback((notice: ExportNotice) => setExportNotice(notice), []);
+  const { exportArticle, exportBusy } = useArticleExport(detail.id, reportExportNotice);
+  // 提示条停留 6 秒后自动收起，也可手动关闭。
+  React.useEffect(() => {
+    if (!exportNotice) return undefined;
+    const timer = window.setTimeout(() => setExportNotice(null), 6000);
+    return () => window.clearTimeout(timer);
+  }, [exportNotice]);
   // ≤1000px 的列宽下正文与笔记不再上下叠：笔记收进贴底的抽屉，正文独占
   // 高度。宽列里这个状态不参与布局，但保留着，切回窄列时恢复用户的偏好。
   const [sheetOpen, setSheetOpen] = React.useState(false);
@@ -547,6 +560,13 @@ export function ReaderView({ detail, model }: ReaderViewProps) {
     model.closeArticle();
   };
 
+  // 正文右键：另存为 HTML / Markdown（导出进行中不再叠开目录对话框）。
+  const openExportMenu = (event: React.MouseEvent) => {
+    event.preventDefault();
+    if (exportBusy) return;
+    setExportMenu({ x: event.clientX, y: event.clientY });
+  };
+
   const busy = model.busy.has(detail.id);
   const shownPercent = state === 'read' ? 100 : livePercent;
 
@@ -603,8 +623,20 @@ export function ReaderView({ detail, model }: ReaderViewProps) {
               </button>
             </div>
           )}
+          {exportNotice && (
+            <div
+              className={`reader-resume${exportNotice.kind === 'error' ? ' reader-resume--error' : ''}`}
+              role={exportNotice.kind === 'error' ? 'alert' : 'status'}
+              data-testid="reader-export-notice"
+            >
+              <span>{exportNotice.message}</span>
+              <button type="button" className="reader-resume__close" aria-label="关闭导出提示" onClick={() => setExportNotice(null)}>
+                <Icon name="close" />
+              </button>
+            </div>
+          )}
           <ReadingContextPanel detail={detail} onDetailChanged={model.applyDetail} />
-          <div className="reader-paper" ref={paperRef}>
+          <div className="reader-paper" ref={paperRef} onContextMenu={openExportMenu}>
             <div className="reader-body" ref={bodyRef} data-testid="reader-body" onClick={handleArticleLink} />
             {pendingSelection && (
               <div className="reader-toolbar reader-toolbar--selection" role="toolbar" aria-label="标记操作" style={{ top: pendingSelection.top, left: pendingSelection.left }}>
@@ -670,6 +702,14 @@ export function ReaderView({ detail, model }: ReaderViewProps) {
           <span>标记与笔记</span>
           <span className="reader-notes-toggle__count">{annotations.length}</span>
         </button>
+      )}
+      {exportMenu && (
+        <ReaderContextMenu
+          x={exportMenu.x}
+          y={exportMenu.y}
+          onExport={(format) => void exportArticle(format)}
+          onClose={() => setExportMenu(null)}
+        />
       )}
     </section>
   );

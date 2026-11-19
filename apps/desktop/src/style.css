@@ -718,6 +718,10 @@
   .task-context-menu > button svg { width: 15px; height: 15px; }
   .task-context-menu__rule { height: 1px; margin: 4px 3px; background: var(--hairline); }
   .task-context-menu__chevron { justify-self: end; }
+  /* 阅读另存为菜单（sv2md9）：在任务菜单骨架上放宽呼吸感，带一点入场上浮。 */
+  .reader-context-menu { gap: 3px; padding: 9px; transform-origin: top left; animation: reader-menu-in 0.18s var(--ease-out) both; }
+  .reader-context-menu > button:first-of-type { margin-top: 0; }
+  .reader-context-menu > button { min-height: 36px; padding: 8px 11px; border-radius: 8px; transition: background-color 0.14s var(--ease-out), color 0.14s var(--ease-out); }
   .task-context-menu__submenu { position: absolute; top: -7px; left: calc(100% + 5px); max-height: min(320px, calc(100dvh - 16px)); overflow-y: auto; }
   .task-context-menu__submenu--portal { position: fixed; inset: auto; }
   @media (min-width: 721px) {
@@ -754,6 +758,7 @@
   .column-dot { width: 6px; height: 6px; background: var(--accent); border-radius: 50%; }
   .column-dot--done { background: var(--ink-3); }
   @keyframes context-in { from { opacity: 0; } to { opacity: 1; } }
+  @keyframes reader-menu-in { from { opacity: 0; transform: translateY(-5px) scale(0.97); } to { opacity: 1; transform: none; } }
 
   .task-card__body { margin-top: 10px; font-size: 14px; line-height: 1.45; overflow-wrap: anywhere; cursor: text; border-radius: 4px; transition: background 0.2s var(--ease-out), box-shadow 0.2s var(--ease-out); }
   .task-card__body:hover, .task-card__body.is-editing-body { background: color-mix(in srgb, currentColor 5%, transparent); box-shadow: 0 0 0 4px color-mix(in srgb, currentColor 5%, transparent); }
@@ -1193,6 +1198,9 @@
   .reader-resume > button { min-height: 26px; padding: 0 8px; color: var(--accent); background: transparent; border: 0; border-left: 1px solid var(--accent-wash-2); border-radius: 0; font-size: 12.5px; font-weight: 500; }
   .reader-resume__close { display: grid; place-items: center; width: 26px; padding: 0 !important; }
   .reader-resume__close svg { width: 13px; height: 13px; }
+  /* 另存为导出失败的提示条复用同款胶囊，只换危险色（sv2md9）。 */
+  .reader-resume--error { color: var(--danger); background: var(--danger-wash); border-color: var(--danger); }
+  .reader-resume--error > button { color: var(--danger); border-left-color: var(--danger-wash); }
 
   /* The body is untrusted HTML reduced to article elements; typography is
      set here, not by the source page. */
@@ -2543,6 +2551,7 @@
 .reading-sync__state[data-state='offline'] { color: var(--danger); }
 /* 阅读库级别的错误（目录不可用、读库失败）：一行提示，不要套 AI 卡片栏的三栏网格。 */
 .reading-notice { margin: 0 28px 14px; padding: 9px 12px; color: var(--ink); background: var(--danger-wash); border: 1px solid var(--danger); border-radius: var(--radius-control); font-size: 12.5px; }
+.reading-notice--ok { color: var(--accent); background: var(--accent-wash); border-color: var(--accent); }
 /* 剪贴板里有链接时的轻提示：贴在上传框下方，可一键导入或忽略。 */
 .reading-clipboard { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin: 0 28px 14px; padding: 9px 12px; color: var(--ink); background: var(--accent-wash); border: 1px solid var(--accent); border-radius: var(--radius-control); font-size: 12.5px; }
 .reading-clipboard__icon { display: inline-flex; color: var(--accent); }

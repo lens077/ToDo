@@ -1227,3 +1227,18 @@ Session 存为项目内 Markdown（`<project>/.virgo/sessions/s-<ts>.md`），�
 6. **部署链**：本地 `make pages-deploy` / `pages-deploy-eo` 直接发布 CF + EO；k8s 端 helm 直连被 ArgoCD 所有权拦（ExternalSecret `virgo-tcr` ownership metadata，符合 GitOps 约定），改走 CI：push main → `deploy.yml` 三 job 全绿（44361246385，镜像 `f771581@sha256:7fffd4f0…`）→ bot 回写 `values-prod.yaml`（294bc52）→ GitLab 镜像 → ArgoCD `virgo-prod` Synced → `deploy/virgo` rollout 成功。
 7. **线上验证**：virgo.apikv.com / virgo-overseas.pages.dev / virgo-pages.apikv.com 三端——zh/en 状态条已翻转、hero 主按钮与平台表链接指向 `/downloads/` 产物、两个下载 URL 均 200、SHA256SUMS 内容正确；浏览器实测生产域（状态条 / hero / 导航「下载」/ 表行 / SHA256SUMS 链接）。端到端：从 CF Pages 真实下载 app.zip，SHA256 `e78673f6…` 与 SHA256SUMS 一致，ditto 解压 + ad-hoc 签名验证通过，`spctl --assess` 如预期 `rejected`（与站点放行说明相符）。
 8. **门禁**：`verify-quick` 绿（27–32s 多次）；期间暴露 watch 测试簇红/绿漂移（见任务 `onfv6x`）。任务 `d3l8hn` 关闭，回开条件立项 `b1gxqf`。
+
+## 2026-11-19 阅读另存为补正文右键入口 + 导出结果可见性（sv2md9 收尾，通过）
+
+1. **背景**：sv2md9（另存为 HTML / Markdown）2026-11-13 落地时入口只有阅读上下文面板的两个按钮，且导出结果渲染在面板展开体内部——面板收起时点了「另存为」看不到任何反馈。本轮补正文右键入口与结果可见性，并把 2026-11-13 遗留的人工验收一并推进。
+2. **右键菜单**：新增 `ReaderContextMenu`（portal 到 body，复用任务右键菜单 `.task-context-menu` 样式骨架，Icon 新增 `save`），`.reader-paper` 上 `onContextMenu` 弹出「另存为 HTML / 另存为 Markdown」；首项自动聚焦、Escape/Tab 关闭、点击外部关闭、方向键循环移动焦点、边界内定位；导出进行中（目录对话框开着）不再叠加弹出。
+3. **导出逻辑去重**：目录选择 + `reading.export_article` 提为共享 hook `useArticleExport`（结果经 `onNotice` 上报），面板按钮与右键菜单共用；浏览器端（非 Tauri）明确提示「请使用桌面端」。`ReadingContextPanel` 状态行移出展开体——面板收起时导出结果同样可见；`ReaderView` 用 `reader-resume` 同款胶囊显示结果（错误态换危险色 `reader-resume--error`，6 秒自动收起、可手动关闭）。
+4. **门禁**：tsc 绿；desktop `vite build` 绿；reading e2e 15 passed（chromium；新增「正文右键提供另存为 HTML / Markdown，Escape 可关，浏览器版提示用桌面端」——菜单两项可见、Escape 关闭、浏览器端点击 HTML 项出现桌面端指引并可关闭）；`cargo test -p todo-core reading` 46 通过 3 ignored；`make check-quick` 绿（60s，fmt+clippy+workspace test+contract check+desktop build+静态站点）。
+5. **待真机验收**（2026-11-13 遗留 + 本轮新增）：`pnpm --filter @todo/desktop tauri dev` 打开微信文章——①确认卡片边框/装饰标题/作者头样式保留（`wst7k4` 项）；②正文右键 → 另存为 HTML / Markdown → 选目录 → 检查产物「标题.html/.md + img/」并用浏览器打开核对图片引用；③面板收起状态下点按钮，结果提示应出现在面板下方。
+
+## 2026-11-19 阅读右键另存为第二轮：列表卡片入口 + 菜单呼吸感（用户反馈，通过）
+
+1. **列表卡片右键**：`ReadingCard` 新增 `onExportMenu`，右键任意文章卡（含解析中/失败）直接弹「另存为 HTML / Markdown」菜单，不必先进文章；菜单记录文章 id 与弹出位置，导出逻辑复用 `useArticleExport`。结果提示用列表已有的 `reading-notice`（新增 `--ok` 成功变体，accent 色）。
+2. **菜单呼吸感**：`.reader-context-menu` 在任务菜单骨架上放宽——容器 `padding 6→9px`、项间 `gap 3px`、项高 `30→36px`、内边距 `5px 9px→8px 11px`、圆角 `6→8px`，并去掉首项的 `margin-top: 4px`（那是任务菜单标题占位用的）；hover/focus 加 0.14s 背景色过渡，入场换成 `reader-menu-in`（上浮 5px + 0.97 缩放 + 淡入，0.18s ease-out）；`prefers-reduced-motion` 由既有全局规则兜底。
+3. **验证**：tsc 绿；desktop vite build 绿；reading e2e 16 passed（新增「列表卡片右键同样弹出另存为菜单，不必先进文章」：菜单可见、Markdown 项触发提示、再次右键换 HTML 项）；Playwright 截图确认菜单外观（项距舒展、圆角、边缘回弹正常）。
+4. **待真机验收**：桌面 dev 已热更新——列表卡右键 + 阅读页正文右键各导出一次，检查产物。

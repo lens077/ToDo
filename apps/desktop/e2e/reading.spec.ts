@@ -203,6 +203,42 @@ test.describe('阅读', () => {
     await expect(page.getByRole('button', { name: '标为已读' })).toBeVisible();
   });
 
+  test('正文右键提供另存为 HTML / Markdown，Escape 可关，浏览器版提示用桌面端', async ({ page }) => {
+    await openReading(page);
+    await page.getByRole('button', { name: '继续阅读 · 42%' }).click();
+    const body = page.getByTestId('reader-body');
+    await expect(body).toBeVisible();
+    await body.click({ button: 'right' });
+    const menu = page.getByRole('menu', { name: '另存文章' });
+    await expect(menu).toBeVisible();
+    await expect(menu.getByRole('menuitem', { name: '另存为 HTML' })).toBeVisible();
+    await expect(menu.getByRole('menuitem', { name: '另存为 Markdown' })).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(menu).toHaveCount(0);
+    // 浏览器端没有本机目录对话框：点击后给出指引而非报错。
+    await body.click({ button: 'right' });
+    await page.getByRole('menuitem', { name: '另存为 HTML' }).click();
+    await expect(page.getByTestId('reader-export-notice')).toContainText('浏览器版不支持另存到本机目录，请使用桌面端');
+    await page.getByRole('button', { name: '关闭导出提示' }).click();
+    await expect(page.getByTestId('reader-export-notice')).toHaveCount(0);
+  });
+
+  test('列表卡片右键同样弹出另存为菜单，不必先进文章', async ({ page }) => {
+    await openReading(page);
+    const card = page.getByTestId('reading-card').filter({ hasText: '深度工作' });
+    await card.click({ button: 'right' });
+    const menu = page.getByRole('menu', { name: '另存文章' });
+    await expect(menu).toBeVisible();
+    await expect(menu.getByRole('menuitem', { name: '另存为 Markdown' })).toBeVisible();
+    await page.getByRole('menuitem', { name: '另存为 Markdown' }).click();
+    await expect(menu).toHaveCount(0);
+    await expect(page.getByTestId('reading-export-notice')).toContainText('浏览器版不支持另存到本机目录，请使用桌面端');
+    // 换一篇文章右键，菜单跟着新文章走（提示条仍在时也可再次导出）。
+    await card.click({ button: 'right' });
+    await page.getByRole('menuitem', { name: '另存为 HTML' }).click();
+    await expect(page.getByTestId('reading-export-notice')).toContainText('浏览器版不支持另存到本机目录，请使用桌面端');
+  });
+
   // ≤1000px 时笔记不再是右栏，而是从底部拉出的抽屉；此前它在 auto 行里按
   // 40% 取高，只量到 73px，卡被裁掉也滚不到。
   test('narrow widths fold the notes into a bottom sheet', async ({ page }) => {

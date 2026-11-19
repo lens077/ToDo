@@ -29,6 +29,7 @@ export type IconName =
   | 'book'
   | 'link'
   | 'highlighter'
+  | 'save'
   | 'external';
 
 const paths: Record<IconName, React.ReactNode> = {
@@ -127,6 +128,13 @@ const paths: Record<IconName, React.ReactNode> = {
       <path d="m9 11 4-4 6 6-4 4z" />
       <path d="m5 15 4-4 6 6-2 2H7z" />
       <path d="M3 21h18" />
+    </>
+  ),
+  save: (
+    <>
+      <path d="M15 3H6a1 1 0 0 0-1 1v16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V7l-4-4z" />
+      <path d="M15 3v4h4" />
+      <path d="M8 13h8v8H8z" />
     </>
   ),
   external: (
