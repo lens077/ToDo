@@ -60,6 +60,13 @@ columns:
       ↳ Apple Developer 会员 + .p12 + App Store Connect API key 到位后，走 docs/macos-release.md「创建正式发布」签名工作流；站点下载区切签名产物、下架未签名包（决策⑦回开条件） <!--n:b1gxqf-->
 - [ ] 修复 watch 测试簇 FSEvents 延迟投递导致的间歇性失败（verify-quick 红/绿漂移） <!--t:onfv6x--> #desktop #test !2
       ↳ 根因：macOS FSEvents 把建立期写入事件延迟批量重放，污染 250ms 静默断言，失败在 reading_target_without_a_write_does_not_reload 与 parent_watch_survives_two_atomic_replacements 等同族测试间游走；notify 依赖未变，疑与 2026-11-19 nightly 切换相关。reading_target 已加沉降排空（本日提交），其余同族测试待同样处理 <!--n:onfv6x-->
+- [ ] 移动端统一收件箱 M1：articles.kind 数据模型 + 随记 CRUD + 统一输入条 + 编辑抽屉 + inbox.md 迁移（设计稿 docs/design/mobile-inbox-design.html） <!--t:a2cmrf--> #mobile #inbox #inbox-m1 !2 ◐90
+      ↳ 全部代码完成：CaptureView/全局速记数据源切到阅读库随记（Capture 形状不变，分拣后 triaged 留档隐藏）、triage_note_for + 迁移命令 capture_migrate_inbox + 设置界面迁移按钮、侧栏导航改名（阅读→收件箱 + inbox 图标 + 随记项移除）、移动端默认栏与归一化去 capture、HTTP 模式分拣入口挂阅读占位、随记视图入口在收件箱工具行。验证：todo-core 152 + todo-desktop 全套（contract suite 重写 + 迁移测试）绿、tsc、e2e 170 passed、verify-quick 50s 绿、todo lint 绿。待用户验收后关闭。 <!--n:a2cmrf-->
+- [ ] 移动端统一收件箱 M2：VIEW intent 文件关联 + content:// 接收链 + 嗅探分流 + MD 双问（设计稿 §6） <!--t:34huu8--> #mobile #inbox #inbox-m2 !3
+- [ ] 移动端统一收件箱 M3：同步协议 v3（note/local-file 上行）+ note LWW + 移动端 SSE watch（设计稿 §9） <!--t:fkq42v--> #mobile #sync #inbox-m3 !3
+- [ ] 移动端统一收件箱 M4：常驻状态栏通知三 action + AppWidget 小组件 + 真机验收（设计稿 §7/§8） <!--t:t1f2f8--> #mobile #manual #inbox-m4 !3
+- [x] 阅读/移动端三处 UI 修复：标记与笔记浮标贴 tab 栏、矮视口侧栏可滚到底、Android 系统栏跟随主题 <!--t:wovpo9--> #desktop #mobile #reading !2
+      ↳ 三处修复。①标记与笔记浮标：≤719px 新增 bottom:8px 覆盖（放在 1000px 块之后赢同权重级联），浮标锚点是 .reader（view-in 动画 fill both 保留 transform 使其成为包含块），底边=工作区底=tab 栏顶。②矮视口侧栏：新增 @media (min-width:720px) and (min-height:320px) and (max-height:559px) { .app-shell { min-height:0 } }，外壳不再强撑 520/560px；320px 下限是回归教训：无下限的 986×180 极端小窗里工作区 overflow hidden 裁掉的按钮只有页面滚动够得着（e2e 点击超时）；侧栏另加 padding-bottom calc(14px+safe-area-inset-bottom) 防横屏手势条。③Android 系统栏（MainActivity.applySystemBarTheme）：状态栏/导航栏透明、API≥29 关 isNavigationBarContrastEnforced（续七移除 enableEdgeToEdge 后对比度灰底回归的根因）、API≥30 setDecorFitsSystemWindows(false)+按 uiMode 切 APPEARANCE_LIGHT_*_BARS 图标明暗、onConfigurationChanged 补切、API<30 仅对齐图标明暗。真机首版崩溃教训：onCreate 阶段 wry 未 setContentView，DecorView 为 null，vivo/Android 17 上 getInsetsController() 抛 NPE——应用时机挪到 onResume + peekDecorView() 兜底。验证：浏览器 mock 360×800 gap=8px、768×345 外壳=视口/侧栏滚到底、768×620 与 360×800 回归；compileArmDebugKotlin 绿；make check-quick 绿；e2e 全量 180 passed；真机（vivo V2425A/Android 17）四项通过：深色双系统栏=app 背景+浅色图标、横屏侧栏滚到底设置完整可见、阅读页浮标 gap 28物理px/3.5=8px、浅色系统栏浅色+深色图标切换无崩溃。构建备注：需显式 ANDROID_HOME=~/android/sdk NDK_HOME=~/android/sdk/ndk/30.0.16138531；apksigner 36 用 --key-pass <!--n:wovpo9-->
 
 ## Doing
 - [ ] 人工验收看板任务写回 TODO.md <!--t:h4m9zc--> #desktop #manual !1 ^3000

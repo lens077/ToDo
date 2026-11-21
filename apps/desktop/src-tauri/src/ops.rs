@@ -1,5 +1,5 @@
 //! Testable command operations for a project root and its task sources.
-use crate::{CaptureAppendResponse, CaptureTriageResponse, CommandValue};
+use crate::CommandValue;
 use serde::Serialize;
 use std::{
     path::PathBuf,
@@ -7,24 +7,22 @@ use std::{
     time::Duration,
 };
 use todo_core::{
-    AiListFilter, AiRecord, AiStore, Capture, CaptureProject, CaptureStore, Change,
-    ColumnSetupOptions, ColumnSetupPreview, ColumnSetupSelection, DesktopBackend, DesktopIntent,
-    LockedWriter, ProjectBackend, ProjectSnapshot,
+    AiListFilter, AiRecord, AiStore, CaptureProject, Change, ColumnSetupOptions,
+    ColumnSetupPreview, ColumnSetupSelection, DesktopBackend, DesktopIntent, LockedWriter,
+    ProjectBackend, ProjectSnapshot, TriageResult,
 };
 
 pub struct DesktopOps {
     pub backend: Arc<Mutex<ProjectBackend>>,
-    pub capture_store: CaptureStore,
     /// The AI feed store (`docs/ai-feed-spec.md`). `None` when the home
     /// directory is unavailable; the AI view then reports that instead of
     /// pretending the feed is empty.
     ai_store: Option<AiStore>,
 }
 impl DesktopOps {
-    pub fn new(backend: DesktopBackend, capture_store: CaptureStore) -> Self {
+    pub fn new(backend: DesktopBackend) -> Self {
         Self {
             backend: Arc::new(Mutex::new(ProjectBackend::from_backend(backend))),
-            capture_store,
             ai_store: None,
         }
     }
@@ -232,41 +230,15 @@ impl DesktopOps {
             .apply_columns(source, base_hash, selection)
             .map_err(stringify)
     }
-    pub fn capture_list(&self) -> Result<Vec<Capture>, String> {
-        self.capture_store.list().map_err(stringify)
-    }
-    pub fn capture_append(&self, text: &str) -> Result<CaptureAppendResponse, String> {
-        let (capture, captures) = self
-            .capture_store
-            .append_with_snapshot(text)
-            .map_err(stringify)?;
-        Ok(CaptureAppendResponse { capture, captures })
-    }
-    pub fn capture_delete(&self, id: &str) -> Result<Vec<Capture>, String> {
-        self.capture_store.delete(id).map_err(stringify)
-    }
-    pub fn capture_triage(
+    /// 随记分拣（A′）：随记事实源已迁入阅读库，这里只负责把文本写入目标
+    /// TODO.md；随记的留档标记由调用方（lib.rs）在阅读库一侧完成。
+    pub fn triage_note_for(
         &self,
-        id: &str,
-        column: Option<&str>,
-    ) -> Result<CaptureTriageResponse, String> {
-        self.capture_triage_source(id, column, None)
-    }
-    pub fn capture_triage_source(
-        &self,
-        id: &str,
-        column: Option<&str>,
-        source: Option<&str>,
-    ) -> Result<CaptureTriageResponse, String> {
-        self.capture_triage_for(id, column, source, None)
-    }
-    pub fn capture_triage_for(
-        &self,
-        id: &str,
+        text: &str,
         column: Option<&str>,
         source: Option<&str>,
         expected_root: Option<&str>,
-    ) -> Result<CaptureTriageResponse, String> {
+    ) -> Result<TriageResult, String> {
         let backend = self.backend()?;
         if expected_root
             .is_some_and(|root| backend.project_path() != Some(std::path::Path::new(root)))
@@ -274,17 +246,15 @@ impl DesktopOps {
             return Err("project changed before triage; select the source again".into());
         }
         let mut target = backend.source_backend(source).map_err(stringify)?;
-        let result = self
-            .capture_store
-            .triage_to_task(id, &mut target, column)
-            .map_err(stringify)?;
-        let snapshot = CommandValue::from_result(backend.snapshot());
-        let captures = CommandValue::from_result(self.capture_store.list());
-        Ok(CaptureTriageResponse {
-            result,
-            snapshot,
-            captures,
-        })
+        let task_id = target.create_task(text, column).map_err(stringify)?;
+        Ok(TriageResult::Completed { task_id })
+    }
+
+    pub fn snapshot_value(&self) -> CommandValue<ProjectSnapshot> {
+        match self.backend() {
+            Ok(backend) => CommandValue::from_result(backend.snapshot().map_err(stringify)),
+            Err(message) => CommandValue::Unavailable { message },
+        }
     }
 
     fn source_path(&self, source: Option<&str>) -> Result<PathBuf, String> {

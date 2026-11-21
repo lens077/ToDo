@@ -680,5 +680,7 @@ export function useDesktop() {
     appendCapture,
     deleteCapture,
     triageCapture,
+    /** 收件箱随记即分拣面板数据源（A′）：进入随记视图时刷新一次。 */
+    refreshCaptures: loadCaptures,
   };
 }

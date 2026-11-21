@@ -2,6 +2,8 @@ import { invoke } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { open } from '@tauri-apps/plugin-dialog';
+import { reading } from './reading';
+import type { ReadingArticleDetail } from './reading';
 import { sourceKey, sourceQuery } from './taskSources';
 import type { AiListResult, AiOutcome, AiRecord, AiState } from './ai';
 import type { OpenSessionMode } from './appSettings';
@@ -379,26 +381,29 @@ const mockInitialTasks: DesktopTask[] = [
   },
 ];
 
+/**
+ * 收件箱随记 → 旧 Capture 形状（A′）：随记事实源在阅读库 mock 里，与 Rust
+ * `note_to_capture` 同口径（RFC 3339 秒级时间戳、Markdown 即文本）。
+ */
+function noteToCaptureMock(detail: ReadingArticleDetail): Capture {
+  return {
+    id: detail.id,
+    created_at: `${new Date(detail.added_at).toISOString().slice(0, 19)}Z`,
+    text: detail.markdown ?? '',
+  };
+}
+
+async function mockCaptureList(): Promise<Capture[]> {
+  const articles = await reading.list();
+  const notes = articles.filter((article) => article.kind === 'note');
+  const details = await Promise.all(notes.map((note) => reading.get(note.id)));
+  return details
+    .filter((detail) => !detail.context.saved_reason.startsWith('triaged'))
+    .map((detail) => noteToCaptureMock(detail));
+}
+
 let mockRevision = 17;
 let mockTasks = cloneTasks(mockInitialTasks);
-let mockCaptures: Capture[] = [
-  {
-    id: 'cap-b7k2',
-    created_at: '2026-08-31T08:42:00Z',
-    text: '把外部编辑冲突 banner 的复现步骤补到验收记录里',
-  },
-  {
-    id: 'cap-n4w8',
-    created_at: '2026-08-31T09:17:00Z',
-    text: '研究 Windows 全局快捷键是否与系统输入法冲突',
-  },
-  {
-    id: 'cap-r2m6',
-    created_at: '2026-08-30T16:05:00Z',
-    text: '把 README 的首次使用路径缩短到三步',
-  },
-];
-let mockCaptureSequence = 4;
 let mockTaskSequence = 1;
 const mockListeners = new Set<(event: DesktopEvent) => void>();
 const mockAiListeners = new Set<() => void>();
@@ -1235,7 +1240,7 @@ export const desktop = {
 
   async captureList(): Promise<Capture[]> {
     if (useHttp()) return [];
-    if (!isTauriRuntime()) return mockCaptures.map((capture) => ({ ...capture }));
+    if (!isTauriRuntime()) return mockCaptureList();
     const result = await call<unknown>('capture_list');
     if (!Array.isArray(result)) throw new DesktopBridgeError('capture_list 没有返回 Capture 列表');
     return result.map(normalizeCapture);
@@ -1244,15 +1249,10 @@ export const desktop = {
   async captureAppend(text: string): Promise<CaptureAppendResult> {
     if (useHttp()) throw new DesktopBridgeError('HTTP 项目服务不开放个人随记，请使用桌面版。');
     if (!isTauriRuntime()) {
-      const capture: Capture = {
-        id: `cap-mock-${String(mockCaptureSequence++).padStart(2, '0')}`,
-        created_at: '2026-08-31T10:30:00Z',
-        text: text.trim(),
-      };
-      mockCaptures = [...mockCaptures, capture];
+      const detail = await reading.noteAppend(text);
       return {
-        capture: { ...capture },
-        captures: mockCaptures.map((item) => ({ ...item })),
+        capture: noteToCaptureMock(detail),
+        captures: await mockCaptureList(),
       };
     }
     const raw = (await call<unknown>('capture_append', { text })) as Record<string, unknown>;
@@ -1266,8 +1266,8 @@ export const desktop = {
   async captureDelete(id: string): Promise<Capture[]> {
     if (useHttp()) throw new DesktopBridgeError('HTTP 项目服务不开放个人随记，请使用桌面版。');
     if (!isTauriRuntime()) {
-      mockCaptures = mockCaptures.filter((capture) => capture.id !== id);
-      return mockCaptures.map((capture) => ({ ...capture }));
+      await reading.remove(id);
+      return mockCaptureList();
     }
     const captures = await call<unknown>('capture_delete', { id });
     if (!Array.isArray(captures)) throw new DesktopBridgeError('capture_delete 没有返回 authoritative Capture 列表');
@@ -1277,12 +1277,15 @@ export const desktop = {
   async captureTriage(id: string, column: string, sourcePath: string | null = null, projectPath?: string): Promise<TriageResult> {
     if (useHttp()) throw new DesktopBridgeError('HTTP 项目服务不开放个人随记，请使用桌面版。');
     if (!isTauriRuntime()) {
-      const capture = mockCaptures.find((item) => item.id === id);
-      if (!capture) throw new DesktopBridgeError('Capture 已不存在');
+      // A′：分拣的输入是阅读库随记的 Markdown；成功后原话留档（saved_reason
+      // 标 triaged），分拣列表隐藏、收件箱仍可见——与 Rust 管线同口径。
+      const detail = await reading.get(id).catch(() => null);
+      if (!detail || detail.kind !== 'note') throw new DesktopBridgeError('Capture 已不存在');
+      const text = detail.markdown ?? '';
       const taskId = `tri${String(mockTaskSequence++).padStart(3, '0')}`;
       mockTasks.push({
         id: taskId,
-        body: capture.text,
+        body: text,
         completed: false,
         column,
         indent_level: 0,
@@ -1297,20 +1300,19 @@ export const desktop = {
         evidence_availability: { status: 'unavailable', reason: 'Mock 任务没有 Git 物证。' },
       });
       mockRevision += 1;
-      const partial = id === 'cap-b7k2';
-      if (!partial) mockCaptures = mockCaptures.filter((item) => item.id !== id);
-      const commandValues = {
+      await reading.updateContext(id, {
+        saved_reason: `triaged → ${column}`,
+        focus_questions: detail.context.focus_questions,
+        revisit_condition: detail.context.revisit_condition,
+        personal_notes: detail.context.personal_notes,
+        revisit_type: detail.context.revisit_type,
+      });
+      const result: TriageResult = {
+        status: 'completed',
+        task_id: taskId,
         snapshot: mockSnapshot(),
-        captures: mockCaptures.map((item) => ({ ...item })),
+        captures: await mockCaptureList(),
       };
-      const result: TriageResult = partial
-        ? {
-            status: 'task_created_capture_retained',
-            task_id: taskId,
-            message: '任务已创建，但 Capture 文件删除时遇到锁竞争。',
-            ...commandValues,
-          }
-        : { status: 'completed', task_id: taskId, ...commandValues };
       emitMock({ type: 'snapshot', snapshot: result.snapshot! });
       return result;
     }

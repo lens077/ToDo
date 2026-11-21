@@ -1,6 +1,8 @@
 pub mod ops;
+pub mod reading;
+
+use reading::ReadingState;
 mod preferences;
-mod reading;
 pub mod sync;
 mod sync_watch;
 mod watch;
@@ -17,8 +19,8 @@ use tauri::{Emitter, Manager, State};
 #[cfg(desktop)]
 use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState};
 use todo_core::{
-    AiRecord, AiStore, Capture, CaptureStore, ColumnSetupOptions, ColumnSetupPreview,
-    ColumnSetupSelection, DesktopBackend, DesktopIntent, ProjectSnapshot, TriageResult,
+    AiRecord, AiStore, Capture, ColumnSetupOptions, ColumnSetupPreview, ColumnSetupSelection,
+    DesktopBackend, DesktopIntent, ProjectSnapshot, TriageResult,
 };
 use watch::{TargetFileWatcher, WatchSignal};
 
@@ -279,37 +281,65 @@ fn apply_columns(
 }
 
 #[tauri::command]
-fn capture_list(state: State<'_, AppState>) -> Result<Vec<Capture>, String> {
-    state.ops.capture_list()
+// 随记分拣面板与全局速记的数据源已切到阅读库随记（kind='note'，A′ 收件箱）；
+// Capture 形状不变，前端桥无需改动。
+fn capture_list(state: State<'_, ReadingState>) -> Result<Vec<Capture>, String> {
+    reading::capture_notes(&state)
 }
 
 #[tauri::command]
 fn capture_append(
-    state: State<'_, AppState>,
+    state: State<'_, ReadingState>,
     text: String,
 ) -> Result<CaptureAppendResponse, String> {
-    state.ops.capture_append(&text)
+    let (capture, captures) = reading::capture_append_note(&state, &text)?;
+    Ok(CaptureAppendResponse { capture, captures })
 }
 
 #[tauri::command]
-fn capture_delete(state: State<'_, AppState>, id: String) -> Result<Vec<Capture>, String> {
-    state.ops.capture_delete(&id)
+fn capture_delete(state: State<'_, ReadingState>, id: String) -> Result<Vec<Capture>, String> {
+    reading::capture_delete_note(&state, &id)
 }
 
 #[tauri::command]
 fn capture_triage(
-    state: State<'_, AppState>,
+    reading: State<'_, ReadingState>,
+    app: State<'_, AppState>,
     id: String,
     column: Option<String>,
     source_path: Option<String>,
     project_path: Option<String>,
 ) -> Result<CaptureTriageResponse, String> {
-    state.ops.capture_triage_for(
-        &id,
+    let text = reading::capture_note_text(&reading, &id)?;
+    let result = app.ops.triage_note_for(
+        &text,
         column.as_deref(),
         source_path.as_deref(),
         project_path.as_deref(),
-    )
+    )?;
+    // 原话留档（设计稿 §6）：分拣面板据此隐藏，收件箱仍可见。
+    let _ = reading::mark_note_triaged(&reading, &id, column.as_deref().unwrap_or("已分拣"));
+    Ok(CaptureTriageResponse {
+        result,
+        snapshot: app.ops.snapshot_value(),
+        captures: CommandValue::from_result(reading::capture_notes(&reading)),
+    })
+}
+
+#[derive(Debug, Serialize)]
+pub struct InboxMigrationReport {
+    pub migrated: usize,
+    pub archived_to: String,
+}
+
+/// inbox.md 一次性迁移：随记事实源并入阅读库（设计稿 §2），原文件改名留档。
+#[tauri::command]
+fn capture_migrate_inbox(state: State<'_, ReadingState>) -> Result<InboxMigrationReport, String> {
+    let (migrated, archived_to) = reading::migrate_capture_inbox(&state)?;
+    Ok(InboxMigrationReport {
+        migrated,
+        archived_to,
+    })
 }
 
 #[tauri::command]
@@ -727,25 +757,6 @@ fn status_after_setup(elapsed: Duration, shortcut_result: Result<(), String>) ->
     }
 }
 
-fn runtime_capture_store(lock_timeout: Duration) -> todo_core::Result<CaptureStore> {
-    #[cfg(debug_assertions)]
-    if let Some(path) = std::env::var_os("TODO_DESKTOP_TEST_CAPTURE_PATH") {
-        return Ok(CaptureStore::new(PathBuf::from(path), lock_timeout));
-    }
-    // `dirs::home_dir()` is `None` inside the Android sandbox, so
-    // `CaptureStore::global` fails; fall back to a writable app-private dir
-    // instead of panicking at startup. The mobile client is a server-data
-    // consumer (决策③), so this local inbox is a degraded stopgap only.
-    #[cfg(mobile)]
-    if let Some(dir) = mobile_writable_dir() {
-        return Ok(CaptureStore::new(
-            dir.join(".todo").join("inbox.md"),
-            lock_timeout,
-        ));
-    }
-    CaptureStore::global(lock_timeout)
-}
-
 /// First writable app-private directory on mobile: `$HOME` when the Android
 /// runtime sets it, otherwise `TMPDIR` (the app cache dir set by
 /// `ActivityThread`). Returns `None` only if neither resolves, matching the
@@ -793,11 +804,9 @@ fn runtime_ai_store(lock_timeout: Duration) -> Option<AiStore> {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let started = Instant::now();
-    let capture_store = runtime_capture_store(Duration::from_secs(2))
-        .expect("could not resolve the global Capture inbox path");
     let ai_store = runtime_ai_store(Duration::from_secs(2));
     let ai_store_path = ai_store.as_ref().map(|store| store.path().to_path_buf());
-    let mut ops = ops::DesktopOps::new(DesktopBackend::default(), capture_store);
+    let mut ops = ops::DesktopOps::new(DesktopBackend::default());
     if let Some(store) = ai_store {
         ops = ops.with_ai_store(store);
     }
@@ -858,6 +867,7 @@ pub fn run() {
             apply_columns,
             capture_list,
             capture_append,
+            capture_migrate_inbox,
             capture_delete,
             capture_triage,
             scan_repository,
@@ -893,6 +903,9 @@ pub fn run() {
             reading::reading_progress,
             reading::reading_set_read,
             reading::reading_remove,
+            reading::reading_note_append,
+            reading::reading_note_update,
+            reading::reading_import_file,
             reading::reading_annotation_upsert,
             reading::reading_annotation_delete,
             reading::reading_update_context,
@@ -938,10 +951,11 @@ pub fn run() {
                 } else {
                     Shortcut::new(Some(Modifiers::CONTROL | Modifiers::SHIFT), Code::Space)
                 };
-                let registration = app
-                    .global_shortcut()
-                    .register(shortcut)
-                    .map_err(|error| error.to_string());
+                let registration = app.global_shortcut().register(shortcut).map_err(|error| {
+                    // 冲突是最常见的失败原因（输入法、截图、其他常驻工具都会
+                    // 抢 ⌘⇧Space / Ctrl+Shift+Space）；把原因透传给侧栏状态。
+                    format!("全局快捷键 ⌘⇧Space 注册失败，可能已被其他应用占用：{error}")
+                });
                 if let Err(error) = &registration {
                     let _ = app.emit("desktop://shortcut-error", error.clone());
                 }
@@ -955,6 +969,19 @@ pub fn run() {
                 .status
                 .lock()
                 .map_err(|_| std::io::Error::other("desktop status lock is poisoned"))? = status;
+            #[cfg(debug_assertions)]
+            {
+                let path_resolver = app.path();
+                if let Ok(data_dir) = path_resolver.app_data_dir() {
+                    eprintln!("tauri-debug app_data_dir={}", data_dir.display());
+                }
+                if let Ok(cache_dir) = path_resolver.app_cache_dir() {
+                    eprintln!("tauri-debug app_cache_dir={}", cache_dir.display());
+                }
+                if let Ok(local_data) = path_resolver.app_local_data_dir() {
+                    eprintln!("tauri-debug app_local_data_dir={}", local_data.display());
+                }
+            }
             let handle = app.handle().clone();
             reopen_last_project(&handle, &app.state::<AppState>());
             if let Some(path) = &ai_store_path {

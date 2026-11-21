@@ -7,12 +7,12 @@ import { expect, test, type Page } from '@playwright/test';
  * note, one unread. Fetching is simulated, so 添加 only proves the flow; the
  * Rust side covers extraction in its own tests.
  */
-const nav = (page: Page) => page.getByRole('navigation', { name: '主要视图' }).getByRole('button', { name: '阅读' });
+const nav = (page: Page) => page.getByRole('navigation', { name: '主要视图' }).getByRole('button', { name: '收件箱' });
 
 async function openReading(page: Page) {
   await page.goto('/');
   await nav(page).click();
-  await expect(page.getByRole('heading', { name: '阅读', level: 1 })).toBeVisible();
+  await expect(page.getByRole('heading', { name: '收件箱', level: 1 })).toBeVisible();
 }
 
 test.describe('阅读', () => {
@@ -20,7 +20,7 @@ test.describe('阅读', () => {
     await page.goto('/');
     const items = page.getByRole('navigation', { name: '主要视图' }).getByRole('button');
     await expect(items.first()).toHaveAccessibleName('总览');
-    await expect(items.nth(1)).toHaveAccessibleName('阅读');
+    await expect(items.nth(1)).toHaveAccessibleName('收件箱');
     await expect(nav(page)).toContainText('2');
   });
 
@@ -34,31 +34,227 @@ test.describe('阅读', () => {
     await page.getByRole('group', { name: '按阅读状态筛选' }).getByRole('button', { name: /^进行中/ }).click();
     await expect(cards).toHaveCount(1);
     await page.getByRole('group', { name: '按阅读状态筛选' }).getByRole('button', { name: /^已读/ }).click();
-    await expect(page.getByText('这个筛选下没有文章')).toBeVisible();
+    await expect(page.getByText('这个筛选下没有内容')).toBeVisible();
   });
 
-  test('adds a pasted link and rejects a non-URL', async ({ page }) => {
+  test('adds a pasted link through the unified composer', async ({ page }) => {
     await openReading(page);
-    const input = page.getByLabel('要添加的链接');
-    await input.fill('not a link');
-    await page.locator('.reading-add').getByRole('button', { name: '添加' }).click();
-    await expect(page.getByRole('alert')).toContainText('完整的 http/https 链接');
+    const input = page.getByLabel('收件箱输入：链接存文章，文本记随记');
     await input.fill('https://example.org/some-article');
-    await page.locator('.reading-add').getByRole('button', { name: '添加' }).click();
+    await page.locator('.inbox-add').getByRole('button', { name: '添加文章' }).click();
     await expect(page.getByTestId('reading-card')).toHaveCount(3);
     await expect(page.getByTestId('reading-card').first()).toContainText('example.org');
     await expect(nav(page)).toContainText('3');
   });
 
+  test('typing text stores a note and the kind filter isolates it', async ({ page }) => {
+    await openReading(page);
+    const input = page.getByLabel('收件箱输入：链接存文章，文本记随记');
+    // A′ 分流：非链接文本 → 随记，Markdown 直存、标题从正文派生。
+    await input.fill('地铁上想到的：发布节奏改成两周一版');
+    await page.locator('.inbox-add').getByRole('button', { name: '存入随记' }).click();
+    const noteCard = page.getByTestId('reading-card').filter({ hasText: '地铁上想到的' });
+    await expect(noteCard).toHaveCount(1);
+    await expect(noteCard).toContainText('随记');
+    await expect(input).toHaveValue('');
+    // 类型维与状态维独立过滤。
+    await page.getByRole('group', { name: '按类型筛选' }).getByRole('button', { name: /^随记/ }).click();
+    await expect(page.getByTestId('reading-card')).toHaveCount(1);
+    await page.getByRole('group', { name: '按类型筛选' }).getByRole('button', { name: /^文章/ }).click();
+    await expect(page.getByTestId('reading-card')).toHaveCount(2);
+    await page.getByRole('group', { name: '按类型筛选' }).getByRole('button', { name: /^全部/ }).click();
+    await expect(page.getByTestId('reading-card')).toHaveCount(3);
+  });
+
+  test('note drawer edits markdown and marks the card 已编辑', async ({ page }) => {
+    await openReading(page);
+    const input = page.getByLabel('收件箱输入：链接存文章，文本记随记');
+    await input.fill('## 草稿\n\n- [ ] 第一件事');
+    await page.locator('.inbox-add').getByRole('button', { name: '存入随记' }).click();
+    await page.getByTestId('reading-card').filter({ hasText: '草稿' }).locator('.reading-card__open').click();
+    const drawer = page.getByRole('dialog', { name: '编辑随记' });
+    await expect(drawer).toBeVisible();
+    const body = drawer.getByRole('textbox', { name: '随记正文（Markdown）' });
+    await expect(body).toHaveValue(/## 草稿/);
+    await body.fill('## 草稿改\n\n- [x] 第一件事');
+    await drawer.getByRole('button', { name: '保存' }).click();
+    await expect(drawer).toHaveCount(0);
+    const noteCard = page.getByTestId('reading-card').filter({ hasText: '草稿改' });
+    await expect(noteCard).toContainText('已编辑');
+  });
+
   test('pasting several links at once queues each of them', async ({ page }) => {
     await openReading(page);
-    const input = page.getByLabel('要添加的链接');
+    const input = page.getByLabel('收件箱输入：链接存文章，文本记随记');
     // 多行粘贴在单行输入框里会被折成空格，这曾经拼成一条永远抓不到的坏链接。
     await input.fill('https://example.net/a https://example.net/b');
-    await page.locator('.reading-add').getByRole('button', { name: '添加' }).click();
+    await page.locator('.inbox-add').getByRole('button', { name: '添加文章' }).click();
     await expect(page.getByTestId('reading-card')).toHaveCount(4);
     await expect(page.getByTestId('reading-card').filter({ hasText: 'example.net' })).toHaveCount(2);
     await expect(input).toHaveValue('');
+  });
+
+  test('composer hint follows the detected type', async ({ page }) => {
+    await openReading(page);
+    const input = page.getByLabel('收件箱输入：链接存文章，文本记随记');
+    const hint = page.locator('.inbox-add .inbox-hint');
+    const card = page.locator('.inbox-add');
+    // 空态：hint 隐藏（placeholder 承担提示）。
+    await expect(hint).toBeHidden();
+    // 文本态：紫缘 + 随记 hint + 存入随记按钮。
+    await input.fill('随便记点什么');
+    await expect(card).toHaveClass(/is-note/);
+    await expect(hint).toContainText('直接打字 → 存入随记');
+    // 链接态：teal 缘 + 文章 hint + 添加文章按钮。
+    await input.fill('https://example.org/hello');
+    await expect(card).toHaveClass(/is-link/);
+    await expect(hint).toContainText('检测到链接 → 存为文章');
+    await expect(page.locator('.inbox-add').getByRole('button', { name: '添加文章' })).toBeVisible();
+  });
+
+  test('type and state filters stack and the empty state explains itself', async ({ page }) => {
+    await openReading(page);
+    const input = page.getByLabel('收件箱输入：链接存文章，文本记随记');
+    await input.fill('一条待读的随记');
+    await page.locator('.inbox-add').getByRole('button', { name: '存入随记' }).click();
+    const kinds = page.getByRole('group', { name: '按类型筛选' });
+    const states = page.getByRole('group', { name: '按阅读状态筛选' });
+    // 类型维单独过滤。
+    await kinds.getByRole('button', { name: /^随记/ }).click();
+    await expect(page.getByTestId('reading-card')).toHaveCount(1);
+    // 类型 × 状态叠加：随记都是未读，已读态下没有条目，空态要说明原因。
+    await states.getByRole('button', { name: /^已读/ }).click();
+    await expect(page.getByText('这个筛选下没有内容')).toBeVisible();
+    await states.getByRole('button', { name: /^全部/ }).click();
+    await expect(page.getByTestId('reading-card')).toHaveCount(1);
+    await kinds.getByRole('button', { name: /^全部/ }).click();
+    await expect(page.getByTestId('reading-card')).toHaveCount(3);
+  });
+
+  test('note drawer inserts markdown at the cursor and Escape closes it', async ({ page }) => {
+    await openReading(page);
+    const input = page.getByLabel('收件箱输入：链接存文章，文本记随记');
+    await input.fill('正文开头');
+    await page.locator('.inbox-add').getByRole('button', { name: '存入随记' }).click();
+    await page.getByTestId('reading-card').filter({ hasText: '正文开头' }).locator('.reading-card__open').click();
+    const body = page.getByRole('textbox', { name: '随记正文（Markdown）' });
+    // 光标在文本末尾：工具条把任务语法插进光标处。
+    await body.click();
+    await page.getByRole('dialog', { name: '编辑随记' }).getByRole('button', { name: '☑ 任务' }).click();
+    await expect(body).toHaveValue(/正文开头\n- \[ \] /);
+    // Escape 是 dialog 原生关闭：未保存的插入被丢弃（显式保存才落库）。
+    await body.press('Escape');
+    await expect(page.getByRole('dialog', { name: '编辑随记' })).toHaveCount(0);
+    await page.getByTestId('reading-card').filter({ hasText: '正文开头' }).locator('.reading-card__open').click();
+    await expect(body).toHaveValue('正文开头');
+    await page.getByRole('dialog', { name: '编辑随记' }).getByRole('button', { name: '关闭' }).click();
+    await expect(page.getByRole('dialog', { name: '编辑随记' })).toHaveCount(0);
+  });
+
+  test('ControlOrMeta+Enter saves the note from the drawer', async ({ page }) => {
+    await openReading(page);
+    const input = page.getByLabel('收件箱输入：链接存文章，文本记随记');
+    await input.fill('快捷键保存的随记');
+    await page.locator('.inbox-add').getByRole('button', { name: '存入随记' }).click();
+    await page.getByTestId('reading-card').filter({ hasText: '快捷键保存的随记' }).locator('.reading-card__open').click();
+    const body = page.getByRole('textbox', { name: '随记正文（Markdown）' });
+    await body.fill('快捷键保存的随记（改）');
+    await body.press('ControlOrMeta+Enter');
+    await expect(page.getByRole('dialog', { name: '编辑随记' })).toHaveCount(0);
+    await expect(page.getByTestId('reading-card').filter({ hasText: '快捷键保存的随记（改）' })).toHaveCount(1);
+  });
+
+  test('note delete asks for confirmation', async ({ page }) => {
+    await openReading(page);
+    const input = page.getByLabel('收件箱输入：链接存文章，文本记随记');
+    await input.fill('会被确认的随记');
+    await page.locator('.inbox-add').getByRole('button', { name: '存入随记' }).click();
+    // 先拒绝：卡片必须还在。
+    page.once('dialog', (dialog) => dialog.dismiss());
+    await page.getByTestId('reading-card').filter({ hasText: '会被确认的随记' }).getByLabel(/删除随记/).click();
+    await expect(page.getByTestId('reading-card').filter({ hasText: '会被确认的随记' })).toHaveCount(1);
+    // 再接受：卡片移除。
+    page.once('dialog', (dialog) => dialog.accept());
+    await page.getByTestId('reading-card').filter({ hasText: '会被确认的随记' }).getByLabel(/删除随记/).click();
+    await expect(page.getByTestId('reading-card').filter({ hasText: '会被确认的随记' })).toHaveCount(0);
+  });
+
+  test('triage turns an inbox note into a task and archives the original', async ({ page }) => {
+    await openReading(page);
+    const input = page.getByLabel('收件箱输入：链接存文章，文本记随记');
+    await input.fill('分拣闭环的随记');
+    await page.locator('.inbox-add').getByRole('button', { name: '存入随记' }).click();
+    // 入口：收件箱工具行（随记视图已移出导航）。点击会切视图并卸载按钮，
+    // 用 dispatchEvent 绕开 actionability 重试。
+    await page.getByRole('button', { name: /随记分拣/ }).dispatchEvent('click');
+    await expect(page.getByRole('heading', { name: /随记/ })).toBeVisible();
+    const ledger = page.locator('.capture-ledger');
+    const row = ledger.locator('.capture-item').filter({ hasText: '分拣闭环的随记' });
+    await expect(row).toHaveCount(1);
+    // 真实鼠标派发在该场景会挂起（行卸载时序），与「随记分拣」入口同法用
+    // dispatchEvent；真机人工验收覆盖真实点击。
+    await row.getByRole('button', { name: /分拣为任务/ }).dispatchEvent('click');
+    // 原话留档：分拣列表不再显示，但收件箱仍有这条随记。
+    await expect(ledger.locator('.capture-item')).toHaveCount(0);
+    await nav(page).click();
+    await expect(page.getByTestId('reading-card').filter({ hasText: '分拣闭环的随记' })).toHaveCount(1);
+  });
+
+  test('reader image opens a lightbox and outside click closes it', async ({ page }) => {
+    await openReading(page);
+    await page.getByTestId('reading-card').filter({ hasText: '可持续的个人知识系统' }).locator('.reading-card__open').click();
+    await expect(page.getByTestId('reader-body')).toBeVisible();
+    const img = page.locator('.reader-body img').first();
+    await expect(img).toBeVisible();
+    // 点击图片 → 全屏放大
+    await img.click();
+    const lightbox = page.locator('.img-lightbox');
+    await expect(lightbox).toBeVisible();
+    await expect(lightbox.locator('img')).toHaveAttribute('src', /data:image/);
+    // 点击图片本身：不关闭（pointerup 双击检测单独计次，不触发关闭）
+    await lightbox.locator('img').dispatchEvent('click');
+    await expect(lightbox).toBeVisible();
+    // 点击图片外区域：关闭
+    await lightbox.dispatchEvent('click');
+    await expect(lightbox).toHaveCount(0);
+    // 重开一次验证 Esc 关闭
+    await img.click();
+    await expect(lightbox).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(lightbox).toHaveCount(0);
+  });
+
+  test('lightbox outside-close can be turned off in 设置', async ({ page }) => {
+    await page.addInitScript(() => {
+      window.localStorage.setItem('todo.app-settings.v1', JSON.stringify({
+        confirmCompletion: true,
+        density: 'normal',
+        openSession: 'reuse',
+        usageAnalytics: true,
+        clipboardImport: true,
+        lightboxOutsideClose: false,
+      }));
+    });
+    await openReading(page);
+    await page.getByTestId('reading-card').filter({ hasText: '可持续的个人知识系统' }).locator('.reading-card__open').click();
+    const img = page.locator('.reader-body img').first();
+    await expect(img).toBeVisible();
+    await img.click();
+    const lightbox = page.locator('.img-lightbox');
+    await expect(lightbox).toBeVisible();
+    await expect(lightbox).toHaveAttribute('data-outside-close', 'off');
+    // outside-close 关闭后：点图片外区域不再关闭，只能 ✕ 关。
+    await lightbox.dispatchEvent('click');
+    await expect(lightbox).toBeVisible();
+    await lightbox.getByRole('button', { name: '关闭图片预览' }).dispatchEvent('click');
+    await expect(lightbox).toHaveCount(0);
+  });
+
+  test('sidebar no longer lists the standalone capture view', async ({ page }) => {
+    await page.goto('/');
+    const items = page.getByRole('navigation', { name: '主要视图' }).getByRole('button');
+    await expect(items.filter({ hasText: '随记' })).toHaveCount(0);
+    await expect(items.filter({ hasText: '收件箱' })).toHaveCount(1);
   });
 
   test('offers a clipboard link once and stays quiet after 忽略', async ({ page }) => {
@@ -126,7 +322,7 @@ test.describe('阅读', () => {
     await settings.getByRole('button', { name: '关闭设置' }).click();
 
     await nav(page).click();
-    await expect(page.getByRole('heading', { name: '阅读', level: 1 })).toBeVisible();
+    await expect(page.getByRole('heading', { name: '收件箱', level: 1 })).toBeVisible();
     await expect(page.locator('.reading-clipboard')).toHaveCount(0);
     expect(await page.evaluate(() => (window as unknown as { __clipboardReads: number }).__clipboardReads)).toBe(0);
   });
@@ -203,24 +399,16 @@ test.describe('阅读', () => {
     await expect(page.getByRole('button', { name: '标为已读' })).toBeVisible();
   });
 
-  test('正文右键提供另存为 HTML / Markdown，Escape 可关，浏览器版提示用桌面端', async ({ page }) => {
+  test('正文右键不再提供另存为，改为阻止系统菜单（另存为收敛到列表卡右键）', async ({ page }) => {
     await openReading(page);
     await page.getByRole('button', { name: '继续阅读 · 42%' }).click();
     const body = page.getByTestId('reader-body');
     await expect(body).toBeVisible();
     await body.click({ button: 'right' });
-    const menu = page.getByRole('menu', { name: '另存文章' });
-    await expect(menu).toBeVisible();
-    await expect(menu.getByRole('menuitem', { name: '另存为 HTML' })).toBeVisible();
-    await expect(menu.getByRole('menuitem', { name: '另存为 Markdown' })).toBeVisible();
-    await page.keyboard.press('Escape');
-    await expect(menu).toHaveCount(0);
-    // 浏览器端没有本机目录对话框：点击后给出指引而非报错。
-    await body.click({ button: 'right' });
-    await page.getByRole('menuitem', { name: '另存为 HTML' }).click();
-    await expect(page.getByTestId('reader-export-notice')).toContainText('浏览器版不支持另存到本机目录，请使用桌面端');
-    await page.getByRole('button', { name: '关闭导出提示' }).click();
-    await expect(page.getByTestId('reader-export-notice')).toHaveCount(0);
+    // A′ 验收反馈：长按/右键不再弹另存为菜单，选区标注由标记工具条承担。
+    await expect(page.getByRole('menu', { name: '另存文章' })).toHaveCount(0);
+    // rctx 工具行的另存为入口也已删除。
+    await expect(page.getByRole('button', { name: /另存为/ })).toHaveCount(0);
   });
 
   test('列表卡片右键同样弹出另存为菜单，不必先进文章', async ({ page }) => {

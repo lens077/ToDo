@@ -1,0 +1,553 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>收件箱面板重设计 · 4 版样式对比</title>
+<style>
+  /* ── 说明页框架 ─────────────────────────────────────────────── */
+  :root {
+    --font-doc: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+    --dbg: #f7f7fa; --dpanel: #fff; --dpanel2: #f1f1f6;
+    --dink: #1b1547; --dink2: #4b5165; --dink3: #6c7189;
+    --dhairline: #e6e7ee; --dhairline2: #d3d4e0;
+    --daccent: #b45309; --dwash: #fdf1dc;
+  }
+  body { margin: 0; padding: 40px 24px 100px; background: var(--dbg); color: var(--dink); font-family: var(--font-doc); font-size: 14px; line-height: 1.65; }
+  .page { max-width: 1080px; margin: 0 auto; }
+  h1 { font-size: 22px; margin: 0 0 6px; }
+  .lede { color: var(--dink2); margin: 0 0 24px; max-width: 920px; }
+  .badge { display: inline-block; margin-left: 10px; padding: 2px 10px; vertical-align: 3px; color: var(--daccent); background: var(--dwash); border: 1px solid var(--daccent); border-radius: 999px; font-size: 12px; font-weight: 500; }
+  section { margin: 0 0 26px; background: var(--dpanel); border: 1px solid var(--dhairline); border-radius: 14px; padding: 22px 26px; box-shadow: 0 1px 2px -1px rgba(27,21,71,.08); }
+  h2 { font-size: 16px; margin: 0 0 6px; }
+  h2 small { color: var(--dink3); font-weight: 400; font-size: 12.5px; margin-left: 8px; }
+  h3 { font-size: 13.5px; margin: 18px 0 8px; }
+  p { margin: 8px 0; color: var(--dink2); }
+  ul { margin: 8px 0; padding-left: 22px; color: var(--dink2); }
+  li { margin: 4px 0; }
+  code { font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace; font-size: 12px; background: var(--dpanel2); border: 1px solid var(--dhairline); border-radius: 4px; padding: 1px 5px; color: var(--dink); }
+  .toc { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 28px; }
+  .toc a { display: inline-block; padding: 4px 12px; font-size: 12.5px; color: var(--dink2); background: var(--dpanel); border: 1px solid var(--dhairline); border-radius: 999px; text-decoration: none; }
+  .toc a:hover { border-color: var(--daccent); color: var(--daccent); }
+  table { width: 100%; border-collapse: collapse; margin: 10px 0; font-size: 12.5px; }
+  th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--dhairline); vertical-align: top; color: var(--dink2); }
+  th { color: var(--dink); font-weight: 600; background: var(--dpanel2); }
+  .cap { margin: 8px 2px 0; font-size: 12px; color: var(--dink3); text-align: center; }
+  .verdict { display: inline-flex; align-items: center; gap: 6px; margin-left: 8px; padding: 3px 12px; border-radius: 999px; font-size: 12px; font-weight: 600; vertical-align: 2px; }
+  .verdict--rec { color: #177a71; background: #e3f6f3; border: 1px solid #177a71; }
+  .verdict--alt { color: #5b4fc4; background: #ecebfa; border: 1px solid #5b4fc4; }
+  .verdict--exp { color: var(--dink3); background: var(--dpanel2); border: 1px solid var(--dhairline2); font-weight: 500; }
+  .pc { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-top: 14px; }
+  .pc > div { border: 1px solid var(--dhairline); border-radius: 10px; padding: 12px 15px; font-size: 12.5px; color: var(--dink2); }
+  .pc b { display: block; margin-bottom: 5px; font-size: 12.5px; }
+  .pc .pro b { color: #177a71; } .pc .con b { color: #c93e33; }
+  .pc ul { margin: 0; padding-left: 18px; }
+
+  /* ══════════════ 应用真实 tokens（style.css 原样） ══════════════ */
+  .app {
+    --font: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'SF Pro Display', system-ui, 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+    --mono: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+    --bg: #f7f7fa; --panel: #ffffff; --panel-2: #f1f1f6;
+    --ink: #1b1547; --ink-2: #4b5165; --ink-3: #6c7189;
+    --hairline: #e6e7ee; --hairline-2: #d3d4e0;
+    --accent: #b45309; --accent-hover: #92400e;
+    --accent-wash: #fdf1dc; --accent-wash-2: #fbe3b5;
+    --primary-fill: #f5a524; --primary-fill-hover: #e3941a; --primary-ink: #1b1547;
+    --danger: #c93e33; --danger-wash: #fbeae8;
+    --teal: #2e9c90; --teal-text: #177a71; --teal-wash: #e3f6f3;
+    --violet-text: #5b4fc4; --violet-wash: #ecebfa;
+    --radius-panel: 12px; --radius-control: 8px;
+  }
+  .app { font-family: var(--font); color: var(--ink); background: var(--bg); font-size: 14px; line-height: 1.6; }
+  .app button { font-family: inherit; cursor: pointer; }
+  .app input, .app textarea { font-family: inherit; caret-color: var(--accent); }
+
+  /* 面板容器：模拟应用内容列 */
+  .inbox-panel { max-width: 860px; margin: 0 auto; padding: 26px 28px 22px; background: var(--bg); border: 1px solid var(--hairline); border-radius: 14px; }
+  .wrap { border: 1px solid var(--dhairline2); border-radius: 14px; overflow: hidden; box-shadow: 0 18px 40px -22px rgba(27,21,71,.3); }
+
+  /* 过滤 chips（真实样式） */
+  .reading-toolbar { display: flex; align-items: center; justify-content: space-between; margin: 0 0 0; padding: 14px 0 0; border-top: 1px solid var(--hairline-2); margin-top: 16px; }
+  .due-summary { display: flex; gap: 6px; flex-wrap: wrap; }
+  .due-summary__chip { display: inline-flex; align-items: center; gap: 7px; min-height: 30px; padding: 0 11px; color: var(--ink-2); background: var(--panel); border: 1px solid var(--hairline); border-radius: 999px; font-size: 12.5px; }
+  .due-summary__chip strong { font-size: 12px; font-variant-numeric: tabular-nums; }
+  .due-summary__chip.is-active { color: var(--accent); background: var(--accent-wash); border-color: var(--accent); }
+  .due-summary__chip.is-active strong { color: inherit; }
+
+  /* 共用动作样式（真实 text-action / solid-action） */
+  .text-action { display: inline-flex; align-items: center; gap: 5px; min-height: 32px; padding: 0 10px; color: var(--ink-2); background: transparent; border: 1px solid var(--hairline-2); border-radius: var(--radius-control); font-size: 12.5px; white-space: nowrap; }
+  .text-action:hover:not(:disabled) { color: var(--ink); background: var(--panel-2); }
+  .text-action--primary { color: var(--accent); background: var(--panel); border-color: var(--accent); font-weight: 500; }
+  .solid-action { display: inline-flex; align-items: center; justify-content: center; gap: 7px; min-height: 36px; padding: 0 18px; color: var(--primary-ink); background: var(--primary-fill); border: 1px solid transparent; border-radius: var(--radius-control); font-size: 13.5px; font-weight: 500; white-space: nowrap; }
+  .solid-action:hover:not(:disabled) { background: var(--primary-fill-hover); }
+  .icon-act { display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: 36px; min-width: 36px; padding: 0 8px; color: var(--ink-2); background: var(--panel); border: 1px solid var(--hairline); border-radius: var(--radius-control); white-space: nowrap; }
+  .icon-act:hover { color: var(--ink); background: var(--panel-2); border-color: var(--hairline-2); }
+  .icon-act svg { width: 16px; height: 16px; }
+  .icon-act.with-label { padding: 0 12px; font-size: 12.5px; }
+
+  /* 头部（各版共用骨架：单行 + 统计 + 同步状态） */
+  .iv-head { display: flex; align-items: baseline; gap: 14px; min-width: 0; margin-bottom: 16px; }
+  .iv-head h1 { font-size: 26px; line-height: 1.05; letter-spacing: -0.02em; flex: none; }
+  .iv-stats { display: inline-flex; align-items: baseline; gap: 10px; color: var(--ink-2); font-size: 13px; font-variant-numeric: tabular-nums; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .iv-stats b { font-weight: 600; font-family: var(--mono); font-size: 12.5px; }
+  .iv-stats .sep { color: var(--hairline-2); }
+  .iv-sync { margin-left: auto; flex: none; display: inline-flex; align-items: center; gap: 7px; min-height: 30px; padding: 0 12px; color: var(--teal-text); background: var(--teal-wash); border: 1px solid rgba(23, 122, 113, .35); border-radius: 999px; font-size: 12px; }
+  .iv-sync i { width: 7px; height: 7px; border-radius: 50%; background: var(--teal-text); }
+  .iv-sync.busy i { background: var(--primary-fill); animation: pulse 1.2s ease-in-out infinite; }
+  .iv-sync.offline { color: var(--ink-3); background: var(--panel-2); border-color: var(--hairline); }
+  .iv-sync.offline i { background: var(--hairline-2); }
+  @keyframes pulse { 50% { opacity: .25; } }
+
+  /* 识别内联提示（不占独立格子） */
+  .iv-hint { display: inline-flex; align-items: center; gap: 5px; color: var(--ink-3); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .iv-hint.is-link { color: var(--teal-text); }
+  .iv-hint.is-note { color: var(--violet-text); }
+  .iv-hint svg { width: 13px; height: 13px; flex: none; }
+
+  /* ══════ A 单行收敛 ══════ */
+  .pa-card { display: grid; grid-template-columns: 34px minmax(0, 1fr) auto; align-items: center; gap: 4px; padding: 6px 6px 6px 8px; background: var(--panel); border: 1px solid var(--hairline); border-left: 3px solid var(--hairline); border-radius: var(--radius-panel); transition: border-color .2s ease, box-shadow .2s ease; }
+  .pa-card:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-wash); }
+  .pa-card.is-link { border-left-color: var(--teal-text); }
+  .pa-card.is-note { border-left-color: var(--violet-text); }
+  .pa-card .lead { display: grid; place-items: center; color: var(--ink-3); }
+  .pa-card .lead svg { width: 17px; height: 17px; }
+  .pa-card.is-link .lead { color: var(--teal-text); }
+  .pa-card.is-note .lead { color: var(--violet-text); }
+  .pa-card input { min-width: 0; height: 36px; padding: 0 6px; color: var(--ink); background: transparent; border: 0; outline: 0; font-size: 14px; }
+  .pa-card input::placeholder { color: var(--ink-3); }
+  .pa-foot { grid-column: 2 / -1; display: flex; align-items: center; gap: 6px; padding: 4px 6px 2px 0; }
+  .pa-foot .spacer { flex: 1; }
+  .pa-foot .icon-act { height: 30px; min-width: 30px; border-color: transparent; background: transparent; }
+  .pa-foot .icon-act:hover { background: var(--panel-2); border-color: var(--hairline); }
+
+  /* ══════ B 模式双态 ══════ */
+  .pb-card { padding: 6px 6px 8px; background: var(--panel); border: 1px solid var(--hairline); border-radius: var(--radius-panel); }
+  .pb-card:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-wash); }
+  .pb-row1 { display: grid; grid-template-columns: auto 34px minmax(0, 1fr) auto; align-items: center; gap: 8px; padding-left: 2px; }
+  .pb-seg { display: inline-flex; padding: 3px; background: var(--panel-2); border: 1px solid var(--hairline); border-radius: 10px; gap: 2px; }
+  .pb-seg button { display: inline-flex; align-items: center; gap: 6px; min-height: 30px; padding: 0 12px; color: var(--ink-3); background: transparent; border: 0; border-radius: 7px; font-size: 12.5px; font-weight: 500; white-space: nowrap; transition: background .18s ease, color .18s ease; }
+  .pb-seg button svg { width: 14px; height: 14px; }
+  .pb-seg button.is-on { color: var(--ink); background: var(--panel); box-shadow: 0 1px 3px -1px rgba(27,21,71,.25); }
+  .pb-seg button.is-on.mode-article { color: var(--teal-text); }
+  .pb-seg button.is-on.mode-note { color: var(--violet-text); }
+  .pb-row1 .lead { display: grid; place-items: center; color: var(--ink-3); }
+  .pb-row1 .lead svg { width: 17px; height: 17px; }
+  .pb-row1 input { min-width: 0; height: 36px; padding: 0 6px; color: var(--ink); background: transparent; border: 0; outline: 0; font-size: 14px; }
+  .pb-row1 input::placeholder { color: var(--ink-3); }
+  .pb-foot { display: flex; align-items: center; gap: 8px; margin-top: 6px; padding: 8px 8px 0; border-top: 1px solid var(--hairline); }
+  .pb-foot .spacer { flex: 1; }
+
+  /* ══════ C 无框极简 ══════ */
+  .pc-zone { padding: 10px 4px 6px; border-bottom: 1.5px solid var(--hairline-2); display: grid; grid-template-columns: 30px minmax(0, 1fr) auto; gap: 6px; align-items: center; transition: border-color .2s ease; }
+  .pc-zone:focus-within { border-bottom-color: var(--accent); }
+  .pc-zone .lead { display: grid; place-items: center; color: var(--ink-3); }
+  .pc-zone .lead svg { width: 18px; height: 18px; }
+  .pc-zone.is-link .lead { color: var(--teal-text); }
+  .pc-zone.is-note .lead { color: var(--violet-text); }
+  .pc-zone input { min-width: 0; height: 38px; padding: 0 6px; color: var(--ink); background: transparent; border: 0; outline: 0; font-size: 15px; }
+  .pc-zone input::placeholder { color: var(--ink-3); }
+  .pc-row { display: flex; align-items: center; gap: 6px; padding: 10px 4px 0; }
+  .pc-row .spacer { flex: 1; }
+  .pc-row .icon-act { border-color: transparent; background: transparent; }
+  .pc-row .icon-act:hover { background: var(--panel-2); border-color: var(--hairline); }
+
+  /* ══════ D 一体面板 ══════ */
+  .pd-card { background: var(--panel); border: 1px solid var(--hairline); border-radius: 14px; overflow: hidden; transition: box-shadow .2s ease, border-color .2s ease; }
+  .pd-card:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-wash); }
+  .pd-head { display: flex; align-items: baseline; gap: 12px; padding: 16px 18px 12px; background: linear-gradient(180deg, var(--accent-wash), transparent 160%); border-bottom: 1px solid var(--hairline); }
+  .pd-head h1 { font-size: 22px; line-height: 1.05; letter-spacing: -0.02em; flex: none; }
+  .pd-head .iv-stats { font-size: 12.5px; }
+  .pd-input { display: grid; grid-template-columns: 34px minmax(0, 1fr) auto; align-items: center; gap: 4px; padding: 6px 8px; border-left: 3px solid transparent; transition: border-color .2s ease; }
+  .pd-input.is-link { border-left-color: var(--teal-text); }
+  .pd-input.is-note { border-left-color: var(--violet-text); }
+  .pd-input .lead { display: grid; place-items: center; color: var(--ink-3); }
+  .pd-input .lead svg { width: 17px; height: 17px; }
+  .pd-input.is-link .lead { color: var(--teal-text); }
+  .pd-input.is-note .lead { color: var(--violet-text); }
+  .pd-input input { min-width: 0; height: 38px; padding: 0 6px; color: var(--ink); background: transparent; border: 0; outline: 0; font-size: 14.5px; }
+  .pd-input input::placeholder { color: var(--ink-3); }
+  .pd-foot { display: flex; align-items: center; gap: 6px; padding: 8px 10px 10px; border-top: 1px solid var(--hairline); background: var(--panel-2); }
+  .pd-foot .spacer { flex: 1; }
+  .pd-foot .icon-act { height: 30px; min-width: 30px; background: transparent; border-color: transparent; }
+  .pd-foot .icon-act:hover { background: var(--panel); border-color: var(--hairline); }
+
+  /* ══════ A′ 定稿：幽灵工具行带短标签 + hover/长按完整描述 ══════ */
+  .pa2-foot { grid-column: 2 / -1; display: flex; align-items: center; gap: 6px; padding: 4px 6px 2px 0; }
+  .pa2-foot .spacer { flex: 1; }
+  .pa2-foot .tool { position: relative; display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 11px; color: var(--ink-2); background: transparent; border: 1px solid var(--hairline); border-radius: var(--radius-control); font-size: 12px; white-space: nowrap; }
+  .pa2-foot .tool:hover { color: var(--ink); background: var(--panel-2); border-color: var(--hairline-2); }
+  .pa2-foot .tool svg { width: 15px; height: 15px; }
+  /* 完整描述气泡：复用 reading-card__tools 的 data-tip 模式（style.css 真实样式） */
+  .pa2-foot .tool::after {
+    content: attr(data-tip);
+    position: absolute;
+    right: 0;
+    bottom: calc(100% + 7px);
+    z-index: 30;
+    display: none;
+    width: min(320px, 60vw);
+    padding: 7px 11px;
+    color: #fff;
+    background: var(--ink);
+    border-radius: 7px;
+    font-size: 12px;
+    line-height: 1.55;
+    text-align: left;
+    white-space: normal;
+    box-shadow: 0 12px 32px -10px rgba(27,21,71,.4);
+    pointer-events: none;
+  }
+  .pa2-foot .tool::before { content: ''; position: absolute; right: 14px; bottom: calc(100% + 3px); z-index: 31; display: none; border: 4px solid transparent; border-top-color: var(--ink); }
+  .pa2-foot .tool:hover::after, .pa2-foot .tool.tip-open::after,
+  .pa2-foot .tool:hover::before, .pa2-foot .tool.tip-open::before { display: block; }
+
+  footer { text-align: center; color: var(--dink3); font-size: 12px; margin-top: 30px; }
+  .mark-ok { color: #177a71; } .mark-no { color: #c93e33; }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <h1>收件箱面板重设计<span class="badge">样式对比 v1 · 2026-11-20</span></h1>
+  <p class="lede">上一版面板的乱点：统计行悬挂分隔符、说明文字悬空、一行 4 个同权重橙色描边按钮、紫色识别胶囊与它解释的主按钮分离、同步按钮（工具）和存入按钮（主操作）抢视觉。下面先立规范基线，再给 4 版完整样式——全部用真实 tokens 渲染，输入框均可交互试玩。</p>
+
+  <nav class="toc">
+    <a href="#rules">规范基线</a>
+    <a href="#a">A 单行收敛</a>
+    <a href="#b">B 模式双态</a>
+    <a href="#c">C 无框极简</a>
+    <a href="#d">D 一体面板</a>
+    <a href="#cmp">对比与推荐</a>
+  </nav>
+
+  <section id="rules">
+    <h2>0. 规范基线 <small>四个乱点 → 七条规则（所有版本共同遵守）</small></h2>
+    <table>
+      <tr><th>上一版的问题</th><th>规范</th></tr>
+      <tr><td class="mark-no">统计「12 篇文章 · 4 条随记 ·<br>5 篇读到一半 · 7 条未读」折行悬挂分隔符</td><td><b>R1 标题行单行制</b>：标题 + 统计 + 同步状态一行排完；统计只保留 3 个关键数（文章/随记/未读），等宽数字，超出折叠。</td></tr>
+      <tr><td class="mark-no">说明文字悬空浮在右侧，和统计行错位</td><td><b>R2 说明降级</b>： view-heading 不再放右侧悬浮说明；操作提示移入输入条底部 hint 行（ink-3 12px），或直接由 placeholder 承担。</td></tr>
+      <tr><td class="mark-no">一行 4 个橙色描边按钮，无层级</td><td><b>R3 唯一主按钮</b>：每个面板只允许 1 个橙色实心（存入随记/添加文章）。<b>R4 次级动作幽灵化</b>（panel 底、hairline 边、ink-2 字），<b>R5 工具动作图标化</b>（浏览器/文件/批量导入降为图标 + tooltip）。</td></tr>
+      <tr><td class="mark-no">同步按钮抢主操作视觉</td><td><b>R6 同步状态化</b>：同步降为头部状态芯片（teal 圆点 + 「已同步」），点击才触发；只有同步进行中才短暂变琥珀脉冲。</td></tr>
+      <tr><td class="mark-no">紫色胶囊独立占格，与主按钮分离</td><td><b>R7 识别内联</b>：识别反馈不再独立占位——用输入框左侧图标变色 + 左缘 3px 色条 + 主按钮文案三者表达，或由模式控件（B 版）承载。</td></tr>
+    </table>
+    <p>垂直节奏统一为 8px 基线：标题区 16px → 输入区 → 16px → 过滤区。所有按钮高度 36px、white-space: nowrap。</p>
+  </section>
+
+  <section id="a">
+    <h2>A · 单行收敛 <span class="verdict verdict--rec">定稿 · 已选</span><small>最贴近现有 reading-add 语言；一行输入 + 一行幽灵工具（短标签）</small></h2>
+    <div class="wrap"><div class="inbox-panel app">
+      <header class="iv-head">
+        <h1>收件箱</h1>
+        <span class="iv-stats"><span><b>12</b> 文章</span><span class="sep">·</span><span><b>4</b> 随记</span><span class="sep">·</span><span><b>7</b> 未读</span></span>
+        <span class="iv-sync"><i></i>已同步 · 刚刚</span>
+      </header>
+      <div class="pa-card" id="aCard">
+        <span class="lead"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M3 4h10M3 7h10M3 10h6"/><path d="M11 12.5l1.8 1.8 3-3.2"/></svg></span>
+        <input id="aInput" type="text" value="地铁上想到的：发布节奏改成两周一版" spellcheck="false">
+        <button class="solid-action" id="aGo">存入随记</button>
+        <div class="pa-foot">
+          <span class="iv-hint" id="aHint">✏️ 直接打字 → 存入随记；粘贴链接 → 存为文章</span>
+          <span class="spacer"></span>
+          <button class="icon-act" title="从浏览器保存当前页"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><circle cx="8" cy="8" r="6"/><path d="M2 8h12M8 2c-3.2 3.5-3.2 8.5 0 12M8 2c3.2 3.5 3.2 8.5 0 12"/></svg></button>
+          <button class="icon-act" title="打开文件（HTML / Markdown / 纯文本）"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M2 4.5A1.5 1.5 0 0 1 3.5 3h3.6c.6 0 1.2.3 1.6.8l.6.8H13a1.5 1.5 0 0 1 1.5 1.5v6.4A1.5 1.5 0 0 1 13 14H3.5A1.5 1.5 0 0 1 2 12.5V4.5Z"/></svg></button>
+          <button class="icon-act" title="批量导入链接"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M8 2v8M8 10l-3-3M8 10l3-3"/><path d="M2.5 12.5h11"/></svg></button>
+        </div>
+      </div>
+      <div class="reading-toolbar">
+        <div class="due-summary">
+          <button class="due-summary__chip is-active">全部 <strong>16</strong></button>
+          <button class="due-summary__chip">文章 <strong>12</strong></button>
+          <button class="due-summary__chip">随记 <strong>4</strong></button>
+          <button class="due-summary__chip">未读 <strong>7</strong></button>
+          <button class="due-summary__chip">在读 <strong>5</strong></button>
+          <button class="due-summary__chip">已读 <strong>4</strong></button>
+        </div>
+      </div>
+    </div></div>
+    <p class="cap">A：识别 = 左缘色条（teal=链接 / 紫=随记）+ 左图标变色 + 主按钮文案；工具全部降为幽灵图标。试试在输入框粘贴一个 https:// 链接</p>
+    <div class="pc">
+      <div class="pro"><b>优点</b><ul><li>与现有 reading-add 卡片语言完全同构，实现就是现有组件加一行</li><li>视觉噪音最低：一个实心按钮 + 三个幽灵图标</li><li>识别信息三重内联（色条/图标/文案），不占空间</li></ul></div>
+      <div class="con"><b>代价</b><ul><li>工具图标需要 tooltip 学习成本（移动端改为收进「⋯」）</li><li>「存入随记/添加文章」按钮文案切换是弱信号，赶时间可能注意不到</li></ul></div>
+    </div>
+
+    <h3 style="margin-top:22px">A′ · 定稿细节：幽灵工具行加短标签，hover / 长按显示完整描述</h3>
+    <p style="font-size:12.5px">定稿调整：图标右侧加<b>简短文字标签</b>（≤4 字，平行结构），悬停（PC）/ 长按（移动端）弹出<b>完整功能描述</b>。气泡样式直接复用真实代码 <code>.reading-card__tools .icon-action::after</code> 的 <code>data-tip</code> 模式（ink 底白字、右对齐下弹）。识别逻辑不变：链接类文章按 <code>http(s)://</code>、<code>www.</code> 前缀分流（需解析、走服务器抓取），其余文本入随记（免解析、直存本地）。</p>
+    <div class="wrap" style="margin-top:10px"><div class="inbox-panel app">
+      <header class="iv-head">
+        <h1>收件箱</h1>
+        <span class="iv-stats"><span><b>12</b> 文章</span><span class="sep">·</span><span><b>4</b> 随记</span><span class="sep">·</span><span><b>7</b> 未读</span></span>
+        <span class="iv-sync"><i></i>已同步 · 刚刚</span>
+      </header>
+      <div class="pa-card" id="a2Card">
+        <span class="lead"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M3 4h10M3 7h10M3 10h6"/><path d="M11 12.5l1.8 1.8 3-3.2"/></svg></span>
+        <input id="a2Input" type="text" placeholder="粘贴链接存文章，打字记随记" spellcheck="false">
+        <button class="solid-action" id="a2Go">存入随记</button>
+        <div class="pa2-foot">
+          <span class="iv-hint" id="a2Hint">粘贴链接存文章，打字记随记</span>
+          <span class="spacer"></span>
+          <button class="tool" data-tip="从浏览器保存当前页——抓取浏览器当前标签页的正文，解析后存为文章（桌面端功能）。"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><circle cx="8" cy="8" r="6"/><path d="M2 8h12M8 2c-3.2 3.5-3.2 8.5 0 12M8 2c3.2 3.5 3.2 8.5 0 12"/></svg>浏览器保存</button>
+          <button class="tool" data-tip="打开本地文件导入——支持 HTML / Markdown / 纯文本；在文件管理器里「打开方式」选 Virgo 同效，都落进收件箱。"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M2 4.5A1.5 1.5 0 0 1 3.5 3h3.6c.6 0 1.2.3 1.6.8l.6.8H13a1.5 1.5 0 0 1 1.5 1.5v6.4A1.5 1.5 0 0 1 13 14H3.5A1.5 1.5 0 0 1 2 12.5V4.5Z"/></svg>打开文件</button>
+          <button class="tool" data-tip="批量导入——粘贴多行链接一次存为多篇，自动忽略链接之外的文字，支持微信公众号与 X（推特）链接。"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M8 2v8M8 10l-3-3M8 10l3-3"/><path d="M2.5 12.5h11"/></svg>批量导入</button>
+        </div>
+      </div>
+      <div class="reading-toolbar">
+        <div class="due-summary">
+          <button class="due-summary__chip is-active">全部 <strong>16</strong></button>
+          <button class="due-summary__chip">文章 <strong>12</strong></button>
+          <button class="due-summary__chip">随记 <strong>4</strong></button>
+          <button class="due-summary__chip">未读 <strong>7</strong></button>
+          <button class="due-summary__chip">在读 <strong>5</strong></button>
+          <button class="due-summary__chip">已读 <strong>4</strong></button>
+        </div>
+      </div>
+    </div></div>
+    <p class="cap">A′：标签 ≤4 字平行结构；把鼠标悬到「打开文件」上看完整描述（本页即可试）</p>
+    <div class="wrap" style="margin-top:14px"><div class="inbox-panel app">
+      <header class="iv-head">
+        <h1>收件箱</h1>
+        <span class="iv-stats"><span><b>12</b> 文章</span><span class="sep">·</span><span><b>4</b> 随记</span><span class="sep">·</span><span><b>7</b> 未读</span></span>
+        <span class="iv-sync"><i></i>已同步 · 刚刚</span>
+      </header>
+      <div class="pa-card">
+        <span class="lead" style="color:var(--teal-text)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" style="width:17px;height:17px"><path d="M6.5 9.5l3-3"/><path d="M8.8 4.2l1.4-1.4a2.5 2.5 0 0 1 3.5 3.5L12.3 7.7M7.2 11.8l-1.4 1.4a2.5 2.5 0 0 1-3.5-3.5L3.7 8.3"/></svg></span>
+        <input type="text" value="https://mp.weixin.qq.com/s/abc123" spellcheck="false" style="color:var(--ink)">
+        <button class="solid-action">添加文章</button>
+        <div class="pa2-foot">
+          <span class="iv-hint is-link">🔗 检测到链接 → 存为文章，正文自动抓取解析</span>
+          <span class="spacer"></span>
+          <button class="tool tip-open" data-tip="打开本地文件导入——支持 HTML / Markdown / 纯文本；在文件管理器里「打开方式」选 Virgo 同效，都落进收件箱。"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M2 4.5A1.5 1.5 0 0 1 3.5 3h3.6c.6 0 1.2.3 1.6.8l.6.8H13a1.5 1.5 0 0 1 1.5 1.5v6.4A1.5 1.5 0 0 1 13 14H3.5A1.5 1.5 0 0 1 2 12.5V4.5Z"/></svg>打开文件</button>
+          <button class="tool">浏览器保存</button>
+          <button class="tool">批量导入</button>
+        </div>
+      </div>
+      <div class="reading-toolbar">
+        <div class="due-summary">
+          <button class="due-summary__chip is-active">全部 <strong>16</strong></button>
+          <button class="due-summary__chip">文章 <strong>12</strong></button>
+          <button class="due-summary__chip">随记 <strong>4</strong></button>
+          <button class="due-summary__chip">未读 <strong>7</strong></button>
+          <button class="due-summary__chip">在读 <strong>5</strong></button>
+          <button class="due-summary__chip">已读 <strong>4</strong></button>
+        </div>
+      </div>
+    </div></div>
+    <p class="cap">快照：链接识别态（teal 色条 + 链图标 + hint 变色）与「打开文件」的完整描述气泡</p>
+    <h3>交互规格</h3>
+    <table>
+      <tr><th>端 / 触发</th><th>行为</th><th>实现</th></tr>
+      <tr><td>PC 悬停</td><td>立即弹出完整描述气泡（含图标说明 + 适用范围），移开消失</td><td>复用 <code>data-tip</code> + <code>::after</code> 模式（真实样式，零 JS）</td></tr>
+      <tr><td>移动端长按（≥500ms）</td><td>同一气泡在按钮上方弹出；松手或点其他区域消失；短按仍执行动作</td><td>Pointer Events 计时器 → 给按钮加 <code>tip-open</code> class（同 bubble 样式）；不用 <code>title</code> 属性（Android WebView 不渲染）</td></tr>
+      <tr><td>窄屏（Composer 吸底时）</td><td>工具行收进「⋯」弹出菜单，菜单项 = 图标 + 标签 + 描述一行三列；识别 hint 保持</td><td>菜单复用贴底抽屉模式</td></tr>
+      <tr><td>键盘可达性</td><td>Tab 聚焦工具按钮时同 hover 显示描述</td><td><code>:focus-visible::after</code> 与 hover 同规则</td></tr>
+    </table>
+  </section>
+
+  <section id="b">
+    <h2>B · 模式双态 <span class="verdict verdict--exp">留档 · A→B 升级路径</span><small>文章/随记分段控件承载识别；模式决定上下文动作</small></h2>
+    <div class="wrap"><div class="inbox-panel app">
+      <header class="iv-head">
+        <h1>收件箱</h1>
+        <span class="iv-stats"><span><b>12</b> 文章</span><span class="sep">·</span><span><b>4</b> 随记</span><span class="sep">·</span><span><b>7</b> 未读</span></span>
+        <span class="iv-sync"><i></i>已同步 · 刚刚</span>
+      </header>
+      <div class="pb-card" id="bCard">
+        <div class="pb-row1">
+          <div class="pb-seg" id="bSeg">
+            <button class="mode-article" data-mode="article"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M6.5 9.5l3-3"/><path d="M8.8 4.2l1.4-1.4a2.5 2.5 0 0 1 3.5 3.5L12.3 7.7M7.2 11.8l-1.4 1.4a2.5 2.5 0 0 1-3.5-3.5L3.7 8.3"/></svg>文章</button>
+            <button class="mode-note is-on" data-mode="note"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M3 4h10M3 7h10M3 10h6"/><path d="M11 12.5l1.8 1.8 3-3.2"/></svg>随记</button>
+          </div>
+          <span class="lead"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M4 2.5h6.5L13 5v8.5H4V2.5Z"/><path d="M10.5 2.5V5H13"/></svg></span>
+          <input id="bInput" type="text" value="地铁上想到的：发布节奏改成两周一版" spellcheck="false">
+          <button class="solid-action" id="bGo">存入随记</button>
+        </div>
+        <div class="pb-foot">
+          <span class="iv-hint" id="bHint">✏️ 随记：先记原话，稍后再分拣</span>
+          <span class="spacer"></span>
+          <button class="text-action" id="bFile"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" style="width:14px;height:14px"><path d="M2 4.5A1.5 1.5 0 0 1 3.5 3h3.6c.6 0 1.2.3 1.6.8l.6.8H13a1.5 1.5 0 0 1 1.5 1.5v6.4A1.5 1.5 0 0 1 13 14H3.5A1.5 1.5 0 0 1 2 12.5V4.5Z"/></svg>打开文件</button>
+          <button class="text-action" id="bBatch" style="display:none">批量导入</button>
+        </div>
+      </div>
+      <div class="reading-toolbar">
+        <div class="due-summary">
+          <button class="due-summary__chip is-active">全部 <strong>16</strong></button>
+          <button class="due-summary__chip">文章 <strong>12</strong></button>
+          <button class="due-summary__chip">随记 <strong>4</strong></button>
+          <button class="due-summary__chip">未读 <strong>7</strong></button>
+          <button class="due-summary__chip">在读 <strong>5</strong></button>
+          <button class="due-summary__chip">已读 <strong>4</strong></button>
+        </div>
+      </div>
+    </div></div>
+    <p class="cap">B：识别结果自动点亮分段（粘贴 https:// 会切到「文章」）；上下文动作随模式切换——文章态显「批量导入」，随记态显「打开文件」</p>
+    <div class="pc">
+      <div class="pro"><b>优点</b><ul><li>模式显式可见，「一边笔记一边添加文章」两种意图都有确定的家</li><li>上下文动作随模式收放，动作数量减半</li><li>自动识别 + 手动可改：识别错了用户一键纠正</li></ul></div>
+      <div class="con"><b>代价</b><ul><li>新增分段控件，比 A 多一层 UI 结构</li><li>输入框列宽被分段挤压（窄屏需收为图标段）</li></ul></div>
+    </div>
+  </section>
+
+  <section id="c">
+    <h2>C · 无框极简 <span class="verdict verdict--exp">留档</span><small>搜索条式下划线输入；动作全图标；头部只留状态</small></h2>
+    <div class="wrap"><div class="inbox-panel app">
+      <header class="iv-head">
+        <h1>收件箱</h1>
+        <span class="iv-stats"><span><b>12</b> 文章</span><span class="sep">·</span><span><b>4</b> 随记</span><span class="sep">·</span><span><b>7</b> 未读</span></span>
+        <span class="iv-sync" id="cSync"><i></i>已同步 · 刚刚</span>
+      </header>
+      <div class="pc-zone" id="cCard">
+        <span class="lead"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M3 4h10M3 7h10M3 10h6"/><path d="M11 12.5l1.8 1.8 3-3.2"/></svg></span>
+        <input id="cInput" type="text" value="地铁上想到的：发布节奏改成两周一版" spellcheck="false">
+        <button class="solid-action" id="cGo">存入随记</button>
+      </div>
+      <div class="pc-row">
+        <span class="iv-hint" id="cHint">✏️ 直接打字 → 存入随记；粘贴链接 → 存为文章</span>
+        <span class="spacer"></span>
+        <button class="icon-act" title="从浏览器保存当前页"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><circle cx="8" cy="8" r="6"/><path d="M2 8h12M8 2c-3.2 3.5-3.2 8.5 0 12M8 2c3.2 3.5 3.2 8.5 0 12"/></svg></button>
+        <button class="icon-act" title="打开文件"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M2 4.5A1.5 1.5 0 0 1 3.5 3h3.6c.6 0 1.2.3 1.6.8l.6.8H13a1.5 1.5 0 0 1 1.5 1.5v6.4A1.5 1.5 0 0 1 13 14H3.5A1.5 1.5 0 0 1 2 12.5V4.5Z"/></svg></button>
+        <button class="icon-act" title="批量导入链接"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M8 2v8M8 10l-3-3M8 10l3-3"/><path d="M2.5 12.5h11"/></svg></button>
+        <button class="icon-act" title="同步" id="cSyncBtn"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M2.5 8a5.5 5.5 0 0 1 9.5-3.8M13.5 8a5.5 5.5 0 0 1-9.5 3.8"/><path d="M12 2.5v2.3h-2.3M4 13.5v-2.3h2.3"/></svg></button>
+      </div>
+      <div class="reading-toolbar">
+        <div class="due-summary">
+          <button class="due-summary__chip is-active">全部 <strong>16</strong></button>
+          <button class="due-summary__chip">文章 <strong>12</strong></button>
+          <button class="due-summary__chip">随记 <strong>4</strong></button>
+          <button class="due-summary__chip">未读 <strong>7</strong></button>
+          <button class="due-summary__chip">在读 <strong>5</strong></button>
+          <button class="due-summary__chip">已读 <strong>4</strong></button>
+        </div>
+      </div>
+    </div></div>
+    <p class="cap">C：输入区无边框（仅下划线），与背景融为一体；动作全图标无边框，悬浮才显形——最安静的一版</p>
+    <div class="pc">
+      <div class="pro"><b>优点</b><ul><li>视觉重量最轻，输入区像页面的一部分而非一个「组件」</li><li>头部同步芯片 + 工具图标，一个实心按钮都不多</li><li>窄屏几乎不用改</li></ul></div>
+      <div class="con"><b>代价</b><ul><li>偏离应用现有的卡片语言（reading-add / inline-capture 都是卡片）</li><li>无边框输入的可发现性弱，首次使用者可能忽略输入区</li></ul></div>
+    </div>
+  </section>
+
+  <section id="d">
+    <h2>D · 一体面板 <span class="verdict verdict--exp">留档</span><small>标题 + 统计 + 输入 + 动作合并为一张卡，分区内部化</small></h2>
+    <div class="wrap"><div class="inbox-panel app" style="padding-bottom:14px">
+      <div class="pd-card" id="dCard">
+        <div class="pd-head">
+          <h1>收件箱</h1>
+          <span class="iv-stats"><span><b>12</b> 文章</span><span class="sep">·</span><span><b>4</b> 随记</span><span class="sep">·</span><span><b>7</b> 未读</span></span>
+          <span class="iv-sync" style="margin-left:auto"><i></i>已同步</span>
+        </div>
+        <div class="pd-input">
+          <span class="lead"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M3 4h10M3 7h10M3 10h6"/><path d="M11 12.5l1.8 1.8 3-3.2"/></svg></span>
+          <input id="dInput" type="text" value="地铁上想到的：发布节奏改成两周一版" spellcheck="false">
+          <button class="solid-action" id="dGo">存入随记</button>
+        </div>
+        <div class="pd-foot">
+          <span class="iv-hint" id="dHint">✏️ 直接打字 → 存入随记；粘贴链接 → 存为文章；文件管理器打开的内容也落在这里</span>
+          <span class="spacer"></span>
+          <button class="icon-act" title="从浏览器保存当前页"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><circle cx="8" cy="8" r="6"/><path d="M2 8h12M8 2c-3.2 3.5-3.2 8.5 0 12M8 2c3.2 3.5 3.2 8.5 0 12"/></svg></button>
+          <button class="icon-act" title="打开文件"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M2 4.5A1.5 1.5 0 0 1 3.5 3h3.6c.6 0 1.2.3 1.6.8l.6.8H13a1.5 1.5 0 0 1 1.5 1.5v6.4A1.5 1.5 0 0 1 13 14H3.5A1.5 1.5 0 0 1 2 12.5V4.5Z"/></svg></button>
+          <button class="icon-act" title="批量导入链接"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M8 2v8M8 10l-3-3M8 10l3-3"/><path d="M2.5 12.5h11"/></svg></button>
+        </div>
+      </div>
+      <div class="reading-toolbar">
+        <div class="due-summary">
+          <button class="due-summary__chip is-active">全部 <strong>16</strong></button>
+          <button class="due-summary__chip">文章 <strong>12</strong></button>
+          <button class="due-summary__chip">随记 <strong>4</strong></button>
+          <button class="due-summary__chip">未读 <strong>7</strong></button>
+          <button class="due-summary__chip">在读 <strong>5</strong></button>
+          <button class="due-summary__chip">已读 <strong>4</strong></button>
+        </div>
+      </div>
+    </div></div>
+    <p class="cap">D：整个面板一张卡——头部带 accent 渐变洗底，统计、输入、动作收进同一容器，外部只剩 chips 行</p>
+    <div class="pc">
+      <div class="pro"><b>优点</b><ul><li>分区最明确：一张卡讲完「这是什么、往哪输入、能做什么」</li><li>说明文字有了确定的家（卡底 hint 行）</li><li>头部洗底与 view-heading 的 accent 元信息色一脉相承</li></ul></div>
+      <div class="con"><b>代价</b><ul><li>卡片体量最大，列表可视区被压缩</li><li>标题进卡片后与全应用其他视图的 view-heading 结构不一致</li></ul></div>
+    </div>
+  </section>
+
+  <section id="cmp">
+    <h2>对比与推荐</h2>
+    <table>
+      <tr><th>维度</th><th>A 单行收敛</th><th>B 模式双态</th><th>C 无框极简</th><th>D 一体面板</th></tr>
+      <tr><td>解决乱点（R1–R7）</td><td>✅ 全部</td><td>✅ 全部（R7 由分段承载）</td><td>✅ 全部</td><td>✅ 全部</td></tr>
+      <tr><td>与现有应用语言一致性</td><td><b>最高</b>（reading-add 同构）</td><td>高（新增分段控件）</td><td>低（放弃卡片）</td><td>中（view-heading 进卡片）</td></tr>
+      <tr><td>视觉噪音</td><td>低</td><td>低</td><td><b>最低</b></td><td>中</td></tr>
+      <tr><td>识别反馈明确度</td><td>中（三重弱信号）</td><td><b>最高</b>（分段显式）</td><td>中</td><td>中</td></tr>
+      <tr><td>窄屏适配成本</td><td>低（图标行收进 ⋯）</td><td>中（分段压缩）</td><td><b>最低</b></td><td>高（头部需重排）</td></tr>
+      <tr><td>实现成本</td><td><b>最低</b>（现有组件 +1 行）</td><td>中</td><td>低</td><td>中</td></tr>
+      <tr><td>列表空间占用</td><td>中</td><td>中</td><td>小</td><td>大</td></tr>
+    </table>
+    <p><b>定稿：方案 A（含 A′ 细节），2026-11-20 用户拍板。</b>已采纳的三个细化：① 识别分流维持前缀口径——<code>http(s)://</code> / <code>www.</code> → 链接文章（需解析、走服务器抓取管线），其余文本 → 随记（免解析直存），两类条目同一输入框并存；② 幽灵工具行图标加 ≤4 字短标签（浏览器保存 / 打开文件 / 批量导入，平行结构）；③ PC 悬停 / 移动端长按（≥500ms）弹出完整功能描述气泡——复用真实代码 <code>data-tip</code> 悬浮模式，移动端用 Pointer Events 计时器挂 <code>tip-open</code> class，不依赖 <code>title</code> 属性。C、D 留档；B 保留为升级路径（若真机试用后觉得识别信号太弱，只换输入条本体，头部/工具行/chips 通用）。</p>
+    <p style="color:var(--dink3);font-size:12.5px">配套：本稿只重设计面板本体；数据流、识别逻辑、文件关联等见 <code>inbox-merge-ui-design.html</code> 与 <code>mobile-inbox-design.html</code>。任务挂 <code>a2cmrf</code>（M1）。</p>
+  </section>
+
+  <footer>Sumery Virgo · 收件箱面板样式对比 v1 · 2026-11-20 · tokens 与 chips 样式取自 apps/desktop/src/style.css</footer>
+</div>
+
+<script>
+  // 通用识别逻辑（与实现将复用的 normalizeInputUrl 口径一致）
+  function detect(v) {
+    v = v.trim();
+    return /^https?:\/\//i.test(v) || /^www\./i.test(v) ? 'link' : (v ? 'note' : 'empty');
+  }
+  var ICONS = {
+    link: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" style="width:17px;height:17px"><path d="M6.5 9.5l3-3"/><path d="M8.8 4.2l1.4-1.4a2.5 2.5 0 0 1 3.5 3.5L12.3 7.7M7.2 11.8l-1.4 1.4a2.5 2.5 0 0 1-3.5-3.5L3.7 8.3"/></svg>',
+    note: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" style="width:17px;height:17px"><path d="M3 4h10M3 7h10M3 10h6"/><path d="M11 12.5l1.8 1.8 3-3.2"/></svg>'
+  };
+  function wireA(cfg) {
+    var input = document.getElementById(cfg.input);
+    var card = document.getElementById(cfg.card);
+    var go = document.getElementById(cfg.go);
+    var hint = document.getElementById(cfg.hint);
+    var lead = card.querySelector('.lead');
+    function refresh() {
+      var d = detect(input.value);
+      card.classList.remove('is-link', 'is-note');
+      if (d === 'link') { card.classList.add('is-link'); go.textContent = '添加文章'; if (lead) lead.innerHTML = ICONS.link; }
+      else if (d === 'note') { card.classList.add('is-note'); go.textContent = '存入随记'; if (lead) lead.innerHTML = ICONS.note; }
+      else { go.textContent = '存入随记'; if (lead) lead.innerHTML = ICONS.note; }
+      if (hint) {
+        hint.className = 'iv-hint' + (d === 'link' ? ' is-link' : d === 'note' ? ' is-note' : '');
+        hint.textContent = d === 'link' ? '🔗 检测到链接 → 回车存为文章'
+          : d === 'note' ? '✏️ 直接打字 → 存入随记'
+          : '';
+        hint.style.visibility = d === 'empty' ? 'hidden' : 'visible';
+      }
+    }
+    input.addEventListener('input', refresh);
+    refresh();
+  }
+  wireA({ input: 'aInput', card: 'aCard', go: 'aGo', hint: 'aHint' });
+  wireA({ input: 'a2Input', card: 'a2Card', go: 'a2Go', hint: 'a2Hint' });
+  wireA({ input: 'cInput', card: 'cCard', go: 'cGo', hint: 'cHint' });
+  wireA({ input: 'dInput', card: 'dCard', go: 'dGo', hint: 'dHint' });
+
+  // B：分段双态 + 识别自动切换 + 上下文动作
+  (function () {
+    var input = document.getElementById('bInput');
+    var go = document.getElementById('bGo');
+    var hint = document.getElementById('bHint');
+    var file = document.getElementById('bFile');
+    var batch = document.getElementById('bBatch');
+    var seg = document.getElementById('bSeg');
+    var buttons = seg.querySelectorAll('button');
+    var mode = 'note';
+    function apply(m, byUser) {
+      mode = m;
+      buttons.forEach(function (b) { b.classList.toggle('is-on', b.getAttribute('data-mode') === m); });
+      go.textContent = m === 'article' ? '添加文章' : '存入随记';
+      hint.className = 'iv-hint ' + (m === 'article' ? 'is-link' : 'is-note');
+      hint.textContent = m === 'article' ? '🔗 文章：粘贴链接，正文自动抓取解析' : '✏️ 随记：先记原话，稍后再分拣';
+      file.style.display = m === 'note' ? '' : 'none';
+      batch.style.display = m === 'article' ? '' : 'none';
+    }
+    buttons.forEach(function (b) { b.addEventListener('click', function () { apply(b.getAttribute('data-mode'), true); }); });
+    input.addEventListener('input', function () {
+      var d = detect(input.value);
+      if (d === 'link' && mode !== 'article') apply('article');
+      if (d === 'note' && mode !== 'note') apply('note');
+    });
+    apply('note');
+  })();
+</script>
+</body>
+</html>

@@ -30,6 +30,7 @@
 .*.lock
 
 # Playwright
+/test-results/
 /apps/desktop/test-results/
 /apps/desktop/test-results-columns-live/
 /apps/desktop/test-results-webkit/

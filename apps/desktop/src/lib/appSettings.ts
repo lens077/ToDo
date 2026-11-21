@@ -67,7 +67,7 @@ function isExportNamingMode(value: unknown): value is ExportNamingMode {
 }
 
 export const defaultMobileTabBar: MobileTabBarPreference = {
-  order: ['goal', 'reading', 'capture', 'overview'],
+  order: ['goal', 'reading', 'overview'],
   version: 1,
 };
 
@@ -95,6 +95,8 @@ export interface AppSettings {
    * copied article links stops, manual paste into the reading input remains.
    */
   clipboardImport: boolean;
+  /** 图片预览：点击图片外区域关闭（关闭后仅 ✕ / Esc 关闭，缩放手势不会误触）。 */
+  lightboxOutsideClose: boolean;
   /**
    * Naming of the reader 「另存为」 wrapper directory and file. Only affects
    * exports made after the change; illegal characters are filtered by the
@@ -110,6 +112,7 @@ export interface AppSettings {
 export const APP_SETTINGS_STORAGE_KEY = 'todo.app-settings.v1';
 
 export const defaultAppSettings: AppSettings = {
+  lightboxOutsideClose: true,
   confirmCompletion: true,
   density: 'normal',
   openSession: 'reuse',
@@ -136,6 +139,8 @@ function normalizeMobileTabBar(value: unknown): MobileTabBarPreference {
   if (Array.isArray(raw.order)) {
     for (const id of raw.order) {
       // Unknown ids and repeats are dropped silently; only the first six stick.
+      // 随记视图移出 Tab 栏（A′）：入口收敛到收件箱工具行「随记分拣」。
+      if (id === 'capture') continue;
       if (!isMainView(id) || seen.has(id)) continue;
       seen.add(id);
       order.push(id);
@@ -155,6 +160,7 @@ function normalize(value: unknown): AppSettings {
     openSession: isOpenSessionMode(raw.openSession) ? raw.openSession : defaultAppSettings.openSession,
     usageAnalytics: typeof raw.usageAnalytics === 'boolean' ? raw.usageAnalytics : defaultAppSettings.usageAnalytics,
     clipboardImport: typeof raw.clipboardImport === 'boolean' ? raw.clipboardImport : defaultAppSettings.clipboardImport,
+    lightboxOutsideClose: typeof raw.lightboxOutsideClose === 'boolean' ? raw.lightboxOutsideClose : defaultAppSettings.lightboxOutsideClose,
     exportNaming: isExportNamingMode(raw.exportNaming) ? raw.exportNaming : defaultAppSettings.exportNaming,
     exportPrefix: typeof raw.exportPrefix === 'string' ? raw.exportPrefix : defaultAppSettings.exportPrefix,
     exportSuffix: typeof raw.exportSuffix === 'string' ? raw.exportSuffix : defaultAppSettings.exportSuffix,

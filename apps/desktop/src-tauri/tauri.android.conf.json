@@ -7,6 +7,15 @@
         "title": "Sumery Virgo",
         "dragDropEnabled": false
       }
-    ]
+    ],
+    "security": {
+      "assetProtocol": {
+        "enable": true,
+        "scope": [
+          "$APPDATA/files/.todo/reading/**",
+          "$CACHE/files/.todo/reading/**"
+        ]
+      }
+    }
   }
 }

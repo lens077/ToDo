@@ -67,8 +67,8 @@ test('mobile navigation uses a five-slot bottom tab bar', async ({ page }) => {
   expect(barBox!.y).toBeGreaterThanOrEqual(workspaceBox!.y + workspaceBox!.height - 1);
 
   const navButtons = bar.getByRole('button');
-  // MobileTabBar 的 DEFAULT_MOBILE_TABS 拥有这套导航：四个可自定义视图 + 固定「我的」。
-  const expectedNavLabels = ['目标', '阅读', '随记', '总览', '我的'];
+  // MobileTabBar 的默认栏：三个可自定义视图 + 固定「我的」（随记视图已移出导航）。
+  const expectedNavLabels = ['目标', '收件箱', '总览', '我的'];
   await expect(navButtons).toHaveCount(expectedNavLabels.length);
   const navLabels: Array<string | null> = [];
   for (const button of await navButtons.all()) {
@@ -79,6 +79,13 @@ test('mobile navigation uses a five-slot bottom tab bar', async ({ page }) => {
     const box = await button.boundingBox();
     expect(box?.height ?? 0).toBeGreaterThanOrEqual(44);
   }
+  // A′：全部按钮等分（「我的」不再固定窄尾列）。
+  const widths = [];
+  for (const button of await navButtons.all()) {
+    widths.push((await button.boundingBox())?.width ?? 0);
+  }
+  const round = (value: number) => Math.round(value);
+  expect(widths.map(round)).toEqual(widths.map(() => round(widths[0] as number)));
 
   await bar.getByRole('button', { name: '目标', exact: true }).click();
   await expect(page.getByRole('heading', { name: '目标' })).toBeVisible();
@@ -109,11 +116,11 @@ test('stored tab order is normalized before it drives the bar', async ({ page })
   for (const button of await bar.getByRole('button').all()) {
     labels.push(await button.getAttribute('aria-label'));
   }
-  // 未知 id 与重复项静默丢弃，最多 6 项，最右仍是固定「我的」。
-  expect(labels).toEqual(['AI', '随记', '总览', '阅读', '目标', '象限', '我的']);
+  // 未知 id、重复项与已下线的「随记」静默丢弃，最多 6 项，最右仍是固定「我的」。
+  expect(labels).toEqual(['AI', '总览', '收件箱', '目标', '象限', '扫描与历史', '我的']);
 
   const stored = await page.evaluate(() => JSON.parse(window.localStorage.getItem('todo.app-settings.v1') ?? '{}'));
-  expect(stored.mobileTabBar.order).toEqual(['ai', 'capture', 'overview', 'reading', 'goal', 'quadrant']);
+  expect(stored.mobileTabBar.order).toEqual(['ai', 'overview', 'reading', 'goal', 'quadrant', 'review']);
 });
 
 test('a stored bar with fewer than two views falls back to the default four', async ({ page }) => {
@@ -132,12 +139,12 @@ test('a stored bar with fewer than two views falls back to the default four', as
   for (const button of await page.getByRole('navigation', { name: '底部导航' }).getByRole('button').all()) {
     labels.push(await button.getAttribute('aria-label'));
   }
-  expect(labels).toEqual(['目标', '阅读', '随记', '总览', '我的']);
+  expect(labels).toEqual(['目标', '收件箱', '总览', '我的']);
 });
 
 test('long-pressing a tab opens the tab editor without switching views', async ({ page }) => {
   await page.goto('/');
-  const reading = page.getByRole('navigation', { name: '底部导航' }).getByRole('button', { name: '阅读', exact: true });
+  const reading = page.getByRole('navigation', { name: '底部导航' }).getByRole('button', { name: '收件箱', exact: true });
   const box = await reading.boundingBox();
   expect(box).not.toBeNull();
   await page.mouse.move(box!.x + box!.width / 2, box!.y + box!.height / 2);
@@ -156,15 +163,16 @@ test('tab editor adds and removes views within the two-to-six clamp', async ({ p
   await page.getByRole('button', { name: '我的' }).click();
   const editor = page.locator('.settings-tabs');
   await expect(editor).toBeVisible();
-  await expect(editor.locator('.tab-chip')).toHaveCount(4);
+  await expect(editor.locator('.tab-chip')).toHaveCount(3);
 
   await editor.getByRole('button', { name: '加入AI' }).click();
   await editor.getByRole('button', { name: '加入象限' }).click();
+  await editor.getByRole('button', { name: '加入规范' }).click();
   await expect(editor.locator('.tab-chip')).toHaveCount(6);
   await expect(editor.getByRole('status')).toContainText('最多 6 个视图');
-  await expect(editor.getByRole('button', { name: '加入规范' })).toBeDisabled();
+  await expect(editor.getByRole('button', { name: '加入工作空间' })).toBeDisabled();
 
-  await editor.getByRole('button', { name: '移除随记' }).click();
+  await editor.getByRole('button', { name: '移除总览' }).click();
   await expect(editor.locator('.tab-chip')).toHaveCount(5);
 
   for (const label of ['移除AI', '移除象限', '移除目标']) {
@@ -172,7 +180,7 @@ test('tab editor adds and removes views within the two-to-six clamp', async ({ p
   }
   await expect(editor.locator('.tab-chip')).toHaveCount(2);
   await expect(editor.getByRole('status')).toContainText('至少保留 2 个视图');
-  await expect(editor.getByRole('button', { name: '移除阅读' })).toBeDisabled();
+  await expect(editor.getByRole('button', { name: '移除收件箱' })).toBeDisabled();
 
   // Closing the page is enough: the bar already reflects the new order.
   await page.getByRole('button', { name: '我的' }).click();
@@ -180,7 +188,25 @@ test('tab editor adds and removes views within the two-to-six clamp', async ({ p
   for (const button of await page.getByRole('navigation', { name: '底部导航' }).getByRole('button').all()) {
     labels.push(await button.getAttribute('aria-label'));
   }
-  expect(labels).toEqual(['阅读', '总览', '我的']);
+  expect(labels).toEqual(['收件箱', '规范', '我的']);
+});
+
+test('inbox note drawer docks to the bottom on narrow screens', async ({ page }) => {
+  await page.goto('/');
+  await page.getByRole('navigation', { name: '底部导航' }).getByRole('button', { name: '收件箱', exact: true }).click();
+  const input = page.getByLabel('收件箱输入：链接存文章，文本记随记');
+  await input.fill('窄屏贴底抽屉的随记');
+  await page.locator('.inbox-add').getByRole('button', { name: '存入随记' }).click();
+  await page.getByTestId('reading-card').filter({ hasText: '窄屏贴底抽屉的随记' }).locator('.reading-card__open').click();
+  const drawer = page.getByRole('dialog', { name: '编辑随记' });
+  await expect(drawer).toBeVisible();
+  // 贴底抽屉（zj3fjt 模式）：底边贴近视口底、不居中浮层。
+  const box = await drawer.boundingBox();
+  const viewport = page.viewportSize()!;
+  expect(box).not.toBeNull();
+  expect(viewport.height - (box!.y + box!.height)).toBeLessThanOrEqual(16);
+  await drawer.getByRole('button', { name: '关闭' }).click();
+  await expect(drawer).toHaveCount(0);
 });
 
 test('dragging a chip reorders the bar and persists the order', async ({ page }) => {
@@ -296,7 +322,9 @@ test('read-only mode disables task, capture, import, and restore writes', async 
   await expect(card.getByLabel('已完成 60%')).toBeVisible();
   await expect(card.getByLabel('上次失败于 2026-08-31')).toBeVisible();
 
-  await page.getByRole('button', { name: '随记', exact: true }).click();
+  // 随记视图移出导航（A′）：入口在收件箱工具行。
+  await page.getByRole('button', { name: '收件箱', exact: true }).click();
+  await page.getByRole('button', { name: /随记分拣/ }).dispatchEvent('click');
   await expect(page.getByRole('status').filter({ hasText: 'HTTP 项目服务不开放个人随记' })).toBeVisible();
   await expect(page.getByLabel('记下一件还没想清楚的事')).toHaveCount(0);
   await expect(page.getByRole('button', { name: /删除 Capture/ })).toHaveCount(0);

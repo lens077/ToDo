@@ -1,12 +1,9 @@
-use std::{fs, time::Duration};
-use todo_core::{CaptureStore, DesktopBackend, DesktopIntent};
+use std::fs;
+use todo_core::{DesktopBackend, DesktopIntent};
 use todo_desktop_lib::ops::DesktopOps;
 const DOC: &str = "---\ntodo-spec: 1\ncolumns:\n  - {id: todo, name: Todo}\n---\n\n## Todo\n- [ ] task <!--t:aaaaaa-->\n";
-fn ops(inbox: &std::path::Path) -> DesktopOps {
-    DesktopOps::new(
-        DesktopBackend::default(),
-        CaptureStore::new(inbox, Duration::from_secs(2)),
-    )
+fn ops() -> DesktopOps {
+    DesktopOps::new(DesktopBackend::default())
 }
 #[test]
 fn native_sources_history_and_stale_root_writes_are_isolated() {
@@ -16,7 +13,7 @@ fn native_sources_history_and_stale_root_writes_are_isolated() {
         fs::write(root.join("TODO.md"), DOC).unwrap();
         fs::write(root.join("TODO.txt"), DOC).unwrap();
     }
-    let ops = ops(&first.path().join("inbox.md"));
+    let ops = ops();
     let snapshot = ops.open_project(first.path().to_str().unwrap()).unwrap();
     let priority = || DesktopIntent::SetPriority {
         id: "aaaaaa".into(),
@@ -57,8 +54,8 @@ fn native_sources_history_and_stale_root_writes_are_isolated() {
         .unwrap_err()
         .contains("project changed"));
     assert!(ops
-        .capture_triage_for(
-            "nonexistent",
+        .triage_note_for(
+            "stale root text",
             Some("todo"),
             Some("TODO.txt"),
             Some(&snapshot.project_path)
@@ -73,7 +70,7 @@ fn native_source_adoption_requires_same_root_and_preview_hash() {
     for root in [dir.path(), other.path()] {
         fs::write(root.join("TODO"), "plan\n- [ ] work\n").unwrap();
     }
-    let ops = ops(&dir.path().join("inbox.md"));
+    let ops = ops();
     let snapshot = ops.open_project(dir.path().to_str().unwrap()).unwrap();
     let preview = ops.preview_adopt("TODO").unwrap();
     ops.open_project(other.path().to_str().unwrap()).unwrap();

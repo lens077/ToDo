@@ -240,7 +240,9 @@ function CaptureItem({ capture, columns, busy, readOnly, partial, onDelete, onTr
         disabled={readOnly || busy}
         aria-label={`删除 Capture：${capture.text}`}
         title="删除 Capture"
-        onClick={() => void onDelete(capture.id)}
+        onClick={() => {
+          if (window.confirm('删除这条随记？删除后不可恢复。')) onDelete(capture.id);
+        }}
       >
         <Icon name="trash" />
       </button>

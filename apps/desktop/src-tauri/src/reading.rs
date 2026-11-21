@@ -8,6 +8,7 @@ use crate::workspace::WorkspaceState;
 use serde::{Deserialize, Serialize};
 use std::sync::{Condvar, Mutex, OnceLock};
 use tauri::{AppHandle, Emitter, State};
+use todo_core::Capture;
 use todo_core::{
     ReadingAnnotation, ReadingAnnotationInput, ReadingArticle, ReadingArticleDetail,
     ReadingExportFormat, ReadingStore,
@@ -260,6 +261,47 @@ pub fn reading_remove(state: State<'_, ReadingState>, id: String) -> Result<(), 
         .map_err(|error| error.to_string())
 }
 
+/// 新增随记（统一收件箱 A′）：Markdown 直存即渲染，标题从正文派生，
+/// 不走解析管线。删除复用 `reading_remove`。
+#[tauri::command]
+pub async fn reading_note_append(
+    state: State<'_, ReadingState>,
+    markdown: String,
+) -> Result<ReadingArticleDetail, String> {
+    let store = state.store()?;
+    tauri::async_runtime::spawn_blocking(move || store.note_append(&markdown))
+        .await
+        .map_err(|error| format!("随记保存任务中断：{error}"))?
+        .map_err(|error| error.to_string())
+}
+
+/// 编辑随记：整篇重渲染并刷新 updated_at（同步冲突裁决用）。
+#[tauri::command]
+pub fn reading_note_update(
+    state: State<'_, ReadingState>,
+    id: String,
+    markdown: String,
+) -> Result<ReadingArticleDetail, String> {
+    state
+        .store()?
+        .note_update(&id, &markdown)
+        .map_err(|error| error.to_string())
+}
+
+/// 应用内「打开文件」：dialog 选中的本地文件导入统一收件箱。
+/// html/md → 文章（readability 提取，拒收则整页净化直通），txt → 随记。
+#[tauri::command]
+pub async fn reading_import_file(
+    state: State<'_, ReadingState>,
+    path: String,
+) -> Result<ReadingArticleDetail, String> {
+    let store = state.store()?;
+    tauri::async_runtime::spawn_blocking(move || store.import_local_file(&path))
+        .await
+        .map_err(|error| format!("文件导入任务中断：{error}"))?
+        .map_err(|error| error.to_string())
+}
+
 #[derive(Debug, Deserialize)]
 pub struct AnnotationPayload {
     pub id: String,
@@ -452,4 +494,100 @@ pub async fn reading_sync_now(
 pub fn reading_sync_cancel() -> bool {
     sync::cancel();
     true
+}
+
+// ── 随记分拣桥（统一收件箱 A′）────────────────────────────────────────
+// CaptureView 分拣面板与全局速记窗的数据源从 inbox.md 切到阅读库随记
+// （kind='note'）；Capture 结构保持不变，前端桥（desktop.ts）无需改动。
+
+/// 收件箱随记 → 旧 Capture 形状（id/created_at/text 契约不变）。
+fn note_to_capture(detail: &ReadingArticleDetail) -> Capture {
+    let created_at = chrono::DateTime::from_timestamp_millis(detail.article.added_at)
+        .unwrap_or_default()
+        .to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
+    Capture {
+        id: detail.article.id.clone(),
+        created_at,
+        text: detail.markdown.clone().unwrap_or_default(),
+    }
+}
+
+/// 分拣列表：只含未分拣的随记（saved_reason 带 triaged 前缀的留档条目隐藏）。
+pub fn capture_notes(state: &ReadingState) -> Result<Vec<Capture>, String> {
+    let notes = state
+        .store()?
+        .list_notes()
+        .map_err(|error| error.to_string())?;
+    Ok(notes
+        .iter()
+        .filter(|detail| !detail.context.saved_reason.starts_with("triaged"))
+        .map(note_to_capture)
+        .collect())
+}
+
+/// 全局速记 / 分拣面板新增：文本直存为阅读库随记。
+pub fn capture_append_note(
+    state: &ReadingState,
+    text: &str,
+) -> Result<(Capture, Vec<Capture>), String> {
+    let store = state.store()?;
+    let detail = store.note_append(text).map_err(|error| error.to_string())?;
+    let capture = note_to_capture(&detail);
+    let captures = capture_notes(state)?;
+    Ok((capture, captures))
+}
+
+/// 删除随记（分拣面板删除按钮）。
+pub fn capture_delete_note(state: &ReadingState, id: &str) -> Result<Vec<Capture>, String> {
+    state
+        .store()?
+        .remove(id)
+        .map_err(|error| error.to_string())?;
+    capture_notes(state)
+}
+
+/// 分拣取稿：Markdown 即任务正文；非随记条目明确报错。
+pub fn capture_note_text(state: &ReadingState, id: &str) -> Result<String, String> {
+    let detail = state.store()?.get(id).map_err(|error| error.to_string())?;
+    if detail.article.kind != "note" {
+        return Err(format!("该条目不是随记: {id}"));
+    }
+    Ok(detail.markdown.unwrap_or_default())
+}
+
+pub fn mark_note_triaged(state: &ReadingState, id: &str, destination: &str) -> Result<(), String> {
+    state
+        .store()?
+        .mark_note_triaged(id, destination)
+        .map_err(|error| error.to_string())
+}
+
+/// inbox.md 一次性迁移（设计稿 §2）：逐条转为阅读库随记，成功后原文件
+/// 改名 `inbox.md.migrated-<时间戳>` 留档。幂等：文件不存在返回 0 条。
+pub fn migrate_capture_inbox(state: &ReadingState) -> Result<(usize, String), String> {
+    let path = todo_core::global_capture_path().map_err(|error| error.to_string())?;
+    migrate_capture_inbox_at(state, &path)
+}
+
+/// 指定路径的迁移主体：测试用临时目录，命令走全局路径。
+pub fn migrate_capture_inbox_at(
+    state: &ReadingState,
+    path: &std::path::Path,
+) -> Result<(usize, String), String> {
+    if !path.exists() {
+        return Ok((0, String::new()));
+    }
+    let items = todo_core::parse_capture_file(path).map_err(|error| error.to_string())?;
+    let store = state.store()?;
+    for item in &items {
+        store
+            .note_append_with_title(&item.text, None)
+            .map_err(|error| error.to_string())?;
+    }
+    let archived = path.with_extension(format!(
+        "md.migrated-{}",
+        chrono::Utc::now().format("%Y%m%d-%H%M%S")
+    ));
+    std::fs::rename(path, &archived).map_err(|error| format!("迁移后改名失败：{error}"))?;
+    Ok((items.len(), archived.to_string_lossy().into_owned()))
 }

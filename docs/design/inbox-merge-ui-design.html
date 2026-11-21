@@ -1,0 +1,835 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>阅读×随记合并 · 真实界面底座设计稿</title>
+<style>
+  /* ══════════════════════════════════════════════════════════════════
+     第一部分：设计稿页面自身的框架样式（浅色说明页，沿用既有设计稿风格）
+     第二部分：应用真实样式（从 apps/desktop/src/style.css 原样提取的
+     tokens 与组件样式，class 名保持一致，便于逐条核对）
+     ══════════════════════════════════════════════════════════════════ */
+
+  /* ── 说明页框架 ─────────────────────────────────────────────── */
+  .doc { --font-doc: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'PingFang SC', 'Microsoft YaHei', sans-serif; }
+  body.doc { margin: 0; padding: 40px 24px 100px; background: #f7f7fa; color: #1b1547; font-family: var(--font-doc); font-size: 14px; line-height: 1.65; }
+  .doc .page { max-width: 1240px; margin: 0 auto; }
+  .doc h1 { font-size: 22px; margin: 0 0 6px; }
+  .doc .lede { color: #4b5165; margin: 0 0 24px; max-width: 900px; }
+  .doc .badge { display: inline-block; margin-left: 10px; padding: 2px 10px; vertical-align: 3px; color: #b45309; background: #fdf1dc; border: 1px solid #b45309; border-radius: 999px; font-size: 12px; font-weight: 500; }
+  .doc section { margin: 0 0 26px; background: #ffffff; border: 1px solid #e6e7ee; border-radius: 14px; padding: 22px 26px; box-shadow: 0 1px 2px -1px rgba(27,21,71,.08); }
+  .doc h2 { font-size: 16px; margin: 0 0 6px; }
+  .doc h2 small { color: #6c7189; font-weight: 400; font-size: 12.5px; margin-left: 8px; }
+  .doc h3 { font-size: 13.5px; margin: 18px 0 8px; }
+  .doc p { margin: 8px 0; color: #4b5165; }
+  .doc ul { margin: 8px 0; padding-left: 22px; color: #4b5165; }
+  .doc li { margin: 3px 0; }
+  .doc code { font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace; font-size: 12px; background: #f1f1f6; border: 1px solid #e6e7ee; border-radius: 4px; padding: 1px 5px; color: #1b1547; }
+  .doc .toc { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 28px; }
+  .doc .toc a { display: inline-block; padding: 4px 12px; font-size: 12.5px; color: #4b5165; background: #fff; border: 1px solid #e6e7ee; border-radius: 999px; text-decoration: none; }
+  .doc .toc a:hover { border-color: #b45309; color: #b45309; }
+
+  /* 图例：真实代码里的改动类型 */
+  .legend { display: flex; flex-wrap: wrap; gap: 10px; margin: 12px 0 4px; }
+  .legend .lg { display: inline-flex; align-items: center; gap: 7px; font-size: 12px; color: #4b5165; }
+  .legend .lg i { width: 9px; height: 9px; border-radius: 50%; }
+  .lg-keep i { background: #a3a8bd; }
+  .lg-mod i { background: #b45309; }
+  .lg-new i { background: #2e9c90; }
+
+  .mark { display: inline-flex; align-items: center; justify-content: center; width: 17px; height: 17px; margin: 0 1px; vertical-align: -3px; border-radius: 50%; color: #fff; font-size: 10.5px; font-weight: 600; cursor: help; }
+  .mark--keep { background: #a3a8bd; }
+  .mark--mod { background: #b45309; }
+  .mark--new { background: #2e9c90; }
+  .annos { margin: 12px 0 0; display: grid; gap: 6px; }
+  .annos .a { display: grid; grid-template-columns: auto 1fr; gap: 9px; align-items: baseline; font-size: 12.5px; color: #4b5165; }
+  .annos .a b { color: #1b1547; font-weight: 600; }
+
+  .split { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 22px; align-items: start; }
+  @media (max-width: 1080px) { .split { grid-template-columns: 1fr; } }
+  .doc .panel-note { background: #f1f1f6; border: 1px solid #e6e7ee; border-radius: 10px; padding: 13px 15px; font-size: 12.5px; color: #4b5165; }
+  .doc .panel-note b { color: #1b1547; }
+  .doc .panel-note ul { margin: 6px 0 0; padding-left: 18px; }
+  .doc table { width: 100%; border-collapse: collapse; margin: 10px 0; font-size: 12.5px; }
+  .doc th, .doc td { text-align: left; padding: 7px 10px; border-bottom: 1px solid #e6e7ee; vertical-align: top; color: #4b5165; }
+  .doc th { color: #1b1547; font-weight: 600; background: #f1f1f6; }
+  .doc pre.tree { margin: 10px 0; padding: 13px 15px; background: #f1f1f6; border: 1px solid #e6e7ee; border-radius: 8px; font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace; font-size: 11.5px; line-height: 1.7; color: #4b5165; overflow-x: auto; white-space: pre; }
+  .doc pre.tree b { color: #1b1547; }
+  .doc pre.tree .new { background: #fdf1dc; color: #b45309; border-radius: 3px; padding: 0 3px; }
+
+  /* 应用窗口外框（mockup 容器，非应用代码） */
+  .app-frame { border: 1px solid #d3d4e0; border-radius: 14px; overflow: hidden; box-shadow: 0 18px 40px -22px rgba(27,21,71,.35); background: var(--bg); }
+  .app-frame .titlebar { display: flex; align-items: center; gap: 6px; padding: 8px 12px; background: #ececf3; border-bottom: 1px solid #d3d4e0; }
+  .app-frame .titlebar i { width: 10px; height: 10px; border-radius: 50%; background: #c9c9d6; }
+  .app-frame .titlebar span { margin-left: 8px; font-size: 11px; color: #6c7189; }
+
+  /* ── 以下为应用真实样式（style.css 原样摘录） ─────────────── */
+  :root, .app {
+    --font: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'SF Pro Display', system-ui, 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+    --mono: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+    --bg: #f7f7fa;
+    --panel: #ffffff;
+    --panel-2: #f1f1f6;
+    --ink: #1b1547;
+    --ink-2: #4b5165;
+    --ink-3: #6c7189;
+    --hairline: #e6e7ee;
+    --hairline-2: #d3d4e0;
+    --accent: #b45309;
+    --accent-hover: #92400e;
+    --accent-wash: #fdf1dc;
+    --accent-wash-2: #fbe3b5;
+    --primary-fill: #f5a524;
+    --primary-fill-hover: #e3941a;
+    --primary-ink: #1b1547;
+    --danger: #c93e33;
+    --danger-wash: #fbeae8;
+    --teal: #2e9c90;
+    --teal-text: #177a71;
+    --teal-wash: #e3f6f3;
+    --radius-panel: 12px;
+    --radius-control: 8px;
+    --sidebar-width: 216px;
+  }
+  .app { font-family: var(--font); color: var(--ink); background: var(--bg); font-size: 14px; line-height: 1.6; accent-color: var(--accent); caret-color: var(--accent); }
+  .app button { font-family: inherit; cursor: pointer; }
+  .app input, .app textarea { font-family: inherit; }
+  .app h1 { margin: 0; }
+  .app kbd { font-family: var(--mono); }
+
+  .app-shell { display: grid; grid-template-columns: var(--sidebar-width) minmax(0, 1fr); width: 100%; min-height: 560px; }
+  .app-shell__main { min-width: 0; padding-bottom: 26px; }
+
+  /* sidebar（真实样式） */
+  .sidebar { position: relative; display: flex; flex-direction: column; min-width: 0; padding: 18px 12px 14px; overflow: hidden; color: var(--ink); background: var(--bg); border-right: 1px solid var(--hairline); }
+  .sidebar__brand { display: flex; align-items: center; gap: 10px; padding: 2px 6px 16px; border-bottom: 1px solid var(--hairline); }
+  .sidebar__brand-mark { display: block; width: 22px; height: 22px; flex: 0 0 auto; border-radius: 5px; background: linear-gradient(135deg, #7fd8d0, #ffe08a 55%, #f5a524); }
+  .sidebar__brand div { display: grid; gap: 2px; min-width: 0; }
+  .sidebar__brand-kicker { color: var(--ink-3); font-family: var(--mono); font-size: 10.5px; font-weight: 500; letter-spacing: 0.12em; white-space: nowrap; }
+  .sidebar__brand strong { font-size: 13px; font-weight: 600; letter-spacing: 0.01em; white-space: nowrap; }
+  .project-switcher { display: grid; grid-template-columns: 26px minmax(0, 1fr) 14px; align-items: center; gap: 8px; width: 100%; margin-top: 14px; padding: 7px 8px; text-align: left; background: var(--panel); border: 1px solid var(--hairline); border-radius: var(--radius-control); }
+  .project-switcher__icon { display: grid; place-items: center; width: 26px; height: 26px; color: var(--accent); background: var(--accent-wash); border-radius: 6px; font-size: 12px; }
+  .project-switcher__copy { display: grid; gap: 1px; min-width: 0; }
+  .project-switcher small { color: var(--ink-3); font-size: 10.5px; }
+  .project-switcher strong { overflow: hidden; font-size: 12.5px; text-overflow: ellipsis; white-space: nowrap; }
+  .project-switcher__chevron { color: var(--ink-3); font-size: 12px; }
+  .primary-nav { display: grid; gap: 2px; margin-top: 22px; }
+  .primary-nav__label { padding: 0 8px 8px; color: var(--ink-3); font-size: 11px; letter-spacing: 0.04em; }
+  .primary-nav button { display: grid; grid-template-columns: 18px minmax(0, 1fr) auto; align-items: center; gap: 10px; width: 100%; min-height: 34px; padding: 6px 9px; color: var(--ink-2); text-align: left; background: transparent; border: 0; border-radius: var(--radius-control); transition: color .3s var(--ease-out, ease), background .3s var(--ease-out, ease); }
+  .primary-nav button:hover { color: var(--ink); background: var(--panel-2); }
+  .primary-nav button.is-active { color: var(--accent); background: var(--accent-wash); }
+  .primary-nav svg { width: 16px; height: 16px; color: var(--ink-3); }
+  .primary-nav button.is-active svg { color: var(--accent); }
+  .primary-nav__text { font-size: 13.5px; }
+  .primary-nav button.is-active .primary-nav__text { font-weight: 500; }
+  .primary-nav__count { min-width: 20px; padding: 1px 6px; color: var(--ink-2); text-align: center; background: var(--panel-2); border-radius: 999px; font-size: 11px; font-variant-numeric: tabular-nums; }
+  .primary-nav button.is-active .primary-nav__count { color: var(--accent); background: var(--panel); }
+  .sidebar-status { display: grid; gap: 10px; margin-top: auto; padding: 14px 6px 2px; border-top: 1px solid var(--hairline); }
+  .sidebar-status__item { display: grid; grid-template-columns: 16px minmax(0, 1fr); align-items: center; gap: 9px; }
+  .sidebar-status__item svg { width: 14px; height: 14px; color: var(--ink-3); }
+  .sidebar-status__item div { display: grid; gap: 1px; min-width: 0; }
+  .sidebar-status small { color: var(--ink-3); font-size: 10.5px; }
+  .sidebar-status .st { font-size: 12px; color: var(--ink-2); }
+
+  /* view-heading（真实样式） */
+  .view-heading { display: flex; align-items: end; justify-content: space-between; gap: 28px; padding: 26px 28px 16px; }
+  .view-heading h1 { font-size: 28px; line-height: 1.05; letter-spacing: -0.02em; text-wrap: balance; }
+  .view-heading__note { max-width: 340px; color: var(--ink-2); font-size: 12.5px; line-height: 1.5; }
+  .view-heading__title { display: grid; gap: 6px; min-width: 0; }
+  .view-heading__meta { display: flex; flex-wrap: wrap; gap: 8px; color: var(--accent); font-size: 13px; font-variant-numeric: tabular-nums; }
+
+  /* reading-add（真实样式） */
+  .reading-add { position: relative; display: grid; grid-template-columns: 34px minmax(0, 1fr) auto; align-items: center; gap: 4px; margin: 4px 28px 16px; padding: 6px 6px 6px 8px; background: var(--panel); border: 1px solid var(--hairline); border-radius: var(--radius-panel); transition: border-color .3s var(--ease-out, ease), box-shadow .3s var(--ease-out, ease); }
+  .reading-add:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-wash); }
+  .reading-add__icon { display: grid; place-items: center; color: var(--ink-3); }
+  .reading-add__icon svg { width: 16px; height: 16px; }
+  .reading-add input { min-width: 0; height: 36px; padding: 0 6px; color: var(--ink); background: transparent; border: 0; outline: 0; font-size: 14px; }
+  .reading-add input::placeholder { color: var(--ink-3); }
+  .reading-add > button, .reading-add__actions > button, .reading-add .reading-sync > button { height: 36px; min-width: 72px; padding: 0 16px; color: var(--primary-ink); background: var(--primary-fill); border: 0; border-radius: var(--radius-control); font-size: 13.5px; font-weight: 500; white-space: nowrap; }
+  .reading-add > button:hover:not(:disabled), .reading-add__actions > button:hover:not(:disabled), .reading-add .reading-sync > button:hover:not(:disabled) { background: var(--primary-fill-hover); }
+  .reading-add > button:disabled { color: var(--ink-3); background: var(--panel-2); }
+  .reading-sync { flex: none; }
+  .reading-add__actions { grid-column: 2 / -1; grid-row: 2; display: flex; align-items: center; gap: 6px; padding-top: 2px; }
+  .reading-add__browser { color: var(--accent) !important; background: var(--accent-wash) !important; border: 1px solid var(--accent) !important; min-width: 104px !important; }
+  .reading-add__status { grid-column: 2 / -1; padding: 4px 6px 2px; font-size: 12px; color: var(--ink-3); }
+
+  /* 收件箱输入条 = reading-add 的演进（新增部分用 inbox- 前缀） */
+  .inbox-detect { display: inline-flex; align-items: center; gap: 5px; min-height: 26px; padding: 0 10px; color: var(--teal-text); background: var(--teal-wash); border: 1px solid var(--teal-text); border-radius: 999px; font-size: 12px; }
+  .inbox-detect--note { color: var(--violet-text, #5b4fc4); background: var(--violet-wash, #ecebfa); border-color: var(--violet-text, #5b4fc4); }
+  .inbox-kind { display: inline-flex; align-items: center; gap: 4px; min-height: 26px; padding: 0 9px; border-radius: 999px; font-size: 12px; }
+
+  /* A′ 定稿头部与工具行（2026-11-20 拍板，规格见 inbox-composer-styles.html） */
+  .iv-head { display: flex; align-items: baseline; gap: 14px; min-width: 0; }
+  .iv-head h1 { flex: none; }
+  .iv-stats { display: inline-flex; align-items: baseline; gap: 10px; color: var(--ink-2); font-size: 13px; font-variant-numeric: tabular-nums; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .iv-stats b { font-weight: 600; font-family: var(--mono); font-size: 12.5px; }
+  .iv-stats .sep { color: var(--hairline-2); }
+  .iv-sync { margin-left: auto; flex: none; display: inline-flex; align-items: center; gap: 7px; min-height: 30px; padding: 0 12px; color: var(--teal-text); background: var(--teal-wash); border: 1px solid rgba(23, 122, 113, .35); border-radius: 999px; font-size: 12px; }
+  .iv-sync i { width: 7px; height: 7px; border-radius: 50%; background: var(--teal-text); }
+  .pa-card { display: grid; grid-template-columns: 34px minmax(0, 1fr) auto; align-items: center; gap: 4px; padding: 6px 6px 6px 8px; background: var(--panel); border: 1px solid var(--hairline); border-left: 3px solid var(--hairline); border-radius: var(--radius-panel); transition: border-color .2s ease, box-shadow .2s ease; }
+  .pa-card:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-wash); }
+  .pa-card.is-link { border-left-color: var(--teal-text); }
+  .pa-card.is-note { border-left-color: var(--violet-text, #5b4fc4); }
+  .pa-card .lead { display: grid; place-items: center; color: var(--ink-3); }
+  .pa-card .lead svg { width: 17px; height: 17px; }
+  .pa-card.is-link .lead { color: var(--teal-text); }
+  .pa-card.is-note .lead { color: var(--violet-text, #5b4fc4); }
+  .pa-card input { min-width: 0; height: 36px; padding: 0 6px; color: var(--ink); background: transparent; border: 0; outline: 0; font-size: 14px; }
+  .pa-card input::placeholder { color: var(--ink-3); }
+  .pa2-foot { grid-column: 2 / -1; display: flex; align-items: center; gap: 6px; padding: 4px 6px 2px 0; }
+  .pa2-foot .spacer { flex: 1; }
+  .pa2-foot .iv-hint { display: inline-flex; align-items: center; gap: 5px; color: var(--ink-3); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .pa2-foot .iv-hint.is-link { color: var(--teal-text); }
+  .pa2-foot .iv-hint.is-note { color: var(--violet-text, #5b4fc4); }
+  .pa2-foot .tool { position: relative; display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 11px; color: var(--ink-2); background: transparent; border: 1px solid var(--hairline); border-radius: var(--radius-control); font-size: 12px; white-space: nowrap; }
+  .pa2-foot .tool:hover { color: var(--ink); background: var(--panel-2); border-color: var(--hairline-2); }
+  .pa2-foot .tool svg { width: 15px; height: 15px; }
+  .pa2-foot .tool::after { content: attr(data-tip); position: absolute; right: 0; bottom: calc(100% + 7px); z-index: 30; display: none; width: min(320px, 60vw); padding: 7px 11px; color: #fff; background: var(--ink); border-radius: 7px; font-size: 12px; line-height: 1.55; text-align: left; white-space: normal; box-shadow: 0 12px 32px -10px rgba(27,21,71,.4); pointer-events: none; }
+  .pa2-foot .tool::before { content: ''; position: absolute; right: 14px; bottom: calc(100% + 3px); z-index: 31; display: none; border: 4px solid transparent; border-top-color: var(--ink); }
+  .pa2-foot .tool:hover::after, .pa2-foot .tool:hover::before { display: block; }
+  .inbox-kind--note { color: var(--violet-text, #5b4fc4); background: var(--violet-wash, #ecebfa); }
+  .inbox-kind--file { color: var(--accent); background: var(--accent-wash); }
+
+  /* reading-toolbar / due-summary chips（真实样式） */
+  .reading-toolbar { display: flex; align-items: center; justify-content: space-between; margin: 0 28px 16px; padding-bottom: 12px; border-bottom: 1px solid var(--hairline-2); }
+  .due-summary { display: flex; gap: 6px; flex-wrap: wrap; }
+  .due-summary__chip { display: inline-flex; align-items: center; gap: 7px; min-height: 30px; padding: 0 11px; color: var(--ink-2); background: var(--panel); border: 1px solid var(--hairline); border-radius: 999px; font-size: 12.5px; }
+  .due-summary__chip strong { font-size: 12px; font-variant-numeric: tabular-nums; }
+  .due-summary__chip.is-active { color: var(--accent); background: var(--accent-wash); border-color: var(--accent); }
+  .due-summary__chip.is-active strong { color: inherit; }
+
+  /* reading-card（真实样式） */
+  .reading-list { display: grid; gap: 10px; margin: 0 28px; }
+  .reading-card { position: relative; display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 14px; overflow: hidden; background: var(--panel); border: 1px solid var(--hairline); border-radius: var(--radius-panel); }
+  .reading-card__open { display: grid; grid-template-columns: 76px minmax(0, 1fr); gap: 14px; align-items: center; min-width: 0; padding: 12px 0 14px 12px; color: inherit; text-align: left; background: transparent; border: 0; font: inherit; }
+  .reading-card__cover { width: 76px; height: 76px; object-fit: cover; border-radius: 8px; background: var(--panel-2); display: grid; place-items: center; color: var(--ink-3); border: 1px dashed var(--hairline-2); }
+  .reading-card__body { display: grid; gap: 4px; min-width: 0; }
+  .reading-card__title { overflow: hidden; color: var(--ink); font-size: 15px; font-weight: 500; line-height: 1.4; text-overflow: ellipsis; white-space: nowrap; }
+  .reading-card--read .reading-card__title { color: var(--ink-2); }
+  .reading-card__excerpt { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 1; overflow: hidden; color: var(--ink-2); font-size: 12.5px; line-height: 1.5; }
+  .reading-card__meta { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 2px; color: var(--ink-3); font-family: var(--mono); font-size: 11px; font-variant-numeric: tabular-nums; }
+  .reading-card__notes { display: inline-flex; align-items: center; gap: 3px; color: var(--ink-2); }
+  .reading-card__side { display: grid; justify-items: end; gap: 6px; padding: 12px 14px 14px 0; }
+  .reading-chip { display: inline-flex; align-items: center; gap: 4px; min-height: 26px; padding: 0 10px; border-radius: 999px; font-size: 12px; }
+  .reading-chip--read { color: var(--teal-text); background: var(--teal-wash); }
+  .reading-card__tools { display: flex; gap: 4px; opacity: 1; }
+  .icon-action { display: grid; place-items: center; width: 30px; height: 30px; padding: 0; color: var(--ink-2); background: transparent; border: 1px solid transparent; border-radius: var(--radius-control); }
+  .reading-card__tools .icon-action { position: relative; width: 38px; height: 38px; }
+  .reading-card__tools .icon-action:hover { color: var(--ink); background: var(--panel-2); border-color: var(--hairline); }
+  .icon-action svg { width: 15px; height: 15px; }
+  .reading-card__tools .icon-action svg { width: 18px; height: 18px; }
+  .reading-card__progress { position: absolute; right: 0; bottom: 0; left: 0; height: 3px; background: var(--panel-2); }
+  .reading-card__progress > span { display: block; height: 100%; background: var(--primary-fill); }
+  .reading-card--read .reading-card__progress > span { background: var(--teal-text); }
+  .reading-card__parse { display: inline-flex; align-items: center; gap: 4px; font-size: 11.5px; color: var(--ink-3); }
+  .reading-card__parse--pending::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: var(--accent); animation: reading-parse-pulse 1.2s ease-in-out infinite; }
+  @keyframes reading-parse-pulse { 50% { opacity: .25; } }
+  .reading-card--note { grid-template-columns: minmax(0, 1fr) auto; }
+  .reading-card--note .reading-card__open { grid-template-columns: 76px minmax(0, 1fr); }
+  .note-pad { width: 76px; height: 76px; border-radius: 8px; background: var(--violet-wash, #ecebfa); color: var(--violet-text, #5b4fc4); display: grid; place-items: center; font-family: var(--mono); font-size: 20px; border: 1px solid rgba(91, 79, 196, .25); }
+
+  /* capture 视图（真实样式，改造预览用） */
+  .capture-ledger { margin: 0 28px; }
+  .capture-ledger__rule { display: flex; justify-content: space-between; gap: 20px; padding: 0 2px 8px; color: var(--ink-3); border-bottom: 1px solid var(--hairline-2); font-size: 11.5px; letter-spacing: 0.04em; font-family: var(--mono); }
+  .capture-list { display: grid; }
+  .capture-item { position: relative; display: grid; grid-template-columns: minmax(0,1fr) 248px 32px; column-gap: 20px; align-items: center; min-height: 104px; padding: 15px 6px 15px 2px; border-bottom: 1px solid var(--hairline); }
+  .capture-item__meta { grid-column: 1; display: flex; align-items: center; gap: 10px; color: var(--ink-3); font-family: var(--mono); font-size: 11px; }
+  .capture-item__meta code { padding-left: 10px; border-left: 1px solid var(--hairline); }
+  .capture-item__text { grid-column: 1; max-width: 700px; margin-top: 8px; font-size: 15px; line-height: 1.5; }
+  .capture-item__triage { grid-column: 2; grid-row: 1 / 3; display: grid; grid-template-columns: minmax(92px,1fr) auto; align-items: center; gap: 8px; }
+  .capture-item__delete { grid-column: 3; grid-row: 1 / 3; }
+  .text-action { display: inline-flex; align-items: center; gap: 5px; min-height: 32px; padding: 0 10px; color: var(--ink-2); background: transparent; border: 1px solid var(--hairline-2); border-radius: var(--radius-control); font-size: 12.5px; white-space: nowrap; }
+  .text-action:hover:not(:disabled) { color: var(--ink); background: var(--panel-2); }
+  .text-action--primary { color: var(--accent); background: var(--panel); border-color: var(--accent); font-weight: 500; }
+  .text-action--primary:hover:not(:disabled) { color: var(--accent-hover); background: var(--accent-wash); }
+  .icon-action--danger:hover { color: var(--danger); border-color: var(--danger); background: var(--danger-wash); }
+
+  /* 移动端窄屏（真实断点行为：侧栏消失；底部导航按 mobile-bottom-nav-spec.md） */
+  .phone { width: 340px; margin: 0 auto; background: #0f0e1a; border-radius: 30px; padding: 12px 10px 16px; box-shadow: 0 18px 40px -18px rgba(27,21,71,.45); }
+  .phone .screen { position: relative; background: var(--bg); border-radius: 20px; overflow: hidden; height: 620px; display: flex; flex-direction: column; }
+  .m-status { display: flex; justify-content: space-between; padding: 7px 16px 3px; font-size: 10.5px; color: var(--ink-3); font-variant-numeric: tabular-nums; }
+  .m-heading { padding: 12px 16px 8px; display: flex; align-items: end; justify-content: space-between; }
+  .m-heading h1 { font-size: 22px; letter-spacing: -0.02em; line-height: 1.05; }
+  .m-heading .m-meta { color: var(--accent); font-size: 12px; font-variant-numeric: tabular-nums; margin-top: 3px; }
+  .m-body { flex: 1; overflow: hidden; padding: 0 12px; display: grid; gap: 8px; align-content: start; }
+  .m-body .reading-card__open { grid-template-columns: 56px minmax(0, 1fr); padding: 10px 0 12px 10px; gap: 11px; }
+  .m-body .reading-card__cover, .note-pad { width: 56px; height: 56px; }
+  .m-body .reading-card { border-radius: 10px; }
+  .m-composer { margin: 6px 12px 8px; }
+  .m-composer .reading-add { margin: 0; }
+  .m-tabs { display: grid; grid-template-columns: repeat(4, 1fr); border-top: 1px solid var(--hairline); background: var(--panel); padding: 6px 8px calc(8px + 10px); gap: 2px; }
+  .m-tabs button { display: grid; justify-items: center; gap: 2px; padding: 5px 0; color: var(--ink-2); background: transparent; border: 0; border-radius: var(--radius-control); font-size: 10.5px; }
+  .m-tabs button.is-active { color: var(--accent); background: var(--accent-wash); }
+  .m-tabs svg { width: 16px; height: 16px; }
+  .m-tabs .m-my { border: 0; }
+  .m-homebar { position: absolute; bottom: 6px; left: 50%; transform: translateX(-50%); width: 108px; height: 4px; border-radius: 4px; background: var(--hairline-2); }
+
+  /* 随记贴底抽屉（沿用 zj3fjt 窄屏贴底抽屉模式 + 真实面板样式） */
+  .m-sheet-backdrop { position: absolute; inset: 0; background: var(--scrim, rgba(27,21,71,.42)); }
+  .m-sheet { position: absolute; left: 8px; right: 8px; bottom: 8px; background: var(--panel); border: 1px solid var(--hairline); border-radius: 16px; padding: 8px 14px 14px; box-shadow: 0 28px 64px -24px rgba(27,21,71,.42); }
+  .m-sheet .grab { width: 34px; height: 4px; border-radius: 4px; background: var(--hairline-2); margin: 4px auto 10px; }
+  .m-sheet .dhead { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+  .m-sheet .dhead .t { font-weight: 600; font-size: 14px; flex: 1; }
+  .m-sheet .dhead time { color: var(--ink-3); font-family: var(--mono); font-size: 10.5px; }
+  .m-sheet textarea { width: 100%; min-height: 150px; padding: 9px 11px; resize: none; color: var(--ink); background: var(--bg); border: 1px solid var(--hairline-2); border-radius: var(--radius-control); outline: 0; font-family: var(--mono); font-size: 12px; line-height: 1.7; }
+  .m-sheet textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-wash); }
+  .m-sheet .mdtools { display: flex; gap: 6px; margin: 8px 0 10px; }
+  .m-sheet .mdtools button { min-height: 28px; padding: 0 10px; color: var(--ink-2); background: var(--panel-2); border: 1px solid var(--hairline); border-radius: var(--radius-control); font-size: 11.5px; }
+  .m-sheet .dfoot { display: flex; gap: 8px; align-items: center; }
+  .m-sheet .dfoot .text-action { min-height: 36px; }
+  .m-sheet .dfoot .grow { flex: 1; }
+  .solid-action { display: inline-flex; align-items: center; justify-content: center; gap: 7px; min-height: 36px; padding: 0 16px; color: var(--primary-ink); background: var(--primary-fill); border: 1px solid transparent; border-radius: var(--radius-control); font-size: 13.5px; font-weight: 500; }
+  .solid-action:hover:not(:disabled) { background: var(--primary-fill-hover); }
+  .solid-action:disabled { color: var(--ink-3); background: var(--panel-2); }
+
+  /* 同步状态（沿用 SyncControl 在 reading-add__actions 里的真实位置） */
+  .reading-sync { position: relative; display: inline-flex; }
+  .sync-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--teal-text); margin-left: 6px; }
+  .sync-dot--busy { background: var(--primary-fill); animation: reading-parse-pulse 1s ease-in-out infinite; }
+
+  .doc .cap { margin: 8px 2px 0; font-size: 12px; color: #6c7189; text-align: center; }
+  .doc footer { text-align: center; color: #6c7189; font-size: 12px; margin-top: 30px; }
+</style>
+</head>
+<body class="doc">
+<div class="page">
+
+  <h1>阅读×随记合并 · 真实界面底座<span class="badge">设计稿 v1 · 2026-11-20</span></h1>
+  <p class="lede">所有 mockup 不画「概念稿」——直接用应用真实样式渲染：<code>style.css</code> 的 tokens 与组件 class 原样摘录（侧栏 216px、view-heading 28px 标题、reading-add 输入条、reading-card 76px 封面卡、due-summary chips、capture-ledger 台账、贴底抽屉），文案取自真实组件。每处改动用 <span class="mark mark--keep">0</span><span class="mark mark--mod">M</span><span class="mark mark--new">N</span> 标注：灰=现状不动、橙=改造、青=新增。</p>
+  <div class="legend">
+    <span class="lg lg-keep"><i></i>现状保留（reading-card / capture 分拣 / 标注 / 另存为 全部不动）</span>
+    <span class="lg lg-mod"><i></i>就地改造（view-heading / reading-add / due-summary chips / 随记视图数据源）</span>
+    <span class="lg lg-new"><i></i>新增元素（随记卡 / kind 徽章 / 识别提示 / 打开文件按钮 / 贴底编辑抽屉）</span>
+  </div>
+  <nav class="toc">
+    <a href="#rules">合并规则</a>
+    <a href="#now">现状·阅读视图</a>
+    <a href="#after">合并后·收件箱（桌面）</a>
+    <a href="#mobile">合并后·窄屏</a>
+    <a href="#drawer">随记编辑抽屉</a>
+    <a href="#capture">随记视图改造</a>
+    <a href="#change">改动清单</a>
+  </nav>
+
+  <section id="rules">
+    <h2>1. 合并规则 <small>一个视图、一个输入框、两种条目</small></h2>
+    <table>
+      <tr><th>问题</th><th>规则</th></tr>
+      <tr><td>输入怎么分流</td><td>统一输入条（reading-add 就地改造）：<b>识别出 http(s)/www 链接 → 添加文章</b>（现有 reading_add 管线）；<b>其余文本 → 存入随记</b>（新增 note_append）。识别结果以胶囊提示实时显示在按钮左侧，按钮文案随识别切换。</td></tr>
+      <tr><td>列表怎么混排</td><td>阅读列表就是收件箱：文章卡（现状不动）+ 随记卡（新增，同卡片骨架、紫标记替代封面位）。排序 added_at 倒序，混排自然发生；chips 增「文章 / 随记」两个维度（可与状态维度叠加）。</td></tr>
+      <tr><td>随记怎么编辑</td><td>点随记卡 → 贴底抽屉（复用窄屏贴底抽屉模式，桌面居中弹层）直编 Markdown 源码；保存即重渲染 content_html。分拣动作（转为任务）保留在随记视图。</td></tr>
+      <tr><td>随记视图去哪</td><td>「随记」不再单独占导航项：侧栏导航变「收件箱」（含计数）；随记过滤 = 收件箱 chips 的一维；<b>分拣面板保留</b>——随记视图改造为收件箱的「随记 + 分拣」双列态（见 §6）。</td></tr>
+    </table>
+  </section>
+
+  <section id="now">
+    <h2>2. 现状 · 阅读视图 <small>作为底座的基准帧（全部现状样式）</small></h2>
+    <div class="split">
+      <div>
+        <div class="app-frame app">
+          <div class="titlebar"><i></i><i></i><i></i><span>Sumery Virgo</span></div>
+          <div class="app-shell">
+            <aside class="sidebar">
+              <div class="sidebar__brand">
+                <span class="sidebar__brand-mark"></span>
+                <div><span class="sidebar__brand-kicker">SUMERY · VIRGO</span><strong>Sumery Virgo</strong></div>
+              </div>
+              <button class="project-switcher"><span class="project-switcher__icon">◆</span><span class="project-switcher__copy"><small>PROJECT</small><strong>Sumery Virgo (ToDo)</strong></span><span class="project-switcher__chevron">⌄</span></button>
+              <nav class="primary-nav">
+                <div class="primary-nav__label">视图</div>
+                <button><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6"/><circle cx="8" cy="8" r="2"/></svg><span class="primary-nav__text">目标</span></button>
+                <button class="is-active"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 3.5A1.5 1.5 0 0 1 3.5 2H13v11H3.5A1.5 1.5 0 0 0 2 14.5V3.5Z"/><path d="M2 13.5A1.5 1.5 0 0 1 3.5 12H13"/></svg><span class="primary-nav__text">阅读</span><span class="primary-nav__count">12</span></button>
+                <button><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 2.5h10v11H3z"/><path d="M5.5 5.5h5M5.5 8h5M5.5 10.5h3"/></svg><span class="primary-nav__text">随记</span><span class="primary-nav__count">4</span></button>
+                <button><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2.5" y="2.5" width="11" height="11" rx="1.5"/><path d="M2.5 8h11M8 2.5v11"/></svg><span class="primary-nav__text">总览</span></button>
+                <button><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 2l1.7 3.6L13.5 6l-2.7 2.6.7 3.8L8 10.6 4.5 12.4l.7-3.8L2.5 6l3.8-.4L8 2Z"/></svg><span class="primary-nav__text">AI</span></button>
+              </nav>
+              <div class="sidebar-status">
+                <div class="sidebar-status__item"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><ellipse cx="8" cy="4" rx="5.5" ry="2.2"/><path d="M2.5 4v8c0 1.2 2.5 2.2 5.5 2.2s5.5-1 5.5-2.2V4"/></svg><div><span class="st">阅读库 · 本机 SQLite</span><small>16 条 · 3.2 MB</small></div></div>
+                <div class="sidebar-status__item"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 8a6 6 0 0 1 10.4-4.1M14 8A6 6 0 0 1 3.6 12.1"/><path d="M12.5 2v2.2h-2.2M3.5 14v-2.2h2.2"/></svg><div><span class="st">同步 · 在线</span><small>刚刚 · todo-sync</small></div></div>
+              </div>
+            </aside>
+            <main class="app-shell__main">
+              <header class="view-heading">
+                <div class="view-heading__title">
+                  <h1>阅读</h1>
+                  <p class="view-heading__meta"><span>12 篇文章</span><span aria-hidden="true">·</span><span>5 篇读到一半</span><span aria-hidden="true">·</span><span>4 篇已读</span></p>
+                </div>
+                <p class="view-heading__note">粘贴任意链接，正文、标记与笔记只保存到本机。进入本视图时会读取一次剪贴板识别链接，可在设置里关闭。</p>
+              </header>
+              <form class="reading-add">
+                <span class="reading-add__icon"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M6.5 9.5l3-3"/><path d="M8.8 4.2l1.4-1.4a2.5 2.5 0 0 1 3.5 3.5L12.3 7.7M7.2 11.8l-1.4 1.4a2.5 2.5 0 0 1-3.5-3.5L3.7 8.3"/></svg></span>
+                <input type="text" placeholder="粘贴链接，支持微信公众号文章、X（推特）链接…">
+                <button type="button">添加</button>
+                <span class="reading-add__actions">
+                  <button type="button" class="reading-add__browser">从浏览器保存</button>
+                  <button type="button" class="reading-add__browser">批量导入</button>
+                  <span class="reading-sync"><button type="button">同步</button><span class="sync-dot"></span></span>
+                </span>
+              </form>
+              <div class="reading-toolbar">
+                <div class="due-summary reading-filters">
+                  <button class="due-summary__chip is-active">全部 <strong>12</strong></button>
+                  <button class="due-summary__chip">未读 <strong>3</strong></button>
+                  <button class="due-summary__chip">在读 <strong>5</strong></button>
+                  <button class="due-summary__chip">已读 <strong>4</strong></button>
+                </div>
+              </div>
+              <div class="reading-list">
+                <div class="reading-card">
+                  <button class="reading-card__open">
+                    <span class="reading-card__cover" style="background:linear-gradient(135deg,#d8f3ef,#eef7e8);border-style:solid;">📄</span>
+                    <span class="reading-card__body">
+                      <span class="reading-card__title">为什么 Tauri 的移动端插件要用 Kotlin 壳</span>
+                      <span class="reading-card__excerpt">WebView 复用与平台通道：Tauri 2 的移动端把 UI 全部交给系统 WebView，平台能力通过插件桥接……</span>
+                      <span class="reading-card__meta"><span>tauri.app</span><span>·</span><span>3 分钟前</span><span>·</span><span class="reading-card__notes">✎ 2 处标记</span></span>
+                    </span>
+                  </button>
+                  <span class="reading-card__side">
+                    <span class="reading-card__tools">
+                      <span class="icon-action" title="标记已读">✓</span>
+                      <span class="icon-action" title="另存为">⤓</span>
+                      <span class="icon-action" title="更多">⋯</span>
+                    </span>
+                    <span class="reading-chip reading-chip--read" style="visibility:hidden">已读</span>
+                  </span>
+                  <span class="reading-card__progress"><span style="width:34%"></span></span>
+                </div>
+                <div class="reading-card">
+                  <button class="reading-card__open">
+                    <span class="reading-card__cover">🔗</span>
+                    <span class="reading-card__body">
+                      <span class="reading-card__title">SQLite WAL 模式的并发边界</span>
+                      <span class="reading-card__excerpt">写并发与读快照：WAL 允许读写并行，但单写者仍是硬边界……</span>
+                      <span class="reading-card__meta"><span>sqlite.org</span><span>·</span><span>昨天</span></span>
+                    </span>
+                  </button>
+                  <span class="reading-card__side"><span class="reading-card__tools"><span class="icon-action">✓</span><span class="icon-action">⤓</span><span class="icon-action">⋯</span></span></span>
+                </div>
+                <div class="reading-card">
+                  <button class="reading-card__open">
+                    <span class="reading-card__cover">🔗</span>
+                    <span class="reading-card__body">
+                      <span class="reading-card__title">微信读书导出的笔记去哪儿了</span>
+                      <span class="reading-card__excerpt">本文梳理了三种导出路径的得失……</span>
+                      <span class="reading-card__meta"><span>mp.weixin.qq.com</span><span>·</span><span>前天</span></span>
+                    </span>
+                  </button>
+                  <span class="reading-card__side"><span class="reading-card__tools"><span class="icon-action">✓</span><span class="icon-action">⤓</span><span class="icon-action">⋯</span></span></span>
+                </div>
+              </div>
+            </main>
+          </div>
+        </div>
+        <p class="cap">现状基准帧：阅读视图（样式与文案取自 ReadingView.tsx / Sidebar.tsx / style.css）</p>
+      </div>
+      <div class="panel-note">
+        <b>基准帧里已经有的东西（合并方案全部复用，零改动）</b>
+        <ul>
+          <li>reading-add 输入条：粘贴 URL → 添加（管线、错误与状态文案、焦点环原样）。</li>
+          <li>同步按钮 + 状态点（SyncControl）已经在 actions 行里。</li>
+          <li>due-summary 过滤 chips（全部/未读/在读/已读）。</li>
+          <li>reading-card 卡片骨架（封面/标题/摘要/mono 元信息/悬浮工具/3px 进度条）。</li>
+          <li>侧栏品牌区、项目切换器、视图导航计数徽章、底部状态区。</li>
+        </ul>
+        <p style="margin-top:8px">合并要做的事被压缩成：<b>输入条加识别、列表加一种卡、chips 加一维、侧栏改一个词</b>。</p>
+      </div>
+    </div>
+  </section>
+
+  <section id="after">
+    <h2>3. 合并后 · 收件箱（桌面） <small>同一底座，四处改动</small></h2>
+    <div class="split">
+      <div>
+        <div class="app-frame app">
+          <div class="titlebar"><i></i><i></i><i></i><span>Sumery Virgo</span></div>
+          <div class="app-shell">
+            <aside class="sidebar">
+              <div class="sidebar__brand">
+                <span class="sidebar__brand-mark"></span>
+                <div><span class="sidebar__brand-kicker">SUMERY · VIRGO</span><strong>Sumery Virgo</strong></div>
+              </div>
+              <button class="project-switcher"><span class="project-switcher__icon">◆</span><span class="project-switcher__copy"><small>PROJECT</small><strong>Sumery Virgo (ToDo)</strong></span><span class="project-switcher__chevron">⌄</span></button>
+              <nav class="primary-nav">
+                <div class="primary-nav__label">视图</div>
+                <button><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6"/><circle cx="8" cy="8" r="2"/></svg><span class="primary-nav__text">目标</span></button>
+                <button class="is-active"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 4.5A1.5 1.5 0 0 1 3.5 3h3.6c.6 0 1.2.3 1.6.8l.6.8H13a1.5 1.5 0 0 1 1.5 1.5v6.4A1.5 1.5 0 0 1 13 14H3.5A1.5 1.5 0 0 1 2 12.5V4.5Z"/></svg><span class="primary-nav__text">收件箱</span><span class="primary-nav__count">16</span></button>
+                <button><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2.5" y="2.5" width="11" height="11" rx="1.5"/><path d="M2.5 8h11M8 2.5v11"/></svg><span class="primary-nav__text">总览</span></button>
+                <button><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 2l1.7 3.6L13.5 6l-2.7 2.6.7 3.8L8 10.6 4.5 12.4l.7-3.8L2.5 6l3.8-.4L8 2Z"/></svg><span class="primary-nav__text">AI</span></button>
+              </nav>
+              <div class="sidebar-status">
+                <div class="sidebar-status__item"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><ellipse cx="8" cy="4" rx="5.5" ry="2.2"/><path d="M2.5 4v8c0 1.2 2.5 2.2 5.5 2.2s5.5-1 5.5-2.2V4"/></svg><div><span class="st">收件箱 · 本机 SQLite</span><small>16 条 · 3.2 MB</small></div></div>
+                <div class="sidebar-status__item"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 8a6 6 0 0 1 10.4-4.1M14 8A6 6 0 0 1 3.6 12.1"/><path d="M12.5 2v2.2h-2.2M3.5 14v-2.2h2.2"/></svg><div><span class="st">同步 · 在线</span><small>刚刚 · todo-sync</small></div></div>
+              </div>
+            </aside>
+            <main class="app-shell__main">
+              <header class="iv-head" style="padding: 26px 28px 16px;">
+                <h1>收件箱</h1>
+                <span class="iv-stats"><span><b>12</b> 文章</span><span class="sep">·</span><span><b>4</b> 随记</span><span class="sep">·</span><span><b>7</b> 未读</span></span>
+                <span class="iv-sync"><i></i>已同步 · 刚刚</span>
+              </header>
+              <form class="pa-card" id="composer" style="margin: 4px 28px 16px;">
+                <span class="lead" id="composerLead"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M3 4h10M3 7h10M3 10h6"/><path d="M11 12.5l1.8 1.8 3-3.2"/></svg></span>
+                <input id="composerInput" type="text" placeholder="粘贴链接存文章，打字记随记" spellcheck="false">
+                <button type="button" class="solid-action" id="composerGo">存入随记</button>
+                <div class="pa2-foot">
+                  <span class="iv-hint" id="composerHint" style="visibility:hidden"></span>
+                  <span class="spacer"></span>
+                  <button type="button" class="tool" data-tip="从浏览器保存当前页——抓取浏览器当前标签页的正文，解析后存为文章（桌面端功能）。"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><circle cx="8" cy="8" r="6"/><path d="M2 8h12M8 2c-3.2 3.5-3.2 8.5 0 12M8 2c3.2 3.5 3.2 8.5 0 12"/></svg>浏览器保存</button>
+                  <button type="button" class="tool" data-tip="打开本地文件导入——支持 HTML / Markdown / 纯文本；在文件管理器里「打开方式」选 Virgo 同效，都落进收件箱。"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M2 4.5A1.5 1.5 0 0 1 3.5 3h3.6c.6 0 1.2.3 1.6.8l.6.8H13a1.5 1.5 0 0 1 1.5 1.5v6.4A1.5 1.5 0 0 1 13 14H3.5A1.5 1.5 0 0 1 2 12.5V4.5Z"/></svg>打开文件</button>
+                  <button type="button" class="tool" data-tip="批量导入——粘贴多行链接一次存为多篇，自动忽略链接之外的文字，支持微信公众号与 X（推特）链接。"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M8 2v8M8 10l-3-3M8 10l3-3"/><path d="M2.5 12.5h11"/></svg>批量导入</button>
+                </div>
+              </form>
+              <div class="reading-toolbar">
+                <div class="due-summary reading-filters" id="inboxChips">
+                  <button class="due-summary__chip is-active">全部 <strong>16</strong></button>
+                  <button class="due-summary__chip" data-kind="article">文章 <strong>12</strong></button>
+                  <button class="due-summary__chip" data-kind="note">随记 <strong>4</strong></button>
+                  <button class="due-summary__chip" data-state="unread">未读 <strong>7</strong></button>
+                  <button class="due-summary__chip" data-state="reading">在读 <strong>5</strong></button>
+                  <button class="due-summary__chip" data-state="read">已读 <strong>4</strong></button>
+                </div>
+              </div>
+              <div class="reading-list" id="inboxList">
+                <div class="reading-card reading-card--note" data-kind="note">
+                  <button class="reading-card__open">
+                    <span class="note-pad">MD</span>
+                    <span class="reading-card__body">
+                      <span class="reading-card__title"><span class="inbox-kind inbox-kind--note" style="margin-right:6px">随记</span>地铁上想到的发布节奏</span>
+                      <span class="reading-card__excerpt">- [ ] 发布节奏改成两周一版　- [x] 把「另存为」默认目录切到 Downloads　想法：随记多了以后按周自动归档？</span>
+                      <span class="reading-card__meta"><span>note://n-81kf</span><span>·</span><span>2 分钟前</span><span>·</span><span style="color:var(--violet-text,#5b4fc4)">已编辑</span></span>
+                    </span>
+                  </button>
+                  <span class="reading-card__side">
+                    <span class="reading-card__tools">
+                      <span class="icon-action" title="转为任务">☑</span>
+                      <span class="icon-action" title="删除" style="color:var(--danger)">✕</span>
+                    </span>
+                  </span>
+                </div>
+                <div class="reading-card" data-kind="article">
+                  <button class="reading-card__open">
+                    <span class="reading-card__cover" style="background:linear-gradient(135deg,#d8f3ef,#eef7e8);border-style:solid;">📄</span>
+                    <span class="reading-card__body">
+                      <span class="reading-card__title">为什么 Tauri 的移动端插件要用 Kotlin 壳</span>
+                      <span class="reading-card__excerpt">WebView 复用与平台通道：Tauri 2 的移动端把 UI 全部交给系统 WebView……</span>
+                      <span class="reading-card__meta"><span>tauri.app</span><span>·</span><span>3 分钟前</span><span>·</span><span class="reading-card__notes">✎ 2 处标记</span></span>
+                    </span>
+                  </button>
+                  <span class="reading-card__side"><span class="reading-card__tools"><span class="icon-action">✓</span><span class="icon-action">⤓</span><span class="icon-action">⋯</span></span></span>
+                  <span class="reading-card__progress"><span style="width:34%"></span></span>
+                </div>
+                <div class="reading-card" data-kind="article">
+                  <button class="reading-card__open">
+                    <span class="reading-card__cover" style="background:var(--accent-wash);border-style:solid;">📥</span>
+                    <span class="reading-card__body">
+                      <span class="reading-card__title"><span class="inbox-kind inbox-kind--file" style="margin-right:6px">文件</span>读书笔记-第3周.md</span>
+                      <span class="reading-card__excerpt">本周读完《深入 Android》第 4–6 章，要点：Choreographer 的帧调度与 InputEvent 的派发链……</span>
+                      <span class="reading-card__meta"><span class="inbox-kind--file" style="border-radius:4px;padding:0 4px">local-file://9f2c…e1</span><span>·</span><span>今天 08:12</span><span>·</span><span>来自文件管理器</span></span>
+                    </span>
+                  </button>
+                  <span class="reading-card__side"><span class="reading-card__tools"><span class="icon-action">✓</span><span class="icon-action">⤓</span><span class="icon-action">⋯</span></span></span>
+                </div>
+                <div class="reading-card reading-card--note" data-kind="note">
+                  <button class="reading-card__open">
+                    <span class="note-pad">MD</span>
+                    <span class="reading-card__body">
+                      <span class="reading-card__title"><span class="inbox-kind inbox-kind--note" style="margin-right:6px">随记</span>和Lens聊到的选题</span>
+                      <span class="reading-card__excerpt">「先记原话，稍后再分拣」——随记的价值是不打断手头的事……</span>
+                      <span class="reading-card__meta"><span>note://n-3d7a</span><span>·</span><span>今天 07:30</span></span>
+                    </span>
+                  </button>
+                  <span class="reading-card__side"><span class="reading-card__tools"><span class="icon-action">☑</span><span class="icon-action">✕</span></span></span>
+                </div>
+                <div class="reading-card" data-kind="article">
+                  <button class="reading-card__open">
+                    <span class="reading-card__cover">🔗</span>
+                    <span class="reading-card__body">
+                      <span class="reading-card__title">SQLite WAL 模式的并发边界</span>
+                      <span class="reading-card__excerpt">写并发与读快照：WAL 允许读写并行，但单写者仍是硬边界……</span>
+                      <span class="reading-card__meta"><span>sqlite.org</span><span>·</span><span>昨天</span></span>
+                    </span>
+                  </button>
+                  <span class="reading-card__side"><span class="reading-card__tools"><span class="icon-action">✓</span><span class="icon-action">⤓</span><span class="icon-action">⋯</span></span></span>
+                </div>
+              </div>
+            </main>
+          </div>
+        </div>
+        <p class="cap">合并后：点随记卡可打开编辑抽屉（§5）；chips 与输入条下方均可交互试玩</p>
+      </div>
+      <div class="panel-note">
+        <b>四处改动（对照基准帧）</b>
+        <ul>
+          <li><span class="mark mark--mod">M</span> 导航「阅读」→「收件箱」，计数 = 文章 + 随记；「随记」导航项移除。</li>
+          <li><span class="mark mark--mod">M</span> reading-add（A′ 定稿）：头部单行（标题 + 统计 + 同步状态芯片）；输入条底部工具行「浏览器保存 / 打开文件 / 批量导入」短标签 + hover/长按完整描述气泡；识别 = 左缘色条 + 图标变色 + hint + 按钮文案，逻辑复用 <code>normalizeInputUrl</code>。</li>
+          <li><span class="mark mark--new">N</span> chips 加「文章 / 随记」维度，与状态维度叠加过滤（演示：点击试）。</li>
+          <li><span class="mark mark--new">N</span> 随记卡（note-pad 紫标记）与文件卡（📥 + local-file:// 哈希 + 来源徽章）混排进 reading-list。</li>
+          <li>工具行按类型换：文章 = 已读/另存为/更多（现状），随记 = 转为任务/删除（新增）。</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <section id="mobile">
+    <h2>4. 合并后 · 窄屏 <small>真实断点：侧栏消失，底部 Tab（mobile-bottom-nav-spec）+ 贴底 composer</small></h2>
+    <div class="split">
+      <div>
+        <div class="phone app"><div class="screen">
+          <div class="m-status"><span>9:41</span><span>▲ 5G · 87%</span></div>
+          <div class="m-heading">
+            <div><h1>收件箱</h1><div class="m-meta">12 文章 · 4 随记 · 7 未读</div></div>
+            <button class="text-action" style="min-height:30px">⟳ 同步</button>
+          </div>
+          <div class="m-body">
+            <div class="reading-card reading-card--note" data-mkind="note">
+              <button class="reading-card__open">
+                <span class="note-pad">MD</span>
+                <span class="reading-card__body">
+                  <span class="reading-card__title"><span class="inbox-kind inbox-kind--note" style="margin-right:6px">随记</span>地铁上想到的发布节奏</span>
+                  <span class="reading-card__meta"><span>2 分钟前</span><span>·</span><span style="color:var(--violet-text,#5b4fc4)">已编辑</span></span>
+                </span>
+              </button>
+            </div>
+            <div class="reading-card" data-mkind="article">
+              <button class="reading-card__open">
+                <span class="reading-card__cover" style="background:linear-gradient(135deg,#d8f3ef,#eef7e8);border-style:solid;">📄</span>
+                <span class="reading-card__body">
+                  <span class="reading-card__title">为什么 Tauri 的移动端插件要用 Kotlin 壳</span>
+                  <span class="reading-card__meta"><span>tauri.app</span><span>·</span><span>3 分钟前</span></span>
+                </span>
+              </button>
+              <span class="reading-card__progress"><span style="width:34%"></span></span>
+            </div>
+            <div class="reading-card" data-mkind="article">
+              <button class="reading-card__open">
+                <span class="reading-card__cover" style="background:var(--accent-wash);border-style:solid;">📥</span>
+                <span class="reading-card__body">
+                  <span class="reading-card__title"><span class="inbox-kind inbox-kind--file" style="margin-right:6px">文件</span>读书笔记-第3周.md</span>
+                  <span class="reading-card__meta"><span>今天 08:12</span><span>·</span><span>来自文件管理器</span></span>
+                </span>
+              </button>
+            </div>
+            <div class="reading-card reading-card--note" data-mkind="note">
+              <button class="reading-card__open">
+                <span class="note-pad">MD</span>
+                <span class="reading-card__body">
+                  <span class="reading-card__title"><span class="inbox-kind inbox-kind--note" style="margin-right:6px">随记</span>和Lens聊到的选题</span>
+                  <span class="reading-card__meta"><span>今天 07:30</span></span>
+                </span>
+              </button>
+            </div>
+          </div>
+          <form class="reading-add m-composer" id="mComposer">
+            <span class="reading-add__icon"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 3.5h10M3 6.5h10M3 9.5h6"/><path d="M11.5 12.5l1.5 1.5 3-3" stroke-linecap="round"/></svg></span>
+            <input id="mComposerInput" type="text" placeholder="粘贴链接存文章，打字记随记" spellcheck="false">
+            <button type="button" id="mComposerGo">存入随记</button>
+          </form>
+          <div class="m-tabs">
+            <button><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6"/><circle cx="8" cy="8" r="2"/></svg>目标</button>
+            <button class="is-active"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 4.5A1.5 1.5 0 0 1 3.5 3h3.6c.6 0 1.2.3 1.6.8l.6.8H13a1.5 1.5 0 0 1 1.5 1.5v6.4A1.5 1.5 0 0 1 13 14H3.5A1.5 1.5 0 0 1 2 12.5V4.5Z"/></svg>收件箱</button>
+            <button><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2.5" y="2.5" width="11" height="11" rx="1.5"/><path d="M2.5 8h11M8 2.5v11"/></svg>总览</button>
+            <button class="m-my"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6"/><circle cx="8" cy="6.4" r="1.9"/><path d="M4.6 12.4c.7-1.5 2-2.3 3.4-2.3s2.7.8 3.4 2.3"/></svg>我的</button>
+          </div>
+          <div class="m-homebar"></div>
+        </div></div>
+        <p class="cap">窄屏：composer 贴底吸在 Tab 栏上方，键盘弹起时列表自动让位（不遮输入）</p>
+      </div>
+      <div class="panel-note">
+        <b>窄屏交互规则</b>
+        <ul>
+          <li>底部 Tab 按 mobile-bottom-nav-spec 的 4+1 结构合并后为：<b>目标 / 收件箱 / 总览 / 我的（固定）</b>——「随记」项由收件箱吞并，腾出的槽位还给自定义。</li>
+          <li>composer 是唯一常驻输入面：<b>粘贴 → 添加文章；打字 → 存入随记</b>（桌面同一套识别逻辑）。窄屏识别只保留按钮文案变化；桌面工具行收进「⋯」菜单，菜单项含完整描述。</li>
+          <li>卡片窄屏隐藏悬浮工具行（现状行为）；随记卡点击 → 贴底编辑抽屉（§5），文章卡点击 → 阅读页（现状）。</li>
+          <li>文件关联打开 MD/纯文本：导入后直接落在这个列表并高亮新卡，MD 弹「加入阅读 / 导入为 TODO / 仅预览」三选（见 mobile-inbox-design.html §6.4）。</li>
+          <li>同步入口 = 标题行「⟳ 同步」+ 常驻通知 action + 小组件（外链 virgo://add 直达 composer）。</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <section id="drawer">
+    <h2>5. 随记编辑抽屉 <small>贴底抽屉模式（沿用 zj3fjt「标记与笔记」交互），Markdown 源码直编</small></h2>
+    <div class="split">
+      <div>
+        <div class="phone app"><div class="screen">
+          <div class="m-status" style="opacity:.4"><span>9:41</span><span>▲ 5G · 87%</span></div>
+          <div class="m-heading" style="opacity:.4"><div><h1>收件箱</h1><div class="m-meta">12 文章 · 4 随记</div></div></div>
+          <div class="m-body" style="opacity:.4">
+            <div class="reading-card reading-card--note"><button class="reading-card__open"><span class="note-pad">MD</span><span class="reading-card__body"><span class="reading-card__title">地铁上想到的发布节奏</span><span class="reading-card__meta"><span>2 分钟前</span></span></span></button></div>
+          </div>
+          <div class="m-sheet-backdrop"></div>
+          <div class="m-sheet">
+            <div class="grab"></div>
+            <div class="dhead"><span class="inbox-kind inbox-kind--note">随记</span><span class="t">编辑随记</span><time>最后编辑 2 分钟前</time></div>
+            <textarea spellcheck="false">## 发布节奏
+
+- [ ] 发布节奏改成两周一版
+- [x] 把「另存为」默认目录切到 Downloads
+
+想法：随记多了以后按周自动归档？</textarea>
+            <div class="mdtools"><button><b>B</b></button><button><i>I</i></button><button>• 列表</button><button>☑ 任务</button><button>— 线</button></div>
+            <div class="dfoot">
+              <button class="text-action icon-action--danger" style="color:var(--danger)">删除</button>
+              <span class="grow"></span>
+              <button class="text-action">转为任务</button>
+              <button class="solid-action">保存</button>
+            </div>
+          </div>
+        </div></div>
+        <p class="cap">贴底抽屉：拖把手下滑关闭；保存即重渲染、全端可见</p>
+      </div>
+      <div class="panel-note">
+        <b>抽屉规则</b>
+        <ul>
+          <li><b>事实源是 markdown 文本域</b>：不做富文本编辑器（移动 WebView 不可靠），工具条只在光标处插语法片段（B / I / 列表 / 任务框 / 分隔线）。</li>
+          <li><b>标题从正文派生</b>（首个 <code>#</code> 或首行截断），不单独设标题框——保持随记「轻」的性质。</li>
+          <li><b>输入停顿 2s 存本地草稿</b>防 WebView 闪退丢字；显式「保存」才 bump updated_at 上行同步。</li>
+          <li><b>「转为任务」</b>：正文 <code>- [ ]</code> 逐条生成 task（走现有分拣管线），随记标 triaged 不删——原话留档。</li>
+          <li>桌面端同组件居中弹层（max-width 620px，同 project-picker 尺寸语言），交互一致。</li>
+          <li>冲突保护：保存时若 updated_at 已变 → 提示「他端刚编辑过」，展示双栏 diff 选择保留哪版（LWW 兜底见同步设计稿 §9.3）。</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <section id="capture">
+    <h2>6. 随记视图改造 <small>capture-ledger 台账保留，数据源换成收件箱</small></h2>
+    <div class="split">
+      <div>
+        <div class="app-frame app">
+          <div class="titlebar"><i></i><i></i><i></i><span>Sumery Virgo — 随记（改造后）</span></div>
+          <div class="app-shell" style="grid-template-columns: minmax(0,1fr)">
+            <main class="app-shell__main" style="min-height:520px">
+              <header class="view-heading">
+                <div class="view-heading__title">
+                  <h1>随记</h1>
+                  <p class="view-heading__meta"><span>4 条随记</span><span aria-hidden="true">·</span><span>收件箱 · 随记视图</span></p>
+                </div>
+                <p class="view-heading__note">这里是收件箱的随记维 + 分拣面板： Capture 是个人原始文本；分拣后才成为当前项目的工作。</p>
+              </header>
+              <div class="capture-ledger">
+                <div class="capture-ledger__rule"><span>CAPTURE LEDGER</span><span>TRIAGE → 5 COLUMNS</span></div>
+                <div class="capture-list">
+                  <div class="capture-item">
+                    <span class="capture-item__meta"><span>14:22</span><code>note://n-81kf</code><span class="inbox-kind inbox-kind--note" style="min-height:22px">已编辑</span></span>
+                    <span class="capture-item__text">- [ ] 发布节奏改成两周一版<br>- [ ] 先把下载页的 a/b 文案定稿</span>
+                    <span class="capture-item__triage">
+                      <button class="text-action text-action--primary">转为任务 →</button>
+                      <button class="text-action">稍后</button>
+                    </span>
+                    <button class="icon-action capture-item__delete icon-action--danger">✕</button>
+                  </div>
+                  <div class="capture-item">
+                    <span class="capture-item__meta"><span>昨天</span><code>note://n-3d7a</code></span>
+                    <span class="capture-item__text">「先记原话，稍后再分拣」——随记的价值是不打断手头的事。</span>
+                    <span class="capture-item__triage">
+                      <button class="text-action text-action--primary">转为任务 →</button>
+                      <button class="text-action">稍后</button>
+                    </span>
+                    <button class="icon-action capture-item__delete icon-action--danger">✕</button>
+                  </div>
+                </div>
+              </div>
+            </main>
+          </div>
+        </div>
+        <p class="cap">随记视图 = 收件箱的随记过滤 + 分拣面板（从入口点击「随记 → 分拣」进入）</p>
+      </div>
+      <div class="panel-note">
+        <b>改造点</b>
+        <ul>
+          <li><span class="mark mark--mod">M</span> 数据源：<code>capture_list</code>（inbox.md 文件）→ <code>reading_list(kind='note')</code>（SQLite，随同步）。</li>
+          <li><span class="mark mark--keep">0</span> 分拣管线原样：<b>转为任务 → 列选择 → 写入受管 TODO.md</b>，完成语义不变；分拣后随记标 triaged 留档。</li>
+          <li><span class="mark mark--mod">M</span> 台账右栏（TRIAGE → COLUMNS）从「当前项目列」读到的是同一数据，只是条目来源换了。</li>
+          <li><span class="mark mark--new">N</span> 移动端窄屏：分拣列折叠进抽屉底部（capture-item__triage 变一行两钮），delete 保持 icon。</li>
+          <li><span class="mark mark--mod">M</span> inbox.md 一次性迁移（<code>todo capture migrate</code> dry-run 预览后执行），原文件改名留档；<code>todo</code> CLI 不依赖它（已核实）。</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <section id="change">
+    <h2>7. 改动清单 <small>落到真实 class / 文件</small></h2>
+    <table>
+      <tr><th>真实组件 / 文件</th><th>改动</th><th>类型</th></tr>
+      <tr><td><code>Sidebar.tsx</code> navItems</td><td>「阅读」→「收件箱」（icon book→inbox），「随记」项移除；计数合并</td><td>改造</td></tr>
+      <tr><td><code>ReadingView.tsx</code> view-heading</td><td>标题/统计文案含随记数；副注更新</td><td>改造</td></tr>
+      <tr><td><code>ReadingView.tsx</code> reading-add / view-heading</td><td>A′ 定稿：头部单行化（iv-head + 同步状态芯片）；识别 = 左缘色条 + 图标变色 + hint + 按钮文案；底部工具行短标签 + data-tip 完整描述（PC hover / 移动长按）</td><td>改造 + 新增</td></tr>
+      <tr><td><code>ReadingView.tsx</code> reading-filters</td><td>chips 加「文章 / 随记」维（filter 结构扩 kind 维度）</td><td>改造</td></tr>
+      <tr><td>reading-list（新 InboxNoteCard）</td><td>随记卡复用 reading-card 骨架 + note-pad 标记；文件卡带来源徽章；工具行按 kind 切换</td><td>新增</td></tr>
+      <tr><td>贴底抽屉（新 InboxNoteDrawer）</td><td>沿用 zj3fjt 贴底抽屉模式；textarea + 工具条 + 保存/转为任务/删除</td><td>新增</td></tr>
+      <tr><td><code>CaptureView.tsx</code></td><td>数据源切 reading_list(kind=note)；分拣管线、台账样式不动</td><td>改造</td></tr>
+      <tr><td><code>reading.ts</code> / <code>reading.rs</code> / <code>todo-core reading.rs</code></td><td>articles.kind + updated_at 字段、note_append/note_update/note_delete 命令、伪 URL 去重</td><td>新增</td></tr>
+      <tr><td>Reader 正文页 / 标注 / 另存为 / 同步面板</td><td>不动</td><td>保留</td></tr>
+    </table>
+    <p>数据模型、去重、同步与常驻菜单等平台层设计见姊妹稿 <a href="./mobile-inbox-design.html" style="color:var(--accent)">mobile-inbox-design.html</a>；输入条面板的规范基线与 4 版样式对比见 <a href="./inbox-composer-styles.html" style="color:var(--accent)">inbox-composer-styles.html</a>（推荐 A 单行收敛版）；本稿只管界面。配套任务 TODO.md <code>a2cmrf</code>（M1 统一收件箱）。</p>
+  </section>
+
+  <footer>Sumery Virgo · 阅读×随记合并真实界面底座设计稿 v1 · 2026-11-20 · 样式与文案取自 apps/desktop/src/style.css 与真实组件</footer>
+</div>
+
+<script>
+  // 输入条识别演示（A′ 定稿：左缘色条 + 图标变色 + hint + 按钮文案，与实现将复用的 normalizeInputUrl 一致）
+  function wireComposer(cfg) {
+    var input = document.getElementById(cfg.input);
+    var card = document.getElementById(cfg.card);
+    var go = document.getElementById(cfg.go);
+    var hint = document.getElementById(cfg.hint);
+    var lead = card ? card.querySelector('.lead') : null;
+    if (!input || !go || !card) return;
+    var ICON_NOTE = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" style="width:17px;height:17px"><path d="M3 4h10M3 7h10M3 10h6"/><path d="M11 12.5l1.8 1.8 3-3.2"/></svg>';
+    var ICON_LINK = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" style="width:17px;height:17px"><path d="M6.5 9.5l3-3"/><path d="M8.8 4.2l1.4-1.4a2.5 2.5 0 0 1 3.5 3.5L12.3 7.7M7.2 11.8l-1.4 1.4a2.5 2.5 0 0 1-3.5-3.5L3.7 8.3"/></svg>';
+    function refresh() {
+      var v = input.value.trim();
+      var isUrl = /^https?:\/\//i.test(v) || /^www\./i.test(v);
+      var active = v !== '';
+      card.classList.toggle('is-link', isUrl && active);
+      card.classList.toggle('is-note', !isUrl && active);
+      if (lead) lead.innerHTML = isUrl && active ? ICON_LINK : ICON_NOTE;
+      go.textContent = isUrl ? '添加文章' : '存入随记';
+      if (hint) {
+        hint.className = 'iv-hint' + (isUrl && active ? ' is-link' : !isUrl && active ? ' is-note' : '');
+        hint.textContent = isUrl && active ? '🔗 检测到链接 → 存为文章，正文自动抓取解析'
+          : !isUrl && active ? '✏️ 直接打字 → 存入随记'
+          : '';
+        hint.style.visibility = active ? 'visible' : 'hidden';
+      }
+    }
+    input.addEventListener('input', refresh);
+    refresh();
+  }
+  wireComposer({ input: 'composerInput', card: 'composer', go: 'composerGo', hint: 'composerHint' });
+  wireComposer({ input: 'mComposerInput', card: 'mComposer', go: 'mComposerGo', hint: null });
+
+  // chips 维度过滤演示：kind 维与状态维互斥演示（点击切换 is-active）
+  (function () {
+    var chips = document.querySelectorAll('#inboxChips .due-summary__chip');
+    var cards = document.querySelectorAll('#inboxList .reading-card');
+    var active = { kind: null, state: null };
+    chips.forEach(function (chip) {
+      chip.addEventListener('click', function () {
+        var kind = chip.getAttribute('data-kind');
+        var state = chip.getAttribute('data-state');
+        if (kind) {
+          active.kind = active.kind === kind ? null : kind;
+          chips.forEach(function (c) { if (c.getAttribute('data-kind')) c.classList.remove('is-active'); });
+        } else if (state) {
+          active.state = active.state === state ? null : state;
+          chips.forEach(function (c) { if (c.getAttribute('data-state')) c.classList.remove('is-active'); });
+        } else {
+          active = { kind: null, state: null };
+          chips.forEach(function (c) { c.classList.remove('is-active'); });
+        }
+        chip.classList.add('is-active');
+        cards.forEach(function (card) {
+          var okKind = !active.kind || card.getAttribute('data-kind') === active.kind;
+          var okState = !active.state || (active.state === 'read' ? card.classList.contains('reading-card--read') : true);
+          card.style.display = okKind && okState ? '' : 'none';
+        });
+      });
+    });
+  })();
+</script>
+</body>
+</html>

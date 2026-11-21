@@ -34,11 +34,15 @@ export interface BatchError {
  * happen on leave / blur, not on every scroll, so the list only ever shows a
  * position the reader actually settled on.
  */
+/** 收件箱的类型维（A′）：all=文章+随记混排，可与阅读状态维叠加。 */
+export type InboxKindFilter = 'all' | 'article' | 'note';
+
 export function useReading() {
   const [articles, setArticles] = React.useState<ReadingArticle[]>([]);
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState<string | null>(null);
   const [filter, setFilter] = React.useState<ReadingFilter>('all');
+  const [kindFilter, setKindFilter] = React.useState<InboxKindFilter>('all');
   const [adding, setAdding] = React.useState(false);
   const [addError, setAddError] = React.useState<string | null>(null);
   const [addNotice, setAddNotice] = React.useState<string | null>(null);
@@ -181,6 +185,71 @@ export function useReading() {
     }
   }, []);
 
+  /** 存入随记（统一收件箱 A′）：识别为非链接的文本走这里，Markdown 直存。 */
+  const noteAppend = React.useCallback(async (markdown: string): Promise<boolean> => {
+    if (!markdown.trim()) {
+      setAddError('随记内容为空');
+      return false;
+    }
+    setAdding(true);
+    setAddError(null);
+    setAddNotice(null);
+    try {
+      const detail = await reading.noteAppend(markdown);
+      setArticles((current) => {
+        const { content_html: _h, markdown: _m, image_dir: _d, annotations: _a, ...summary } = detail;
+        return [summary, ...current.filter((article) => article.id !== summary.id)];
+      });
+      return true;
+    } catch (caught) {
+      setAddError(caught instanceof Error ? caught.message : String(caught));
+      return false;
+    } finally {
+      setAdding(false);
+    }
+  }, []);
+
+  /** 编辑随记：整篇重渲染并刷新 updated_at。 */
+  const noteUpdate = React.useCallback(async (id: string, markdown: string): Promise<boolean> => {
+    mark(id, true);
+    try {
+      const detail = await reading.noteUpdate(id, markdown);
+      const { content_html: _h, markdown: _m, image_dir: _d, annotations: _a, ...summary } = detail;
+      setArticles((current) => current.map((article) => (article.id === summary.id ? summary : article)));
+      return true;
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : String(caught));
+      return false;
+    } finally {
+      mark(id, false);
+    }
+  }, [mark]);
+
+  /** 打开本地文件导入：html/md → 文章，txt → 随记；去重回跳已有条目。 */
+  const importFile = React.useCallback(async (path: string): Promise<boolean> => {
+    setAdding(true);
+    setAddError(null);
+    setAddNotice(null);
+    try {
+      const detail = await reading.importFile(path);
+      setArticles((current) => {
+        const { content_html: _h, markdown: _m, image_dir: _d, annotations: _a, ...summary } = detail;
+        return [summary, ...current.filter((article) => article.id !== summary.id)];
+      });
+      return true;
+    } catch (caught) {
+      setAddError(caught instanceof Error ? caught.message : String(caught));
+      return false;
+    } finally {
+      setAdding(false);
+    }
+  }, []);
+
+  /** 随记编辑抽屉取正文：不进阅读页（随记没有阅读页）。 */
+  const getDetail = React.useCallback(async (id: string): Promise<ReadingArticleDetail> => {
+    return reading.get(id);
+  }, []);
+
   /** 解析失败后重试：行立即回到「解析中」，结果由 reading://parsed 事件带回。 */
   const retryParse = React.useCallback(
     async (id: string) => {
@@ -287,7 +356,11 @@ export function useReading() {
     }
   }, []);
 
-  const visible = React.useMemo(() => filterArticles(articles, filter), [articles, filter]);
+  const visible = React.useMemo(() => {
+    const byState = filterArticles(articles, filter);
+    if (kindFilter === 'all') return byState;
+    return byState.filter((article) => article.kind === kindFilter);
+  }, [articles, filter, kindFilter]);
   const badge = React.useMemo(() => unfinishedCount(articles), [articles]);
 
   return {
@@ -298,6 +371,8 @@ export function useReading() {
     error,
     filter,
     setFilter,
+    kindFilter,
+    setKindFilter,
     adding,
     addError,
     addNotice,
@@ -310,6 +385,10 @@ export function useReading() {
     opening,
     refresh,
     add,
+    noteAppend,
+    noteUpdate,
+    importFile,
+    getDetail,
     importBrowserPage,
     addBatch,
     retryParse,

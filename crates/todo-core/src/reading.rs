@@ -18,6 +18,7 @@ use std::{
     time::Duration,
 };
 
+use pulldown_cmark::{html, Options, Parser};
 use regex::Regex;
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
@@ -69,10 +70,21 @@ pub struct ReadingArticle {
     /// Why the last parse failed; empty when it succeeded.
     #[serde(default)]
     pub parse_error: String,
+    /// `article`（网页或本地文件导入）或 `note`（随记）。随记以 `note://<id>`
+    /// 伪 URL 入库，与文章共用同一张表和同一套列表/详情管线。
+    #[serde(default = "default_kind")]
+    pub kind: String,
+    /// 随记最后一次编辑的时间（epoch ms）；文章不写它，同步也不覆盖它。
+    #[serde(default)]
+    pub updated_at: Option<i64>,
 }
 
 fn default_parse_status() -> String {
     "ok".to_string()
+}
+
+fn default_kind() -> String {
+    "article".to_string()
 }
 
 /// The article with its body, as the reader needs it.
@@ -258,7 +270,9 @@ impl ReadingStore {
                last_opened_at INTEGER,
                progress_percent INTEGER NOT NULL DEFAULT 0,
                progress_anchor TEXT,
-               read_at INTEGER
+               read_at INTEGER,
+               kind TEXT NOT NULL DEFAULT 'article',
+               updated_at INTEGER
              );
              CREATE UNIQUE INDEX IF NOT EXISTS articles_url ON articles(url);
              CREATE TABLE IF NOT EXISTS annotations (
@@ -301,6 +315,10 @@ impl ReadingStore {
                 ("parse_attempts", "INTEGER NOT NULL DEFAULT 0"),
                 // 到期时间（epoch ms）；NULL 表示没有安排自动重试。
                 ("parse_retry_at", "INTEGER"),
+                // 统一收件箱（A′）：kind 区分文章与随记；updated_at 供随记编辑
+                // 冲突裁决（LWW）。老库经 ALTER 补列，存量行默认为文章。
+                ("kind", "TEXT NOT NULL DEFAULT 'article'"),
+                ("updated_at", "INTEGER"),
             ],
         )?;
         connection.execute_batch("PRAGMA foreign_keys = ON;")?;
@@ -425,7 +443,7 @@ impl ReadingStore {
             "SELECT a.id, a.url, a.title, a.site_name, a.excerpt, a.byline, a.cover_file, a.word_count,
                     a.reading_minutes, a.added_at, a.last_opened_at, a.progress_percent, a.progress_anchor,
                     a.read_at, (SELECT COUNT(*) FROM annotations n WHERE n.article_id = a.id),
-                    a.parse_status, a.parse_error
+                    a.parse_status, a.parse_error, a.kind, a.updated_at
              FROM articles a
              ORDER BY a.added_at DESC",
         )?;
@@ -441,7 +459,7 @@ impl ReadingStore {
                 "SELECT a.id, a.url, a.title, a.site_name, a.excerpt, a.byline, a.cover_file, a.word_count,
                         a.reading_minutes, a.added_at, a.last_opened_at, a.progress_percent, a.progress_anchor,
                         a.read_at, (SELECT COUNT(*) FROM annotations n WHERE n.article_id = a.id),
-                        a.parse_status, a.parse_error
+                        a.parse_status, a.parse_error, a.kind, a.updated_at
                  FROM articles a WHERE a.id = ?1",
                 params![id],
                 |row| self.article_from_row(row),
@@ -1315,6 +1333,273 @@ type: reading
         Ok(())
     }
 
+    // ── 随记（统一收件箱 A′）───────────────────────────────────────────
+    // 随记与文章共用 articles 表：kind='note'，url 为 `note://<id>` 伪地址，
+    // 复用唯一键、列表与详情管线。Markdown 是事实源；入库与编辑都整篇
+    // 重渲染 title/excerpt/content_html，编辑额外 bump updated_at 供同步
+    // 冲突裁决（LWW）。删除直接走 [`ReadingStore::remove`]。
+
+    /// 收件箱随记的完整列表（含 Markdown 与上下文）。分拣面板与 inbox.md
+    /// 迁移共用；随记数量级小，逐条 `get` 足够。
+    pub fn list_notes(&self) -> Result<Vec<ReadingArticleDetail>> {
+        let connection = self.connect()?;
+        let ids: Vec<String> = {
+            let mut statement = connection
+                .prepare("SELECT id FROM articles WHERE kind = 'note' ORDER BY added_at DESC")?;
+            let rows = statement.query_map([], |row| row.get(0))?;
+            rows.collect::<std::result::Result<Vec<_>, _>>()?
+        };
+        ids.iter().map(|id| self.get(id)).collect()
+    }
+
+    /// 分拣完成的原话留档（设计稿 §6）：saved_reason 记录去向，分拣列表
+    /// 据此隐藏已分拣条目，收件箱里仍可见。
+    pub fn mark_note_triaged(&self, id: &str, destination: &str) -> Result<()> {
+        let connection = self.connect()?;
+        let changed = connection
+            .execute(
+                "UPDATE articles SET saved_reason = ?2 WHERE id = ?1 AND kind = 'note'",
+                params![id, format!("triaged → {destination}")],
+            )
+            .map_err(Error::from)?;
+        if changed == 0 {
+            return Err(Error::ReadingArticleNotFound(id.to_string()));
+        }
+        Ok(())
+    }
+
+    /// 新增随记。标题从正文派生：首个标题行优先，缺省取正文前 40 字。
+    pub fn note_append(&self, markdown: &str) -> Result<ReadingArticleDetail> {
+        self.note_append_with_title(markdown, None)
+    }
+
+    /// 指定标题的新增随记（本地 txt 导入用文件名作标题）。
+    pub fn note_append_with_title(
+        &self,
+        markdown: &str,
+        title: Option<&str>,
+    ) -> Result<ReadingArticleDetail> {
+        let markdown = markdown.trim();
+        if markdown.is_empty() {
+            return Err(Error::ReadingNote("随记内容为空".into()));
+        }
+        if markdown.len() > MAX_PAGE_BYTES {
+            return Err(Error::ReadingNote("随记内容过大".into()));
+        }
+        let id = new_id();
+        let now = now_ms();
+        let rendered = NoteRender::new(markdown);
+        let title = title
+            .map(str::trim)
+            .filter(|title| !title.is_empty())
+            .map(str::to_owned)
+            .unwrap_or(rendered.title);
+        let connection = self.connect()?;
+        connection
+            .execute(
+                "INSERT INTO articles (id, url, title, site_name, excerpt, content_html, markdown,
+                                       word_count, reading_minutes, added_at, parse_status, kind, updated_at)
+                 VALUES (?1, ?2, ?3, '', ?4, ?5, ?6, ?7, ?8, ?9, 'ok', 'note', ?10)",
+                params![
+                    id,
+                    format!("note://{id}"),
+                    title,
+                    rendered.excerpt,
+                    rendered.html,
+                    markdown,
+                    rendered.word_count,
+                    rendered.reading_minutes,
+                    now,
+                    now,
+                ],
+            )
+            .map_err(Error::from)?;
+        self.get(&id)
+    }
+
+    /// 编辑随记：整篇重渲染并刷新 updated_at。只作用于 kind='note' 的行；
+    /// 目标不存在与「是文章不是随记」分别报错，前端可以区分提示。
+    pub fn note_update(&self, id: &str, markdown: &str) -> Result<ReadingArticleDetail> {
+        let markdown = markdown.trim();
+        if markdown.is_empty() {
+            return Err(Error::ReadingNote("随记内容为空".into()));
+        }
+        let rendered = NoteRender::new(markdown);
+        let connection = self.connect()?;
+        let changed = connection
+            .execute(
+                "UPDATE articles SET title = ?2, excerpt = ?3, content_html = ?4, markdown = ?5,
+                       word_count = ?6, reading_minutes = ?7, updated_at = ?8
+                 WHERE id = ?1 AND kind = 'note'",
+                params![
+                    id,
+                    rendered.title,
+                    rendered.excerpt,
+                    rendered.html,
+                    markdown,
+                    rendered.word_count,
+                    rendered.reading_minutes,
+                    now_ms(),
+                ],
+            )
+            .map_err(Error::from)?;
+        if changed == 0 {
+            let kind: Option<String> = connection
+                .query_row(
+                    "SELECT kind FROM articles WHERE id = ?1",
+                    params![id],
+                    |row| row.get(0),
+                )
+                .optional()
+                .map_err(Error::from)?;
+            return match kind {
+                Some(_) => Err(Error::ReadingNote(format!("该条目不是随记: {id}"))),
+                None => Err(Error::ReadingArticleNotFound(id.to_string())),
+            };
+        }
+        self.get(id)
+    }
+
+    /// 应用内「打开文件」与 Android 文件关联共用的导入入口。
+    /// 按扩展名与内容分流：html/htm → 文章（readability 提取）；
+    /// md/markdown → 文章（Markdown 直渲染，可标注）；其余文本 → 随记
+    /// （可编辑，文件名作标题）。伪 URL `local-file://<sha 前 16 位>` 让
+    /// 同一内容重复导入命中去重、回跳已有条目。
+    pub fn import_local_file(&self, path: &str) -> Result<ReadingArticleDetail> {
+        let bytes = fs::read(path).map_err(|source| Error::Io {
+            path: PathBuf::from(path),
+            source,
+        })?;
+        if bytes.len() > MAX_PAGE_BYTES {
+            return Err(Error::ReadingNote("文件过大，超出收件箱导入上限".into()));
+        }
+        // 本地文本默认按 UTF-8 解；失效字节替换为 U+FFFD，不让整份文件导入失败。
+        let content = String::from_utf8_lossy(&bytes).into_owned();
+        if content.trim().is_empty() {
+            return Err(Error::ReadingNote("文件内容为空".into()));
+        }
+        let file = Path::new(path);
+        let name = file
+            .file_stem()
+            .map(|stem| stem.to_string_lossy().into_owned())
+            .unwrap_or_else(|| "导入内容".into());
+        let ext = file
+            .extension()
+            .map(|ext| ext.to_string_lossy().to_lowercase())
+            .unwrap_or_default();
+        let lowered = content.to_lowercase();
+        let looks_html = matches!(ext.as_str(), "html" | "htm")
+            || lowered.trim_start().starts_with("<!doctype html")
+            || lowered.contains("<html");
+        if looks_html {
+            return self.import_local_html(&name, &content);
+        }
+        if matches!(ext.as_str(), "md" | "markdown" | "mdown" | "mkd") {
+            return self.import_local_markdown(&name, &content);
+        }
+        self.note_append_with_title(&content, Some(&name))
+    }
+
+    /// 本地内容导入为文章。内容只在本机，伪 URL 只承担去重；v3 同步对
+    /// local-file:// 前缀原样上行正文，不走服务器解析。
+    fn import_local_html(&self, name: &str, content: &str) -> Result<ReadingArticleDetail> {
+        let url = Self::local_file_url(content);
+        if let Some(existing) = self.find_by_url(&url)? {
+            return self.get(&existing);
+        }
+        // readability 对极简/非文档结构的 HTML 会拒收；提取是 best-effort，
+        // 失败就整页净化后原样入库，导入不因正文太短而失败。
+        let extracted = self.add_fetched(
+            &url,
+            FetchedPage {
+                html: content.to_string(),
+                final_url: url.clone(),
+            },
+        );
+        match extracted {
+            Ok(detail) => {
+                self.set_site_name(&detail.article.id, "本地导入")?;
+                self.get(&detail.article.id)
+            }
+            Err(_) => {
+                let html = sanitize_html(content);
+                self.insert_local_verbatim(&url, name, &html, None)
+            }
+        }
+    }
+
+    fn import_local_markdown(&self, name: &str, content: &str) -> Result<ReadingArticleDetail> {
+        let url = Self::local_file_url(content);
+        if let Some(existing) = self.find_by_url(&url)? {
+            return self.get(&existing);
+        }
+        let rendered = NoteRender::new(content);
+        self.insert_local_verbatim(&url, name, &rendered.html, Some(content))
+    }
+
+    /// 内容哈希作伪 URL：同内容重复导入去重回跳。
+    fn local_file_url(content: &str) -> String {
+        use sha2::{Digest, Sha256};
+        let mut hasher = Sha256::new();
+        hasher.update(content.as_bytes());
+        let hash = format!("{:x}", hasher.finalize());
+        format!("local-file://{}", &hash[..16])
+    }
+
+    /// 本地内容直通入库（kind='article'）：渲染/净化已完成，标题用文件名
+    /// （Markdown 里带标题行则优先），Markdown 事实源可选（HTML 无）。
+    fn insert_local_verbatim(
+        &self,
+        url: &str,
+        name: &str,
+        content_html: &str,
+        markdown: Option<&str>,
+    ) -> Result<ReadingArticleDetail> {
+        let source = markdown.unwrap_or_default();
+        let rendered = NoteRender::new(source);
+        let derived = derive_note_title(source, &note_plain_text(source));
+        let title = if derived == "(随记)" {
+            name.to_string()
+        } else {
+            derived
+        };
+        let excerpt = rendered.excerpt;
+        let word_count = rendered.word_count;
+        let reading_minutes = rendered.reading_minutes;
+        let id = new_id();
+        let connection = self.connect()?;
+        connection
+            .execute(
+                "INSERT INTO articles (id, url, title, site_name, excerpt, content_html, markdown,
+                                       word_count, reading_minutes, added_at, parse_status, kind)
+                 VALUES (?1, ?2, ?3, '本地导入', ?4, ?5, ?6, ?7, ?8, ?9, 'ok', 'article')",
+                params![
+                    id,
+                    url,
+                    title,
+                    excerpt,
+                    content_html,
+                    markdown,
+                    word_count,
+                    reading_minutes,
+                    now_ms()
+                ],
+            )
+            .map_err(Error::from)?;
+        self.get(&id)
+    }
+
+    fn set_site_name(&self, id: &str, site_name: &str) -> Result<()> {
+        let connection = self.connect()?;
+        connection
+            .execute(
+                "UPDATE articles SET site_name = ?2 WHERE id = ?1",
+                params![id, site_name],
+            )
+            .map_err(Error::from)?;
+        Ok(())
+    }
+
     pub fn upsert_annotation(&self, input: ReadingAnnotationInput) -> Result<ReadingAnnotation> {
         if input.id.trim().is_empty() {
             return Err(Error::InvalidReadingAnnotation("缺少标记 ID".into()));
@@ -1418,6 +1703,8 @@ type: reading
             annotation_count: row.get::<_, i64>(14)? as u32,
             parse_status: row.get(15)?,
             parse_error: row.get(16)?,
+            kind: row.get(17)?,
+            updated_at: row.get(18)?,
         })
     }
 }
@@ -1456,6 +1743,134 @@ fn ensure_columns(connection: &Connection, table: &str, columns: &[(&str, &str)]
         }
     }
     Ok(())
+}
+
+/// 随记一次渲染的产物：标题/摘要/HTML/计数全部从 Markdown 派生。
+struct NoteRender {
+    title: String,
+    excerpt: String,
+    html: String,
+    word_count: u32,
+    reading_minutes: u32,
+}
+
+impl NoteRender {
+    fn new(markdown: &str) -> Self {
+        let html = sanitize_note_html(&render_markdown(markdown));
+        let plain = note_plain_text(markdown);
+        let title = derive_note_title(markdown, &plain);
+        let excerpt = plain.chars().take(120).collect::<String>();
+        let word_count = markdown.chars().count() as u32;
+        let reading_minutes = word_count.div_ceil(400).max(1);
+        Self {
+            title,
+            excerpt,
+            html,
+            word_count,
+            reading_minutes,
+        }
+    }
+}
+
+/// 随记 Markdown → HTML。放行任务列表（随记里 `- [ ]` 很常见）、删除线与表格；
+/// 结果再过随记净化器，粘贴进来的原始 HTML 不会把脚本带进阅读页。
+fn render_markdown(markdown: &str) -> String {
+    let parser = Parser::new_ext(
+        markdown,
+        Options::ENABLE_TASKLISTS | Options::ENABLE_STRIKETHROUGH | Options::ENABLE_TABLES,
+    );
+    let mut html = String::new();
+    html::push_html(&mut html, parser);
+    html
+}
+
+/// 随记专用的净化器：在文章净化规则上额外放行任务列表的 checkbox
+/// （pulldown 的任务项渲染为 `<input type="checkbox" checked disabled />`）。
+fn sanitize_note_html(html: &str) -> String {
+    let mut builder = note_sanitizer();
+    builder.add_tags(["input"]);
+    builder.add_tag_attributes("input", ["type", "checked", "disabled"]);
+    builder.clean(html).to_string()
+}
+
+fn note_sanitizer() -> ammonia::Builder<'static> {
+    let mut builder = ammonia::Builder::default();
+    builder
+        .add_tags([
+            "figure",
+            "figcaption",
+            "section",
+            "article",
+            "mark",
+            "video",
+            "source",
+            "audio",
+        ])
+        .add_tag_attributes("img", ["width", "height", "loading"])
+        .add_tag_attributes("video", ["src", "poster", "controls"])
+        .add_tag_attributes("audio", ["src", "controls"])
+        .add_tag_attributes("source", ["src", "type"])
+        .rm_tag_attributes("a", ["target"])
+        // 随记是本地创作，不做微信式的内联 style 保真：干净排版即可，
+        // 但保留基本样式属性让高亮/强调不至于丢失。
+        .add_generic_attributes(["style"])
+        .attribute_filter(|_element, attribute, value| {
+            if attribute.eq_ignore_ascii_case("style") {
+                Some(std::borrow::Cow::Owned(sanitize_style(value)))
+            } else {
+                Some(std::borrow::Cow::Borrowed(value))
+            }
+        })
+        .link_rel(Some("noopener noreferrer"))
+        .url_relative(ammonia::UrlRelative::PassThrough);
+    builder
+}
+
+/// 摘要与标题派生用的纯文本：跳过代码块与水平线，剥掉列表/引用/任务记号。
+fn note_plain_text(markdown: &str) -> String {
+    let mut out = String::new();
+    let mut in_fence = false;
+    for line in markdown.lines() {
+        let trimmed = line.trim();
+        if trimmed.starts_with("```") || trimmed.starts_with("~~~") {
+            in_fence = !in_fence;
+            continue;
+        }
+        if in_fence || trimmed.starts_with('#') || trimmed.starts_with("---") {
+            continue;
+        }
+        let stripped = trimmed
+            .trim_start_matches(['-', '*', '>', '+'])
+            .trim_start()
+            .trim_start_matches("[ ]")
+            .trim_start_matches("[x]")
+            .trim_start_matches(['[', ']'])
+            .trim();
+        if !stripped.is_empty() {
+            if !out.is_empty() {
+                out.push(' ');
+            }
+            out.push_str(stripped);
+        }
+    }
+    out
+}
+
+/// 随记标题：首个标题行（去掉 # 记号）优先；没有标题行就用正文前 40 字。
+fn derive_note_title(markdown: &str, plain: &str) -> String {
+    for line in markdown.lines() {
+        let trimmed = line.trim();
+        if let Some(rest) = trimmed.strip_prefix('#') {
+            let text = rest.trim_start_matches('#').trim();
+            if !text.is_empty() {
+                return text.chars().take(60).collect();
+            }
+        }
+    }
+    if plain.is_empty() {
+        return "(随记)".into();
+    }
+    plain.chars().take(40).collect()
 }
 
 fn normalize_url(url: &str) -> Result<String> {
@@ -3747,6 +4162,129 @@ copyright_stat: '0' * 1,</script>"#;
         (dir, store)
     }
 
+    // ── 随记（统一收件箱 A′）─────────────────────────────────────────
+
+    #[test]
+    fn note_append_renders_markdown_and_derives_metadata() {
+        let (_dir, store) = temp_store();
+        let detail = store
+            .note_append("## 发布节奏\n\n- [ ] 两周一版\n- [x] 定稿文案\n\n想法：按周自动归档？")
+            .unwrap();
+        assert_eq!(detail.article.kind, "note");
+        assert!(detail.article.url.starts_with("note://"));
+        assert_eq!(detail.article.title, "发布节奏");
+        // 首个标题行之后的正文进入摘要（不含记号）。
+        assert!(detail.article.excerpt.contains("两周一版"));
+        assert!(!detail.article.excerpt.contains("- [ ]"));
+        // 任务列表 checkbox 进 HTML（随记净化器放行），Markdown 原样留存。
+        assert!(detail.content_html.contains("<h2>"));
+        assert!(detail.content_html.contains(r#"type="checkbox""#));
+        // Markdown 是事实源：整篇原样留存（含标题行）。
+        assert_eq!(
+            detail.markdown.as_deref(),
+            Some("## 发布节奏\n\n- [ ] 两周一版\n- [x] 定稿文案\n\n想法：按周自动归档？")
+        );
+        assert!(detail.article.updated_at.is_some());
+        // 列表直接可见，与文章混排。
+        assert!(store
+            .list()
+            .unwrap()
+            .iter()
+            .any(|a| a.id == detail.article.id));
+    }
+
+    #[test]
+    fn note_append_derives_title_from_body_without_heading() {
+        let (_dir, store) = temp_store();
+        let detail = store
+            .note_append("地铁上想到的：发布节奏改成两周一版，先记下来")
+            .unwrap();
+        assert_eq!(
+            detail.article.title,
+            "地铁上想到的：发布节奏改成两周一版，先记下来"
+                .chars()
+                .take(40)
+                .collect::<String>()
+        );
+        let detail = store.note_append("# 带标题的\n\n正文").unwrap();
+        assert_eq!(detail.article.title, "带标题的");
+    }
+
+    #[test]
+    fn note_append_rejects_empty_body() {
+        let (_dir, store) = temp_store();
+        assert!(store.note_append("   \n  ").is_err());
+    }
+
+    #[test]
+    fn note_update_rerenders_and_bumps_updated_at() {
+        let (_dir, store) = temp_store();
+        let before = store.note_append("第一版随记").unwrap();
+        let before_updated = before.article.updated_at.unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(5));
+        let after = store
+            .note_update(&before.article.id, "# 改过的标题\n\n第二版正文")
+            .unwrap();
+        assert_eq!(after.article.title, "改过的标题");
+        assert!(after.content_html.contains("<h1>"));
+        assert!(after.article.updated_at.unwrap() > before_updated);
+        assert_eq!(
+            after.markdown.as_deref(),
+            Some("# 改过的标题\n\n第二版正文")
+        );
+    }
+
+    #[test]
+    fn note_update_rejects_articles_and_missing_ids() {
+        let (_dir, store) = temp_store();
+        insert_fixture(&store, "art1");
+        // 文章（kind='article'）不是随记，不能走随记编辑。
+        let error = store.note_update("art1", "正文").unwrap_err();
+        assert!(error.to_string().contains("不是随记"));
+        // 不存在的 ID 报「记录不存在」。
+        let error = store.note_update("missing", "正文").unwrap_err();
+        assert!(matches!(error, Error::ReadingArticleNotFound(_)));
+    }
+
+    #[test]
+    fn import_local_file_routes_by_extension() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = ReadingStore::new(dir.path().join("reading"));
+        let md_path = dir.path().join("读书笔记.md");
+        fs::write(&md_path, "## 周记\n\n- [ ] 收件箱按周归档").unwrap();
+        let detail = store.import_local_file(md_path.to_str().unwrap()).unwrap();
+        assert_eq!(detail.article.kind, "article");
+        assert!(detail.article.url.starts_with("local-file://"));
+        assert_eq!(detail.article.title, "周记");
+        assert_eq!(detail.article.site_name, "本地导入");
+        assert!(detail.content_html.contains("<h2>"));
+        // 同一内容重复导入去重回跳，不产生第二条。
+        let again = store.import_local_file(md_path.to_str().unwrap()).unwrap();
+        assert_eq!(again.article.id, detail.article.id);
+
+        let txt_path = dir.path().join("随想.txt");
+        fs::write(&txt_path, "地铁上想到的：发布节奏改成两周一版").unwrap();
+        let note = store.import_local_file(txt_path.to_str().unwrap()).unwrap();
+        assert_eq!(note.article.kind, "note");
+        assert_eq!(note.article.title, "随想");
+        assert!(note.markdown.as_deref().unwrap().contains("发布节奏"));
+    }
+
+    #[test]
+    fn import_local_file_sniffs_html_without_extension() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = ReadingStore::new(dir.path().join("reading"));
+        let path = dir.path().join("saved-page");
+        fs::write(
+            &path,
+            "<html><body><article><h1>存下来的页</h1><p>正文</p></article></body></html>",
+        )
+        .unwrap();
+        let detail = store.import_local_file(path.to_str().unwrap()).unwrap();
+        assert_eq!(detail.article.kind, "article");
+        assert!(detail.content_html.contains("存下来的页"));
+    }
+
     fn insert_fixture(store: &ReadingStore, id: &str) {
         let connection = store.connect().unwrap();
         connection
@@ -4506,6 +5044,8 @@ mod reading_context_tests {
                 annotation_count: 0,
                 parse_status: if body.is_empty() { "failed" } else { "ok" }.into(),
                 parse_error: String::new(),
+                kind: "article".into(),
+                updated_at: None,
             },
             content_html: body.into(),
             markdown: if body.is_empty() {

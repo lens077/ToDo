@@ -4,7 +4,7 @@
 
 use std::{fs, time::Duration};
 
-use todo_core::{AiOutcome, AiState, AiStore, AiUpsert, CaptureStore, DesktopBackend};
+use todo_core::{AiOutcome, AiState, AiStore, AiUpsert, DesktopBackend};
 use todo_desktop_lib::ops::{wire, DesktopOps};
 
 const FIXTURE: &str = "---\ntodo-spec: 1\ncolumns:\n  - {id: todo, name: Todo}\n  - {id: doing, name: Doing}\n  - {id: done, name: Done, type: done}\n---\n\n## Todo\n- [ ] first task <!--t:aaa111-->\n\n## Doing\n\n## Done\n";
@@ -20,11 +20,8 @@ fn fixture() -> Fixture {
     fs::write(dir.path().join("TODO.md"), FIXTURE).unwrap();
     let store_path = dir.path().join("ai").join("sessions.json");
     let store = AiStore::new(&store_path, Duration::from_secs(2));
-    let ops = DesktopOps::new(
-        DesktopBackend::new(Duration::from_secs(2)),
-        CaptureStore::new(dir.path().join("inbox.md"), Duration::from_secs(2)),
-    )
-    .with_ai_store(AiStore::new(&store_path, Duration::from_secs(2)));
+    let ops = DesktopOps::new(DesktopBackend::new(Duration::from_secs(2)))
+        .with_ai_store(AiStore::new(&store_path, Duration::from_secs(2)));
     Fixture { dir, ops, store }
 }
 

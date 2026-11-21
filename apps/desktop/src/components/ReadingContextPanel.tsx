@@ -6,7 +6,6 @@
  */
 import * as React from 'react';
 import { reading, type ReadingArticleDetail, type ReadingContextInput } from '../lib/reading';
-import { useArticleExport, type ExportNotice } from '../hooks/useArticleExport';
 
 interface ReadingContextPanelProps {
   detail: ReadingArticleDetail;
@@ -95,14 +94,6 @@ export function ReadingContextPanel({ detail, onDetailChanged }: ReadingContextP
     }
   }, [detail.id, onDetailChanged]);
 
-  const reportExportNotice = React.useCallback((notice: ExportNotice) => {
-    if (notice.kind === 'error') {
-      setError(notice.message);
-      return;
-    }
-    setStatus(notice.message);
-  }, []);
-  const { exportArticle, exportBusy } = useArticleExport(detail.id, reportExportNotice);
 
   const addLink = React.useCallback(
     async (kind: 'project' | 'task') => {
@@ -163,12 +154,6 @@ export function ReadingContextPanel({ detail, onDetailChanged }: ReadingContextP
           )}
           <button type="button" className="rctx__tool" disabled={busy} onClick={() => void refetch()}>
             重新解析
-          </button>
-          <button type="button" className="rctx__tool" disabled={busy || exportBusy} onClick={() => void exportArticle('html')}>
-            另存为 HTML
-          </button>
-          <button type="button" className="rctx__tool" disabled={busy || exportBusy} onClick={() => void exportArticle('markdown')}>
-            另存为 Markdown
           </button>
         </div>
       </div>

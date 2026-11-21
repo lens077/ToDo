@@ -26,6 +26,8 @@ export type IconName =
   | 'minus'
   | 'settings'
   | 'sparkle'
+  | 'download'
+  | 'inbox'
   | 'book'
   | 'link'
   | 'highlighter'
@@ -157,6 +159,8 @@ const paths: Record<IconName, React.ReactNode> = {
       <path d="M19 15v4M17 17h4" />
     </>
   ),
+  download: <path d="M12 4v11M8 11l4 4 4-4M5 20h14" />,
+  inbox: <><path d="M3 13V5.5A1.5 1.5 0 0 1 4.5 4h15A1.5 1.5 0 0 1 21 5.5V13"/><path d="M3 13h5l2 3h4l2-3h5v5.5A1.5 1.5 0 0 1 19.5 20h-15A1.5 1.5 0 0 1 3 18.5V13Z"/></>,
 };
 
 export function Icon({ name, ...props }: { name: IconName } & SVGProps<SVGSVGElement>) {

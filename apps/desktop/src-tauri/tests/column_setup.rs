@@ -2,8 +2,8 @@
 //! mandatory project binding even for options and preview reads.
 
 use serde_json::json;
-use std::{fs, time::Duration};
-use todo_core::{CaptureStore, ColumnSetupSelection, DesktopBackend};
+use std::fs;
+use todo_core::{ColumnSetupSelection, DesktopBackend};
 use todo_desktop_lib::ops::{wire, DesktopOps};
 
 const DOC: &str = "---\ntodo-spec: 1\nvendor-note: 'keep: this'\n---\n\n# Project tasks\n\n## Domain\n- [ ] **Keep** `original` task <!--t:aaaaaa--> !1\n  ↳ existing note\n";
@@ -15,11 +15,8 @@ fn start_document() -> String {
     )
 }
 
-fn ops(inbox: &std::path::Path) -> DesktopOps {
-    DesktopOps::new(
-        DesktopBackend::default(),
-        CaptureStore::new(inbox, Duration::from_secs(2)),
-    )
+fn ops() -> DesktopOps {
+    DesktopOps::new(DesktopBackend::default())
 }
 
 #[test]
@@ -29,7 +26,7 @@ fn options_preview_and_apply_reject_a_stale_project_even_when_the_sources_are_id
     for root in [first.path(), second.path()] {
         fs::write(root.join("TODO.md"), DOC).unwrap();
     }
-    let ops = ops(&first.path().join("inbox.md"));
+    let ops = ops();
     let original = ops.open_project(first.path().to_str().unwrap()).unwrap();
     let selection: ColumnSetupSelection =
         serde_json::from_value(json!({"mode":"defaults"})).unwrap();
@@ -69,7 +66,7 @@ fn native_default_setup_serializes_the_agreed_wire_contract_and_only_writes_the_
     fs::write(dir.path().join("TODO.md"), DOC).unwrap();
     let target = dir.path().join("docs/TODO.md");
     fs::write(&target, DOC).unwrap();
-    let ops = ops(&dir.path().join("inbox.md"));
+    let ops = ops();
     let project = ops.open_project(dir.path().to_str().unwrap()).unwrap();
     let root = &project.project_path;
     let options = wire(&ops.column_setup_options("docs/TODO.md", root).unwrap());
@@ -135,7 +132,7 @@ fn native_default_setup_serializes_the_agreed_wire_contract_and_only_writes_the_
 fn native_columns_require_the_exact_nonempty_current_project_root() {
     let dir = tempfile::tempdir().unwrap();
     fs::write(dir.path().join("TODO.md"), DOC).unwrap();
-    let ops = ops(&dir.path().join("inbox.md"));
+    let ops = ops();
     let project = ops.open_project(dir.path().to_str().unwrap()).unwrap();
     let selection: ColumnSetupSelection =
         serde_json::from_value(json!({"mode":"defaults"})).unwrap();
@@ -161,7 +158,7 @@ fn native_existing_selection_survives_the_wire_and_stale_hashes_preserve_externa
     let dir = tempfile::tempdir().unwrap();
     let target = dir.path().join("TODO.md");
     fs::write(&target, DOC).unwrap();
-    let ops = ops(&dir.path().join("inbox.md"));
+    let ops = ops();
     let project = ops.open_project(dir.path().to_str().unwrap()).unwrap();
     let root = &project.project_path;
     let selection: ColumnSetupSelection = serde_json::from_value(json!({
@@ -206,7 +203,7 @@ fn native_column_operations_refuse_invalid_unmanaged_and_outside_sources() {
     fs::write(outside.path().join("TODO.md"), DOC).unwrap();
     #[cfg(unix)]
     std::os::unix::fs::symlink(outside.path(), dir.path().join("linked")).unwrap();
-    let ops = ops(&dir.path().join("inbox.md"));
+    let ops = ops();
     let project = ops.open_project(dir.path().to_str().unwrap()).unwrap();
     let root = &project.project_path;
     let selection = ColumnSetupSelection::Defaults;
@@ -251,7 +248,7 @@ fn native_readonly_source_allows_options_but_refuses_preview_and_apply_without_s
     let dir = tempfile::tempdir().unwrap();
     let target = dir.path().join("TODO.md");
     fs::write(&target, DOC).unwrap();
-    let ops = ops(&dir.path().join("inbox.md"));
+    let ops = ops();
     let project = ops.open_project(dir.path().to_str().unwrap()).unwrap();
     let original_permissions = fs::metadata(&target).unwrap().permissions();
     let mut readonly = original_permissions.clone();
@@ -279,7 +276,7 @@ fn native_defaults_and_start_moves_only_the_named_source_block_in_one_history_en
     let target = dir.path().join("docs/TODO.md");
     fs::write(&target, &original).unwrap();
     fs::write(dir.path().join("TODO.md"), &original).unwrap();
-    let ops = ops(&dir.path().join("inbox.md"));
+    let ops = ops();
     let project = ops.open_project(dir.path().to_str().unwrap()).unwrap();
     let root = &project.project_path;
     let selection: ColumnSetupSelection = serde_json::from_value(json!({
@@ -381,7 +378,7 @@ fn native_defaults_and_start_refuses_stale_hash_and_project_without_partial_setu
     for root in [dir.path(), other.path()] {
         fs::write(root.join("TODO.md"), &original).unwrap();
     }
-    let ops = ops(&dir.path().join("inbox.md"));
+    let ops = ops();
     let project = ops.open_project(dir.path().to_str().unwrap()).unwrap();
     let selection: ColumnSetupSelection = serde_json::from_value(json!({
         "mode":"defaults_and_start", "task_id":"start01"
@@ -446,7 +443,7 @@ fn native_defaults_and_start_rejects_readonly_source_for_both_preview_and_apply(
     let target = dir.path().join("TODO.md");
     let original = start_document();
     fs::write(&target, &original).unwrap();
-    let ops = ops(&dir.path().join("inbox.md"));
+    let ops = ops();
     let project = ops.open_project(dir.path().to_str().unwrap()).unwrap();
     let selection: ColumnSetupSelection = serde_json::from_value(json!({
         "mode":"defaults_and_start", "task_id":"start01"
@@ -479,7 +476,7 @@ fn native_defaults_and_start_refuses_malformed_completed_assigned_and_cross_sour
     fs::write(dir.path().join("docs/TODO.md"), &original).unwrap();
     fs::write(dir.path().join("TODO.md"), DOC).unwrap();
     fs::write(dir.path().join("TODO.txt"), assigned).unwrap();
-    let ops = ops(&dir.path().join("inbox.md"));
+    let ops = ops();
     let project = ops.open_project(dir.path().to_str().unwrap()).unwrap();
     for (source, task_id) in [
         ("docs/TODO.md", ""),

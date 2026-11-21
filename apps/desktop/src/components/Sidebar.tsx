@@ -8,11 +8,10 @@ export type { MainView };
 interface SidebarProps {
   activeView: MainView;
   status: WorkspaceStatus;
-  /** Saved articles not yet finished: the count shown beside 阅读. */
+  /** Inbox items not yet finished: the count shown beside 收件箱. */
   readingCount: number;
   /** Tasks in flight right now: the Doing count shown beside 目标. */
   goalCount: number;
-  captureCount: number;
   unrankedCount: number;
   /** Agent sessions waiting, failed, or finished unread in the current scope. */
   aiCount: number;
@@ -22,16 +21,15 @@ interface SidebarProps {
   onOpenSettings: () => void;
 }
 
-// 阅读 sits first: it is the personal shelf that feeds everything below it.
-// 目标 then holds what is in flight, what is queued, and what is finished, so
-// "what should I do now" never needs a second view.
+// 收件箱（原「阅读」）sits first：链接文章与随记同住的统一收件箱，是个人
+// 内容的入口。随记视图移出导航（A′ 定稿）：分拣面板从收件箱工具行进入，
+// 随记与文章在同一张列表里混排。
 export const navItems: Array<{ id: MainView; label: string; icon: IconName }> = [
   { id: 'overview', label: '总览', icon: 'target' },
-  { id: 'reading', label: '阅读', icon: 'book' },
+  { id: 'reading', label: '收件箱', icon: 'inbox' },
   { id: 'workspaces', label: '工作空间', icon: 'board' },
   { id: 'goal', label: '目标', icon: 'target' },
   { id: 'quadrant', label: '象限', icon: 'grid' },
-  { id: 'capture', label: '随记', icon: 'capture' },
   { id: 'ai', label: 'AI', icon: 'sparkle' },
   { id: 'review', label: '扫描与历史', icon: 'folder' },
   { id: 'contract', label: '规范', icon: 'settings' },
@@ -42,7 +40,6 @@ export function Sidebar({
   status,
   readingCount,
   goalCount,
-  captureCount,
   unrankedCount,
   aiCount,
   readOnly,
@@ -51,7 +48,7 @@ export function Sidebar({
   onOpenSettings,
 }: SidebarProps) {
   const projectName = status.projectPath ? shortProjectName(status.projectPath) : '未选择项目';
-  const countFor = (view: MainView) => (view === 'reading' ? readingCount : view === 'goal' ? goalCount : view === 'quadrant' ? unrankedCount : view === 'capture' ? captureCount : view === 'ai' ? aiCount : null);
+  const countFor = (view: MainView) => (view === 'reading' ? readingCount : view === 'goal' ? goalCount : view === 'quadrant' ? unrankedCount : view === 'ai' ? aiCount : null);
 
   return (
     <aside className="sidebar">
@@ -111,7 +108,16 @@ export function Sidebar({
           <Icon name="command" />
           <div>
             <small>全局速记</small>
-            <strong>{status.shortcutState === 'unavailable' ? '快捷键不可用' : '⌘ ⇧ Space'}</strong>
+            <strong>
+              {status.shortcutState === 'unavailable'
+                ? status.shortcutMessage
+                  ? '快捷键冲突'
+                  : '快捷键不可用'
+                : '⌘ ⇧ Space'}
+            </strong>
+            {status.shortcutState === 'unavailable' && status.shortcutMessage && (
+              <small className="status-error" title={status.shortcutMessage}>{status.shortcutMessage}</small>
+            )}
           </div>
         </div>
         <button type="button" className="sidebar-settings" onClick={onOpenSettings} aria-label="设置" title="设置">

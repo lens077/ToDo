@@ -74,7 +74,7 @@ test.describe('项目档案与环境', () => {
     // which is what the Tauri store guarantees across launches) and come back.
     await page.getByPlaceholder('这个项目要解决什么问题？').blur();
     await expect(page.getByText('档案已保存')).toBeVisible();
-    await page.getByRole('navigation', { name: '主要视图' }).getByRole('button', { name: '阅读' }).click();
+    await page.getByRole('navigation', { name: '主要视图' }).getByRole('button', { name: '收件箱' }).click();
     await nav(page).click();
     await page.getByRole('button', { name: /档案/ }).click();
     await expect(page.getByTestId('project-detail')).toBeVisible();
@@ -184,7 +184,7 @@ test.describe('开发会话', () => {
 
     // Switching views and back keeps the session history (mock mirrors the
     // on-disk store that survives restarts).
-    await page.getByRole('navigation', { name: '主要视图' }).getByRole('button', { name: '阅读' }).click();
+    await page.getByRole('navigation', { name: '主要视图' }).getByRole('button', { name: '收件箱' }).click();
     await nav(page).click();
     await page.getByRole('button', { name: /档案/ }).click();
     await expect(page.getByTestId('session-list').locator('.ws-doc')).toHaveCount(1);

@@ -9,38 +9,39 @@
 //!
 //! Each assertion below names the exact field the bridge reads.
 
-use std::{fs, time::Duration};
+use std::{fs, path::PathBuf, time::Duration};
 
 use serde_json::json;
 use tempfile::tempdir;
-use todo_core::{CaptureStore, DesktopBackend, DesktopIntent, MoveTarget};
+use todo_core::{CaptureStore, DesktopBackend, DesktopIntent, MoveTarget, ReadingStore};
 use todo_desktop_lib::ops::{wire, DesktopOps};
+use todo_desktop_lib::reading;
+use todo_desktop_lib::reading::ReadingState;
+use todo_desktop_lib::{CaptureAppendResponse, CaptureTriageResponse, CommandValue};
 
 const FIXTURE: &str = "---\ntodo-spec: 1\ncolumns:\n  - {id: todo, name: Todo}\n  - {id: doing, name: Doing}\n  - {id: done, name: Done, type: done}\n---\n\n# Project tasks\n\n## Todo\n- [ ] first task <!--t:aaa111--> #core !1\n- [ ] second task <!--t:bbb222-->\n\n## Doing\n\n## Done\n";
 
 struct Fixture {
     _dir: tempfile::TempDir,
     ops: DesktopOps,
-    project: std::path::PathBuf,
-    inbox: std::path::PathBuf,
+    project: PathBuf,
+    /// 随记事实源已迁入阅读库（A′ 收件箱）：capture 命令从这里取数据。
+    reading: ReadingState,
 }
 
 fn fixture() -> Fixture {
     let dir = tempdir().unwrap();
     let project = dir.path().join("TODO.md");
     fs::write(&project, FIXTURE).unwrap();
-    let inbox = dir.path().join("inbox.md");
-    // The Capture store is pointed at a temp path so tests never touch the
-    // user's real ~/.todo/inbox.md.
-    let ops = DesktopOps::new(
-        DesktopBackend::new(Duration::from_secs(2)),
-        CaptureStore::new(&inbox, Duration::from_secs(2)),
-    );
+    let reading = ReadingState {
+        store: Some(ReadingStore::new(dir.path().join("reading"))),
+    };
+    let ops = DesktopOps::new(DesktopBackend::new(Duration::from_secs(2)));
     Fixture {
         _dir: dir,
         ops,
         project,
-        inbox,
+        reading,
     }
 }
 
@@ -217,8 +218,11 @@ fn mutations_are_written_through_to_markdown() {
 fn capture_append_and_delete_return_authoritative_lists() {
     let fx = fixture();
 
-    let appended = fx.ops.capture_append("remember this").unwrap();
-    let value = wire(&appended);
+    let (capture, captures) = reading::capture_append_note(&fx.reading, "remember this").unwrap();
+    let value = wire(&CaptureAppendResponse {
+        capture: capture.clone(),
+        captures,
+    });
     // desktop.ts throws unless BOTH keys are present: it applies `captures` as
     // the authoritative list rather than patching local state.
     assert!(value["capture"]["id"].is_string());
@@ -232,8 +236,7 @@ fn capture_append_and_delete_return_authoritative_lists() {
     );
     assert_eq!(value["captures"].as_array().unwrap().len(), 1);
 
-    let id = appended.capture.id.clone();
-    let remaining = fx.ops.capture_delete(&id).unwrap();
+    let remaining = reading::capture_delete_note(&fx.reading, &capture.id).unwrap();
     assert!(
         wire(&remaining).as_array().unwrap().is_empty(),
         "capture_delete must return the authoritative remaining list"
@@ -243,41 +246,80 @@ fn capture_append_and_delete_return_authoritative_lists() {
 #[test]
 fn capture_survives_marker_like_and_multiline_text() {
     let fx = fixture();
-    // A Capture that contains the store's own terminator must not corrupt the
-    // file; the format is length-prefixed precisely to survive this.
+    // The old inbox.md format was length-prefixed to survive its own
+    // terminator; the reading store now holds Markdown verbatim in SQLite, so
+    // marker-like text is just text.
     let hostile = "line one\n<!--/capture-->\nline two 🧪";
-    let appended = fx.ops.capture_append(hostile).unwrap();
-    assert_eq!(appended.capture.text, hostile);
+    let (capture, _) = reading::capture_append_note(&fx.reading, hostile).unwrap();
+    assert_eq!(capture.text, hostile);
 
-    let listed = fx.ops.capture_list().unwrap();
+    let listed = reading::capture_notes(&fx.reading).unwrap();
     assert_eq!(listed.len(), 1);
     assert_eq!(listed[0].text, hostile, "round trip must be lossless");
 }
 
 #[test]
-fn corrupt_capture_file_is_rejected_instead_of_silently_dropping_records() {
+fn triaged_note_is_retained_but_hidden_from_the_triage_list() {
     let fx = fixture();
-    fx.ops.capture_append("real note").unwrap();
-    let raw = fs::read_to_string(&fx.inbox).unwrap();
-    // Truncate mid-record: a lenient parser would silently lose the user's note.
-    fs::write(&fx.inbox, &raw[..raw.len() - 5]).unwrap();
+    // A truncated inbox used to be rejected loudly; the reading store has no
+    // file format to corrupt, so the contract that matters now is: triaged
+    // notes leave the triage list but stay archived in the inbox (设计稿 §6).
+    let (capture, _) = reading::capture_append_note(&fx.reading, "real note").unwrap();
+    reading::mark_note_triaged(&fx.reading, &capture.id, "todo").unwrap();
 
+    assert!(reading::capture_notes(&fx.reading).unwrap().is_empty());
+    let notes = fx.reading.store.as_ref().unwrap().list_notes().unwrap();
+    assert_eq!(notes.len(), 1, "triaged notes are archived, not deleted");
+    assert!(notes[0].context.saved_reason.starts_with("triaged"));
+}
+
+#[test]
+fn inbox_migration_converts_captures_to_notes_and_archives_the_file() {
+    let fx = fixture();
+    // Seed a real inbox.md through the legacy store so the migration input is
+    // byte-identical to what users have on disk.
+    let inbox = fx._dir.path().join("inbox.md");
+    let legacy = CaptureStore::new(&inbox, Duration::from_secs(2));
+    legacy.append("记一条旧随记").unwrap();
+    legacy.append("- [ ] 旧清单里的任务框").unwrap();
+
+    let (migrated, archived) = reading::migrate_capture_inbox_at(&fx.reading, &inbox).unwrap();
+    assert_eq!(migrated, 2);
     assert!(
-        fx.ops.capture_list().is_err(),
-        "a truncated inbox must surface an error, never silently drop captures"
+        archived.contains("migrated-"),
+        "original file must be renamed"
     );
+    assert!(!inbox.exists(), "inbox.md must not survive the migration");
+
+    let notes = fx.reading.store.as_ref().unwrap().list_notes().unwrap();
+    assert_eq!(notes.len(), 2);
+    assert_eq!(notes[0].markdown.as_deref(), Some("- [ ] 旧清单里的任务框"));
+    assert_eq!(notes[1].markdown.as_deref(), Some("记一条旧随记"));
+
+    // Idempotent: the renamed file no longer exists, so a rerun migrates 0.
+    let (again, _) = reading::migrate_capture_inbox_at(&fx.reading, &inbox).unwrap();
+    assert_eq!(again, 0);
 }
 
 #[test]
 fn triage_wire_shape_carries_task_id_and_command_values() {
     let fx = fixture();
     fx.ops.open_project(fx.project.to_str().unwrap()).unwrap();
-    let appended = fx.ops.capture_append("promote me").unwrap();
+    let (capture, _) = reading::capture_append_note(&fx.reading, "promote me").unwrap();
 
-    let response = fx
+    // The command assembles this response from reading-store helpers plus
+    // `ops.triage_note_for`; the wire shape desktop.ts decodes is unchanged.
+    let text = reading::capture_note_text(&fx.reading, &capture.id).unwrap();
+    let result = fx
         .ops
-        .capture_triage(&appended.capture.id, Some("todo"))
+        .triage_note_for(&text, Some("todo"), None, None)
         .unwrap();
+    reading::mark_note_triaged(&fx.reading, &capture.id, "todo").unwrap();
+    let response = CaptureTriageResponse {
+        result,
+        snapshot: fx.ops.snapshot_value(),
+        captures: CommandValue::from_result(reading::capture_notes(&fx.reading)),
+    };
     let value = wire(&response);
 
     // desktop.ts reads `result` as a tagged union and REQUIRES a non-empty
@@ -297,7 +339,7 @@ fn triage_wire_shape_carries_task_id_and_command_values() {
     assert_eq!(value["captures"]["status"], "available");
     assert!(
         value["captures"]["value"].as_array().unwrap().is_empty(),
-        "the triaged Capture must be gone from the authoritative list"
+        "the triaged note must be gone from the authoritative list"
     );
 
     let task_id = value["result"]["task_id"].as_str().unwrap();

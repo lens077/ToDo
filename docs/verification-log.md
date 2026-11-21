@@ -1079,6 +1079,13 @@ Session 存为项目内 Markdown（`<project>/.virgo/sessions/s-<ts>.md`），�
 4. **单测**：新增 `concurrent_pull_fetches_each_detail_exactly_once`（本地 mock HTTP 服务器，6 篇并发下拉，断言每篇详情拉且只拉一次、第二轮零请求、落库 6 行均带正文）；`cargo test -p todo-desktop --lib` 16 passed。
 5. **门禁**：`cargo fmt` / `cargo clippy --all-targets` 干净。
 
+
+## 2026-11-21 Android 打包体积排查（通过）
+
+1. **现象**：M1 收件箱批次的 debug APK 达 218M（上次 113M）。逐层拆解（unzip + Python 解析 local headers）：**无 node_modules / 无 sourcemap / 无前端垃圾**——Tauri 2 mobile 把 dist 嵌入 .so。
+2. **构成**：`libtodo_desktop_lib.so` 105.3MiB（Rust debug 全量 DWARF 符号 + 嵌入前端，Stored 不压缩）+ debug 多 dex（9.8M + 3.9M，未 minify）+ **~105.4MiB 纯零填充**（gradle debug 打包管线对巨型 Stored so 的异常填充，内嵌上一次构建的 dex 残影）——填充随 so 增大等比膨胀，是 113M→218M 翻倍的直接原因。release .so 仅 17.3MiB（stripped）。
+3. **解法**：release unsigned APK（19.8M）用 debug keystore 签名后真机可装：`apksigner sign --ks ~/.android/debug.keystore --ks-pass pass:android --ks-key-alias androiddebugkey --out app-universal-release-signed.apk`，verify 通过。产物 `.../apk/universal/release/app-universal-release-signed.apk`（19M）。
+4. **环境备注**：构建必须显式导出 `.zshrc` 的 ANDROID_HOME（$HOME/android/sdk）/ NDK_HOME（ndk/30.0.16138531）/ JAVA_HOME（Studio JBR）；`rustup target add aarch64-linux-android` 本机曾缺失已补。
 ## 2026-11-12 同步测试脏数据清理（通过）
 
 1. **背景**：删除无墓碑（交接文档 §8.1），全量对账只做有无对比——持有行会把行推回服务器，无行会从服务器拉回。所以顺序必须是：停所有同步源 → 删设备本地 → 删服务器。
@@ -1260,3 +1267,12 @@ Session 存为项目内 Markdown（`<project>/.virgo/sessions/s-<ts>.md`），�
 5. **设置 UI**：设置 → 阅读 → 「另存为命名」组（segmented 三档 + custom 展开前后缀输入与实时预览）。
 6. **门禁**：`cargo test -p todo-core reading` 51 通过（新增 6：包裹目录/两格式共用/无前后缀/自定义前后缀/前后缀净化与预算/长标题预算）；todo-desktop 测试全绿；clippy `-D warnings` 绿；tsc / vite build 绿；reading e2e 16 passed；`make check-quick` 绿（56s）；contract check ok。
 7. **待真机验收**：桌面 dev 已热更新——右键导出 → 目录应为「标题 - Sumery Virgo/」（内含同名文件 + img/）；设置切「仅标题」或自定义后再导出；提示条「打开」「打开目录」各点一次。
+
+## 2026-11-22 移动端 UI 三处修复：浮标贴栏、矮视口侧栏、系统栏随主题（wovpo9，通过）
+
+1. **问题**（用户真机截图，01:13）：①阅读页右下角「标记与笔记」浮标悬在 tab 栏上方 16px，不贴栏；②横屏矮窗口（约 768×345）左侧栏滚不到底，「规范」「设置」与状态灯落在屏幕外；③Android 系统三键导航栏是浅灰不透明条 + 深色图标，压在深色主题 app 上（横屏时出现在左缘）。
+2. **浮标**：`.reader-notes-toggle` 的包含块其实是 `.reader`（`view-in` 动画 `fill: both` 永久保留 `translateY(0)` transform，使它成为绝对定位包含块），`.reader` 底 = 工作区底 = tab 栏顶。新增 `@media (max-width: 719px) { .reader-notes-toggle { bottom: 8px } }`，且必须放在既有 1000px 块之后才能赢同权重级联。
+3. **矮视口**：根因是 `.app-shell` 强撑 `min-height: 520/560px`，外壳高过视口——页面整体溢出、底部内容出屏，且在侧栏上拖动时滚动被侧栏自己的滚动容器吃掉，永远到不了页面底部。新增 `@media (min-width: 720px) and (min-height: 320px) and (max-height: 559px) { .app-shell { min-height: 0 } }`，外壳收进视口后侧栏自身滚动即可达底；侧栏补 `padding-bottom: calc(14px + env(safe-area-inset-bottom))` 防横屏底部手势条压住「设置」。下限 320px 是回归教训：首版没有下限，e2e 的 986×180 极端小窗用例（`task-menu-layout` very short desktop window）里工作区被 overflow hidden 裁掉、按钮只有页面滚动才够得着，点击超时——比 320 矮的窗口放任外壳溢出、保留页面滚动兜底。
+4. **系统栏**：根因链 = 续七移除 `enableEdgeToEdge()` 后，targetSdk 37 在 API 35+ 仍被强制 edge-to-edge（像素实测：状态栏区域 = app 背景 #0F0D22、tab 栏含 ~46px safe-area 内边距——WebView 拿到 inset），但导航栏对比度 scrim 回到默认开启 + 图标明暗走主题默认 → 浅灰条压在深色内容上。`MainActivity.applySystemBarTheme()`：状态栏/导航栏透明、API≥29 `isNavigationBarContrastEnforced = false`（灰底根因）、API≥30 `setDecorFitsSystemWindows(false)`、按 `uiMode` 切 `APPEARANCE_LIGHT_STATUS/NAVIGATION_BARS`（深色主题=亮图标、浅色=暗图标）；`onConfigurationChanged` 补切（manifest 已声明 uiMode 不重建）；API<30 只对齐图标明暗，不强铺 edge-to-edge。系统栏区域透出 app 背景，深浅主题自动同色，无需硬编码色值。**真机首版即崩（vivo V2425A / Android 17）：onCreate 阶段 wry 还没 setContentView，DecorView 为 null，`getInsetsController()` 直接抛 NPE（PhoneWindow.getInsetsController 解引用 null decor）——已把应用时机挪到 `onResume`（onConfigurationChanged 保留），并以 `peekDecorView() == null` 兜底，重打后正常。**
+5. **验证**：mock 模式浏览器实测——360×800 打开文章后浮标底 727 / tab 栏顶 735，gap=8px；768×345 外壳高=视口高、页面零溢出、侧栏 scrollTop 顶到上限 252 后「设置」完整可见（底 329 ≤ 345）；768×620 回归 `min-height: 560px`、360×800 回归正常。`compileArmDebugKotlin` BUILD SUCCESSFUL。`make check-quick` 绿（31s）；e2e 全量 180 passed（首版无下限时 179 passed + 1 failed，加 320px 下限后全绿）。
+6. **真机验收（vivo V2425A / Android 17 / 1260×2800 @560dpi，DPR 3.5）**：①竖屏深色——状态栏与底部三键区均为 app 背景 `#0F0D21`，三键浅色图标（用户截图里的 `#CFCFD5` 浅灰条消失）；②横屏（锁 user_rotation 1）——左/右缘系统栏同为深色，侧栏滑动可达底，「规范」「设置」「全局速记」完整可见（原截图到「扫描与历史」即被裁）；③阅读页浮标——浮标底边 y2252 / tab 栏顶 hairline y2280，gap 28 物理px ÷ 3.5 = **8 CSS px**，与修复值一致；④浅色主题（`cmd uimode night no`）——双系统栏切为 `#F7F7FA` 浅色 + 深色图标，切换过程无崩溃（`onConfigurationChanged` 路径实测）。验收后已恢复设备深色模式与自动旋转。构建链备注：本机 shell 无 `.zshrc` 环境，需显式 `ANDROID_HOME=~/android/sdk NDK_HOME=~/android/sdk/ndk/30.0.16138531`，tauri CLI 才能找到环境；apksigner 36.0.0 用 `--key-pass`（`--ks-key-pass` 已移除）。

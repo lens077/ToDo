@@ -19,6 +19,27 @@ interface SettingsDialogProps {
 
 export function SettingsDialog({ onClose, onOpenProviderSettings, onOpenWizard, activeView, onChangeView, initialSection }: SettingsDialogProps) {
   const [settings, update] = useAppSettings();
+  // 随记迁移（A′）：inbox.md 一次性并入阅读库；命令只在桌面 Tauri 运行时存在。
+  const [inboxMigration, setInboxMigration] = React.useState<{ running: boolean; report: string | null }>({ running: false, report: null });
+  const tauriRuntime = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
+
+  const migrateInbox = async () => {
+    if (inboxMigration.running) return;
+    setInboxMigration({ running: true, report: null });
+    try {
+      const { invoke } = await import('@tauri-apps/api/core');
+      const report = await invoke<{ migrated: number; archived_to: string }>('capture_migrate_inbox');
+      setInboxMigration({
+        running: false,
+        report: report.migrated > 0
+          ? `已迁移 ${report.migrated} 条随记到收件箱，原文件改名 ${report.archived_to.split('/').pop()}`
+          : '没有需要迁移的随记（inbox.md 不存在或为空）',
+      });
+    } catch (cause) {
+      setInboxMigration({ running: false, report: `迁移失败：${String(cause)}` });
+    }
+  };
+
   const provider = readProviderSettings();
   const panelRef = React.useRef<HTMLElement>(null);
   // 窄屏下设置占的是工作区那一行，底部导航仍可操作，所以不再是模态浮层。
@@ -230,6 +251,40 @@ export function SettingsDialog({ onClose, onOpenProviderSettings, onOpenWizard, 
             </div>
           </section>
 
+          {tauriRuntime && (
+          <section className="settings-group" aria-labelledby="settings-inbox-migration">
+            <h3 id="settings-inbox-migration">随记迁移</h3>
+            <div className="settings-row">
+              <span className="settings-row__copy">
+                <strong>把旧随记（inbox.md）并入收件箱</strong>
+                <span>随记的事实源已迁入阅读库（与文章同库、随同步）。执行后 ~/.todo/inbox.md 里的每一条都会成为收件箱随记，原文件改名留档；重复执行是安全的。</span>
+              </span>
+              <button type="button" className="text-action" disabled={inboxMigration.running} onClick={() => void migrateInbox()}>
+                {inboxMigration.running ? '迁移中…' : '立即迁移'}
+              </button>
+            </div>
+            {inboxMigration.report && <p className="settings-row__copy" role="status">{inboxMigration.report}</p>}
+          </section>
+          )}
+          <section className="settings-group" aria-labelledby="settings-lightbox">
+            <h3 id="settings-lightbox">图片预览</h3>
+            <label className="settings-row">
+              <span className="settings-row__copy">
+                <strong>点击图片外区域关闭</strong>
+                <span>阅读页点开大图后，点图片外的深色区域即关闭预览。关闭此项后，预览支持双指捏合与双击缩放、拖动查看细节，只能用右上角 ✕ 或 Esc 关闭，缩放手势不会误触。</span>
+              </span>
+              <span className="switch">
+                <input
+                  type="checkbox"
+                  role="switch"
+                  checked={settings.lightboxOutsideClose}
+                  aria-label="点击图片外区域关闭图片预览"
+                  onChange={(event) => update({ lightboxOutsideClose: event.target.checked })}
+                />
+                <span className="switch__track" aria-hidden="true" />
+              </span>
+            </label>
+          </section>
           <section className="settings-group" aria-labelledby="settings-analytics">
             <h3 id="settings-analytics">使用统计</h3>
             <label className="settings-row">

@@ -190,7 +190,9 @@ test('聚合视图禁用来源依赖功能，HTTP随记明确不可用不mock', 
   await page.getByRole('button', { name: '扫描与历史', exact: true }).click();
   await expect(page.getByText('扫描、历史与对齐提示词依赖单个来源。', { exact: false })).toBeVisible();
   await expect(page.getByRole('button', { name: '扫描', exact: true })).toHaveCount(0);
-  await page.getByRole('button', { name: '随记', exact: true }).click();
+  // 随记视图移出导航（A′）：入口在收件箱工具行。
+  await page.getByRole('button', { name: '收件箱', exact: true }).click();
+  await page.getByRole('button', { name: /随记分拣/ }).dispatchEvent('click');
   await expect(page.getByRole('status')).toContainText('HTTP 项目服务不开放个人随记');
   expect(unexpected).toEqual([]);
 });

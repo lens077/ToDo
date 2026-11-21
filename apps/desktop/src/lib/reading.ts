@@ -33,7 +33,13 @@ export interface ReadingArticle {
   parse_status: string;
   /** 上次解析失败的原因，成功时为空。 */
   parse_error: string;
+  /** 统一收件箱：`article`（网页/本地文件）或 `note`（随记，note:// 伪 URL）。 */
+  kind: ReadingKind;
+  /** 随记最后编辑时间（epoch ms）；文章恒为 null。 */
+  updated_at: number | null;
 }
+
+export type ReadingKind = 'article' | 'note';
 
 export interface ReadingAnnotation {
   id: string;
@@ -365,6 +371,7 @@ const MOCK_BODY = `
 <h2>一、从收集到结构化</h2>
 <p>很多人把知识管理等同于「收藏」。但收藏只是开始，结构化才是关键。你需要为不同类型的内容找到合适的位置，让它们能够在未来被重新发现、重新组合。</p>
 <p>知识的价值不在于拥有，而在于能够被激活和使用。一个可持续的知识系统，应该像花园一样，既有秩序，又能自然生长。</p>
+<img src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAYAAADED76LAAAAFklEQVR4nGP8z8DwnwEJmBRQRIReCAO4LgV2hLa5zwAAAABJRU5ErkJggg==" width="320" height="80" alt="示例图" />
 <p>结构化的方法有很多，比如卡片笔记、PARA 方法、双向链接等。重要的是找到适合自己的方式，并坚持下去。不要追求完美的体系，先让它运转起来，再在实践中不断迭代。</p>
 <h2>二、让知识服务于生活</h2>
 <p>知识系统的最终目的是更好地生活，而不是成为另一个收藏的黑洞。你可以定期回顾自己的笔记，尝试将其中的想法应用到工作、学习或生活中。</p>
@@ -393,6 +400,8 @@ const mockArticles: ReadingArticleDetail[] = [
     annotation_count: 1,
     parse_status: 'ok',
     parse_error: '',
+    kind: 'article',
+    updated_at: null,
     content_html: MOCK_BODY,
     markdown: null,
     image_dir: '',
@@ -428,6 +437,8 @@ const mockArticles: ReadingArticleDetail[] = [
     annotation_count: 0,
     parse_status: 'ok',
     parse_error: '',
+    kind: 'article',
+    updated_at: null,
     content_html: MOCK_BODY,
     markdown: null,
     image_dir: '',
@@ -441,6 +452,50 @@ const mockArticles: ReadingArticleDetail[] = [
 function mockSummary(detail: ReadingArticleDetail): ReadingArticle {
   const { content_html: _html, markdown: _md, image_dir: _dir, annotations, ...rest } = detail;
   return { ...rest, annotation_count: annotations.length };
+}
+
+let mockNoteSequence = 1;
+
+/** 浏览器 mock 的随记标题派生：与后端 derive_note_title 同口径（标题行优先）。 */
+function mockNoteTitle(markdown: string): string {
+  for (const line of markdown.split('\n')) {
+    const trimmed = line.trim();
+    if (trimmed.startsWith('#')) {
+      const text = trimmed.replace(/^#+\s*/, '').trim();
+      if (text) return text.slice(0, 60);
+    }
+  }
+  const plain = mockNotePlainText(markdown);
+  return plain ? plain.slice(0, 40) : '(随记)';
+}
+
+/** 摘要用的纯文本：跳过代码块/标题行，剥掉列表与任务记号。 */
+function mockNotePlainText(markdown: string): string {
+  const parts: string[] = [];
+  let inFence = false;
+  for (const raw of markdown.split('\n')) {
+    const trimmed = raw.trim();
+    if (trimmed.startsWith('```') || trimmed.startsWith('~~~')) {
+      inFence = !inFence;
+      continue;
+    }
+    if (inFence || trimmed.startsWith('#') || trimmed.startsWith('---')) continue;
+    const stripped = trimmed
+      .replace(/^[-*>+]\s*/, '')
+      .replace(/^\[ \]\s*/, '')
+      .replace(/^\[x\]\s*/, '')
+      .trim();
+    if (stripped) parts.push(stripped);
+  }
+  return parts.join(' ');
+}
+
+/** 浏览器 mock 的极简渲染：段落化 + 转义；真渲染在后端 pulldown。 */
+function mockNoteHtml(markdown: string): string {
+  return markdown
+    .split('\n\n')
+    .map((block) => `<p>${block.replace(/[<>&]/g, (ch) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;' })[ch] ?? ch)}</p>`)
+    .join('');
 }
 
 function mockFind(id: string): ReadingArticleDetail {
@@ -490,6 +545,8 @@ export const reading = {
       annotation_count: 0,
       parse_status: 'ok',
       parse_error: '',
+      kind: 'article',
+      updated_at: null,
       content_html: MOCK_BODY,
       markdown: null,
       image_dir: '',
@@ -498,6 +555,65 @@ export const reading = {
     };
     mockArticles.unshift(detail);
     return detail;
+  },
+
+  /** 新增随记（统一收件箱 A′）：Markdown 直存，标题从正文派生。 */
+  async noteAppend(markdown: string): Promise<ReadingArticleDetail> {
+    if (isTauriRuntime()) return call<ReadingArticleDetail>('reading_note_append', { markdown });
+    const trimmed = markdown.trim();
+    if (!trimmed) throw new ReadingError('随记内容为空');
+    const id = `rnote${mockNoteSequence++}`;
+    const detail: ReadingArticleDetail = {
+      id,
+      url: `note://${id}`,
+      title: mockNoteTitle(trimmed),
+      site_name: '',
+      excerpt: mockNotePlainText(trimmed).slice(0, 120),
+      byline: null,
+      cover_path: null,
+      word_count: trimmed.length,
+      reading_minutes: Math.max(1, Math.ceil(trimmed.length / 400)),
+      added_at: Date.now(),
+      last_opened_at: null,
+      progress_percent: 0,
+      progress_anchor: null,
+      read_at: null,
+      annotation_count: 0,
+      parse_status: 'ok',
+      parse_error: '',
+      kind: 'note',
+      updated_at: Date.now(),
+      content_html: mockNoteHtml(trimmed),
+      markdown: trimmed,
+      image_dir: '',
+      annotations: [],
+      context: emptyContext(),
+    };
+    mockArticles.unshift(detail);
+    return detail;
+  },
+
+  /** 编辑随记：整篇重渲染并刷新 updated_at（同步冲突裁决用）。 */
+  async noteUpdate(id: string, markdown: string): Promise<ReadingArticleDetail> {
+    if (isTauriRuntime()) return call<ReadingArticleDetail>('reading_note_update', { id, markdown });
+    const found = mockFind(id);
+    if (found.kind !== 'note') throw new ReadingError('该条目不是随记');
+    const trimmed = markdown.trim();
+    if (!trimmed) throw new ReadingError('随记内容为空');
+    found.title = mockNoteTitle(trimmed);
+    found.excerpt = mockNotePlainText(trimmed).slice(0, 120);
+    found.word_count = trimmed.length;
+    found.reading_minutes = Math.max(1, Math.ceil(trimmed.length / 400));
+    found.updated_at = Date.now();
+    found.content_html = mockNoteHtml(trimmed);
+    found.markdown = trimmed;
+    return { ...found, annotations: [...found.annotations] };
+  },
+
+  /** 打开本地文件导入：html/md → 文章，txt → 随记；同内容重复导入去重回跳。 */
+  async importFile(path: string): Promise<ReadingArticleDetail> {
+    if (isTauriRuntime()) return call<ReadingArticleDetail>('reading_import_file', { path });
+    throw new ReadingError('浏览器模式没有本地文件读取能力，请在桌面应用中使用');
   },
 
   /** 毫秒级入列，正文在后台解析；连续添加不会被上一次抓取阻塞。 */

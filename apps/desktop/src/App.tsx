@@ -2,6 +2,7 @@ import * as React from 'react';
 import { AiView } from './components/AiView';
 import { ContractView } from './components/ContractView';
 import { CaptureView } from './components/CaptureView';
+import { Icon } from './components/Icon';
 import { CommandBar } from './components/CommandBar';
 import { ColumnSetupDialog } from './components/ColumnSetupDialog';
 import { CompletionDialog, type CompletionDecision } from './components/CompletionDialog';
@@ -129,6 +130,14 @@ export function App() {
   const selected = snapshot?.sources?.find((source) => source.path === snapshot?.selected_source);
   const sourceContextKey = JSON.stringify([snapshot?.project_path, snapshot?.selected_source]);
   const sourceBoundUnavailable = Boolean(snapshot?.sources && (!selected || selected.status !== 'managed'));
+  // 随记分拣面板与收件箱同源（A′）：进入随记视图时拉最新随记，避免新建
+  // 的随记（启动后产生的）不出现在分拣列表里。
+  // 依赖用稳定引用（loadCaptures 是 useCallback([])）：model 对象每次渲染都是
+  // 新字面量，放进依赖会在 capture 视图上形成 setState 循环。
+  const refreshCaptures = model.refreshCaptures;
+  React.useEffect(() => {
+    if (activeView === 'capture') void refreshCaptures?.();
+  }, [activeView, refreshCaptures]);
   React.useEffect(() => {
     completionRequestRef.current?.settleMove?.(false);
     completionRequestRef.current = null;
@@ -273,7 +282,6 @@ export function App() {
         status={model.status}
         readingCount={readingModel.badge}
         goalCount={goalCount}
-        captureCount={model.captures.length}
         unrankedCount={unrankedCount}
         aiCount={aiFeed.attention}
         readOnly={readOnly}
@@ -359,11 +367,17 @@ export function App() {
               openProjectPath={snapshot?.project_path ?? null}
             />
           ) : activeView === 'reading' && transportCapabilities() ? (
-            <p className="source-unavailable" role="status">HTTP 项目服务不开放个人阅读库，请使用桌面版。</p>
+            <div className="inbox-http-note">
+              <p className="source-unavailable" role="status">HTTP 项目服务不开放个人阅读库，请使用桌面版。</p>
+              {/* 随记视图移出导航（A′）：HTTP 模式下分拣入口挂在阅读占位上。 */}
+              <button type="button" className="text-action" onClick={() => setActiveView('capture')}>
+                随记分拣 <Icon name="arrow" />
+              </button>
+            </div>
           ) : activeView === 'reading' && readingModel.open ? (
             <ReaderView key={readingModel.open.id} detail={readingModel.open} model={readingModel} />
           ) : activeView === 'reading' ? (
-            <ReadingView model={readingModel} />
+            <ReadingView model={readingModel} onOpenTriage={() => setActiveView('capture')} />
           ) : activeView === 'capture' && transportCapabilities() ? (
             <p className="source-unavailable" role="status">HTTP 项目服务不开放个人随记，请使用桌面版。不会显示或写入模拟随记。</p>
           ) : activeView === 'capture' ? (

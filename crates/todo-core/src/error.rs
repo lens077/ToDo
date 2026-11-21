@@ -92,6 +92,8 @@ pub enum Error {
     ReadingExtract(String),
     #[error("标记无效: {0}")]
     InvalidReadingAnnotation(String),
+    #[error("{0}")]
+    ReadingNote(String),
     #[error("工作空间不存在: {0}")]
     WorkspaceNotFound(String),
     #[error("注册项目不存在: {0}")]

@@ -1277,6 +1277,12 @@ fn validate_capture_text(text: &str) -> Result<()> {
     Ok(())
 }
 
+/// 读取任意路径的 capture 文件（inbox.md 一次性迁移用；日常读写仍走
+/// [`CaptureStore`]，它自带锁与原子写）。
+pub fn parse_capture_file(path: &Path) -> Result<Vec<Capture>> {
+    read_capture_items(path)
+}
+
 pub fn global_capture_path() -> Result<PathBuf> {
     dirs::home_dir()
         .map(|home| home.join(".todo").join("inbox.md"))

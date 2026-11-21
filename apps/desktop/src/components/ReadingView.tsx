@@ -1,9 +1,10 @@
 import * as React from 'react';
-import type { ReadingModel } from '../hooks/useReading';
+import type { InboxKindFilter, ReadingModel } from '../hooks/useReading';
 import { absoluteTime, relativeTime } from '../lib/ai';
 import {
   BATCH_SCOPE_LABEL,
   extractBatchUrls,
+  normalizeInputUrl,
   READING_FILTER_LABEL,
   countByState,
   coverSource,
@@ -41,9 +42,13 @@ import {
 
 interface ReadingViewProps {
   model: ReadingModel;
+  /** 随记视图（分拣面板）入口：随记视图已移出导航，从这里进（设计稿 §6）。 */
+  onOpenTriage: () => void;
 }
 
 const FILTER_ORDER: ReadingFilter[] = ['all', 'unread', 'reading', 'read'];
+const KIND_ORDER: InboxKindFilter[] = ['all', 'article', 'note'];
+const KIND_LABEL: Record<InboxKindFilter, string> = { all: '全部', article: '文章', note: '随记' };
 
 function Cover({ article }: { article: ReadingArticle }) {
   const [failed, setFailed] = React.useState(false);
@@ -186,7 +191,168 @@ function ReadingCard({ article, busy, opening, onOpen, onSetRead, onRemove, onRe
   );
 }
 
-export function ReadingView({ model }: ReadingViewProps) {
+/** 随记卡（统一收件箱 A′）：没有封面与进度，点击进编辑抽屉。 */
+function NoteCard({
+  article,
+  busy,
+  onEdit,
+  onRemove,
+}: {
+  article: ReadingArticle;
+  busy: boolean;
+  onEdit: (id: string) => void;
+  onRemove: (id: string) => void;
+}) {
+  return (
+    <article
+      className="reading-card reading-card--note"
+      data-testid="reading-card"
+      data-article={article.id}
+      aria-label={`随记：${article.title}`}
+    >
+      <button type="button" className="reading-card__open" onClick={() => onEdit(article.id)} disabled={busy} aria-label={`编辑随记：${article.title}`}>
+        <span className="reading-card__note-pad" aria-hidden="true">MD</span>
+        <span className="reading-card__body">
+          <span className="reading-card__title">
+            <span className="inbox-kind inbox-kind--note">随记</span> {article.title}
+          </span>
+          {article.excerpt && <span className="reading-card__excerpt">{article.excerpt}</span>}
+          <span className="reading-card__meta">
+            <time dateTime={new Date(article.updated_at ?? article.added_at).toISOString()} title={absoluteTime(article.updated_at ?? article.added_at)}>
+              {relativeTime(article.updated_at ?? article.added_at)}
+            </time>
+            {article.updated_at !== null && article.updated_at !== article.added_at && (
+              <>
+                <span aria-hidden="true">·</span>
+                <span className="inbox-kind inbox-kind--note">已编辑</span>
+              </>
+            )}
+          </span>
+        </span>
+      </button>
+      <div className="reading-card__side">
+        <div className="reading-card__tools">
+          <button
+            type="button"
+            className="icon-action"
+            disabled={busy}
+            data-tip="编辑随记：Markdown 源码直编，保存后全端可见"
+            aria-label={`编辑随记：${article.title}`}
+            onClick={() => onEdit(article.id)}
+          >
+            <Icon name="capture" />
+          </button>
+          <button
+            type="button"
+            className="icon-action"
+            disabled={busy}
+            data-tip="删除：移出收件箱"
+            aria-label={`删除随记：${article.title}`}
+            onClick={() => {
+              if (window.confirm(`删除随记「${article.title}」？`)) onRemove(article.id);
+            }}
+          >
+            <Icon name="trash" />
+          </button>
+        </div>
+      </div>
+    </article>
+  );
+}
+
+/** 随记编辑抽屉（zj3fjt 贴底抽屉模式）：Markdown 源码直编，工具条在光标处插语法。 */
+function NoteDrawer({
+  draft,
+  saving,
+  lastEdited,
+  onChange,
+  onSave,
+  onDelete,
+  onClose,
+}: {
+  draft: string;
+  saving: boolean;
+  lastEdited: number | null;
+  onChange: (markdown: string) => void;
+  onSave: () => void;
+  onDelete: () => void;
+  onClose: () => void;
+}) {
+  const dialogRef = React.useRef<HTMLDialogElement>(null);
+  const textareaRef = React.useRef<HTMLTextAreaElement>(null);
+  React.useEffect(() => {
+    const dialog = dialogRef.current;
+    if (!dialog || dialog.open) return;
+    dialog.showModal();
+    // showModal 会把初始焦点给第一个可聚焦元素（关闭按钮），这里显式交给
+    // 正文输入区：打开即可输入，关闭按钮不出现默认焦点描边。
+    textareaRef.current?.focus();
+  }, []);
+  // 工具条：在光标处插语法片段；有选区时包裹选中文本。
+  const insert = (before: string, after: string = '') => {
+    const textarea = textareaRef.current;
+    if (!textarea) return;
+    const start = textarea.selectionStart;
+    const end = textarea.selectionEnd;
+    const selected = draft.slice(start, end);
+    const next = draft.slice(0, start) + before + selected + after + draft.slice(end);
+    onChange(next);
+    requestAnimationFrame(() => {
+      textarea.focus();
+      const caret = start + before.length + selected.length;
+      textarea.setSelectionRange(caret, caret);
+    });
+  };
+  return (
+    <dialog ref={dialogRef} className="inbox-drawer" aria-label="编辑随记" onClose={onClose}>
+      <div className="inbox-drawer__head">
+        <span className="inbox-kind inbox-kind--note">随记</span>
+        <span className="inbox-drawer__title">编辑随记</span>
+        {lastEdited !== null && (
+          <time className="inbox-drawer__edited" dateTime={new Date(lastEdited).toISOString()} title={absoluteTime(lastEdited)}>
+            最后编辑 {relativeTime(lastEdited)}
+          </time>
+        )}
+        <button type="button" className="icon-action" aria-label="关闭" onClick={onClose}>
+          <Icon name="close" />
+        </button>
+      </div>
+      <textarea
+        ref={textareaRef}
+        className="inbox-drawer__body"
+        value={draft}
+        spellCheck={false}
+        aria-label="随记正文（Markdown）"
+        onChange={(event) => onChange(event.target.value)}
+        onKeyDown={(event) => {
+          if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') {
+            event.preventDefault();
+            onSave();
+          }
+        }}
+      />
+      <div className="inbox-drawer__tools">
+        <button type="button" onClick={() => insert('**', '**')}><strong>B</strong></button>
+        <button type="button" onClick={() => insert('*', '*')}><em>I</em></button>
+        <button type="button" onClick={() => insert('\n- ', '')}>• 列表</button>
+        <button type="button" onClick={() => insert('\n- [ ] ', '')}>☑ 任务</button>
+        <button type="button" onClick={() => insert('\n---\n', '')}>— 线</button>
+      </div>
+      <div className="inbox-drawer__foot">
+        <button type="button" className="text-action" style={{ color: 'var(--danger)' }} disabled={saving} onClick={onDelete}>
+          删除
+        </button>
+        <span className="inbox-drawer__spacer" />
+        <span className="inbox-hint"><kbd>⌘</kbd>/<kbd>Ctrl</kbd>+<kbd>Enter</kbd> 保存</span>
+        <button type="button" className="solid-action" disabled={saving || !draft.trim()} onClick={onSave}>
+          {saving ? '保存中…' : '保存'}
+        </button>
+      </div>
+    </dialog>
+  );
+}
+
+export function ReadingView({ model, onOpenTriage }: ReadingViewProps) {
   const [draft, setDraft] = React.useState('');
   const inputRef = React.useRef<HTMLInputElement>(null);
   const [batchOpen, setBatchOpen] = React.useState(false);
@@ -194,6 +360,9 @@ export function ReadingView({ model }: ReadingViewProps) {
   const [batchDraft, setBatchDraft] = React.useState('');
   const [clipboard, setClipboard] = React.useState<ClipboardCandidate | null>(null);
   const [settings] = useAppSettings();
+  // 随记编辑抽屉：id + 当前 Markdown 草稿；「转为任务」走随记视图的分拣面板（§6）。
+  const [noteEdit, setNoteEdit] = React.useState<{ id: string; title: string; markdown: string; lastEdited: number | null } | null>(null);
+  const [noteSaving, setNoteSaving] = React.useState(false);
   // 列表卡片右键另存为（sv2md9）：菜单记录文章与弹出位置，导出结果与阅读页同一套提示。
   const [exportMenu, setExportMenu] = React.useState<{ id: string; x: number; y: number } | null>(null);
   const [exportNotice, setExportNotice] = React.useState<ExportNotice | null>(null);
@@ -206,8 +375,25 @@ export function ReadingView({ model }: ReadingViewProps) {
     const timer = window.setTimeout(() => setExportNotice(null), ttl);
     return () => window.clearTimeout(timer);
   }, [exportNotice]);
+  // 窄屏 composer 的 placeholder 换短文案（长文案在 320px 宽度下会被截断）。
+  const [narrow] = React.useState(() => window.matchMedia('(max-width: 719px)').matches);
+  // 「从浏览器保存」是桌面交互（连弹两个 prompt 拿 URL 与 outerHTML）；
+  // Android/iOS WebView 上会弹原生 prompt（验收截图 2026-11-21），移动端隐藏。
+  const isMobilePlatform = /android|iphone|ipad/i.test(navigator.userAgent);
   const counts = React.useMemo(() => countByState(model.articles), [model.articles]);
+  const kindCounts = React.useMemo(
+    () => ({
+      article: model.articles.filter((article) => article.kind === 'article').length,
+      note: model.articles.filter((article) => article.kind === 'note').length,
+    }),
+    [model.articles],
+  );
   const batchUrls = React.useMemo(() => extractBatchUrls(batchDraft, batchScope), [batchDraft, batchScope]);
+  // A′ 识别：单一 http/https 前缀 → 文章；其余文本 → 随记。多条链接走批量
+  // 管线（按钮文案随路由走，避免「贴两条链接却显示存入随记」的错位）。
+  const detectedUrl = React.useMemo(() => normalizeInputUrl(draft), [draft]);
+  const isLinkDraft =
+    draft.trim() !== '' && (detectedUrl !== null || extractBatchUrls(draft, 'all').length > 1);
 
   // 每次进阅读视图看一眼剪贴板；同一段内容只在第一次提示（指纹写在 localStorage）。
   // 设置里关掉剪贴板读取后不再调用任何读取接口。
@@ -249,13 +435,56 @@ export function ReadingView({ model }: ReadingViewProps) {
       await model.addBatch(pasted);
       return;
     }
-    if (await model.add(pasted[0] ?? draft)) {
+    // A′ 分流：识别出链接 → 文章（后台解析）；其余文本 → 随记（Markdown 直存）。
+    const saved = detectedUrl
+      ? await model.add(detectedUrl)
+      : await model.noteAppend(draft);
+    if (saved) {
       setDraft('');
       inputRef.current?.focus();
     }
   };
 
   const countFor = (filter: ReadingFilter) => (filter === 'all' ? model.articles.length : counts[filter]);
+  const countForKind = (kind: InboxKindFilter) =>
+    kind === 'all' ? model.articles.length : kindCounts[kind];
+
+  /** A′ 工具行「打开文件」：dialog 选本地文件 → 导入管线（html/md 文章、txt 随记）。 */
+  const openLocalFile = async () => {
+    const { open } = await import('@tauri-apps/plugin-dialog');
+    const path = await open({
+      multiple: false,
+      title: '导入到收件箱',
+      filters: [{ name: '文本内容', extensions: ['html', 'htm', 'md', 'markdown', 'txt'] }],
+    });
+    if (!path || Array.isArray(path)) return;
+    await model.importFile(path);
+  };
+
+  /** 随记编辑抽屉：拉取 Markdown 草稿（随记没有阅读页，不走 openArticle）。 */
+  const editNote = async (id: string) => {
+    try {
+      const detail = await model.getDetail(id);
+      setNoteEdit({ id: detail.id, title: detail.title, markdown: detail.markdown ?? '', lastEdited: detail.updated_at });
+    } catch (caught) {
+      void caught; // 取稿失败保持抽屉关闭，错误由下一次操作提示
+    }
+  };
+
+  const saveNote = async () => {
+    if (!noteEdit || noteSaving) return;
+    setNoteSaving(true);
+    const ok = await model.noteUpdate(noteEdit.id, noteEdit.markdown);
+    setNoteSaving(false);
+    if (ok) setNoteEdit(null);
+  };
+
+  const removeNote = async () => {
+    if (!noteEdit) return;
+    if (!window.confirm(`删除随记「${noteEdit.title}」？`)) return;
+    await model.remove(noteEdit.id);
+    setNoteEdit(null);
+  };
 
   const importCurrentBrowserPage = async () => {
     const url = window.prompt('粘贴浏览器当前页面的 URL');
@@ -267,37 +496,37 @@ export function ReadingView({ model }: ReadingViewProps) {
 
   return (
     <section className="reading-view" aria-labelledby="reading-title">
-      <header className="view-heading view-heading--reading">
-        <div className="view-heading__title">
-          <h1 id="reading-title">阅读</h1>
-          <p className="view-heading__meta">
-            <span>{model.articles.length} 篇文章</span>
-            <span aria-hidden="true">·</span>
-            <span>{counts.reading} 篇读到一半</span>
-            <span aria-hidden="true">·</span>
-            <span>{counts.read} 篇已读</span>
-          </p>
-        </div>
-        <p className="view-heading__note">粘贴任意链接，正文、标记与笔记只保存到本机。进入本视图时会读取一次剪贴板识别链接，可在设置里关闭。</p>
+      {/* A′ 定稿头部：单行制（标题 + 统计 + 同步状态芯片），说明降级为输入条 hint。 */}
+      <header className="inbox-head" id="reading-title">
+        <h1>收件箱</h1>
+        <span className="inbox-stats">
+          <span><b>{kindCounts.article}</b> 文章</span>
+          <span className="inbox-stats__sep" aria-hidden="true">·</span>
+          <span><b>{kindCounts.note}</b> 随记</span>
+          <span className="inbox-stats__sep" aria-hidden="true">·</span>
+          <span><b>{counts.unread}</b> 未读</span>
+        </span>
+        <SyncControl disabled={model.adding || model.batch.running} onSynced={model.refresh} inHeader />
       </header>
 
       <form
-        className={`reading-add${model.adding ? ' is-busy' : ''}`}
+        className={`inbox-add${model.adding ? ' is-busy' : ''}${draft.trim() ? (isLinkDraft ? ' is-link' : ' is-note') : ''}`}
         onSubmit={(event) => {
           event.preventDefault();
           void submit();
         }}
       >
-        <span className="reading-add__icon" aria-hidden="true"><Icon name="link" /></span>
+        <span className="inbox-add__icon" aria-hidden="true">
+          <Icon name={isLinkDraft ? 'link' : 'capture'} />
+        </span>
         <input
           ref={inputRef}
           type="text"
-          inputMode="url"
           autoComplete="off"
           spellCheck={false}
-          name="url"
-          placeholder="粘贴链接，支持微信公众号文章、X（推特）链接…"
-          aria-label="要添加的链接"
+          name="inbox"
+          placeholder={narrow ? '粘贴链接或打字记随记' : '粘贴链接存文章，打字记随记'}
+          aria-label="收件箱输入：链接存文章，文本记随记"
           value={draft}
           disabled={model.adding}
           onChange={(event) => {
@@ -305,20 +534,32 @@ export function ReadingView({ model }: ReadingViewProps) {
             if (model.addError) model.clearAddError();
           }}
         />
-        <button type="submit" disabled={model.adding || !draft.trim()}>
-          {model.adding ? '添加中…' : '添加'}
+        <button type="submit" className="solid-action" disabled={model.adding || !draft.trim()}>
+          {model.adding ? '处理中…' : isLinkDraft ? '添加文章' : '存入随记'}
         </button>
-        <span className="reading-add__actions">
-          <button type="button" className="reading-add__browser" disabled={model.adding || model.batch.running} onClick={() => void importCurrentBrowserPage()}>
-            从浏览器保存
+        <div className="inbox-add__foot">
+          <span
+            className={`inbox-hint${draft.trim() ? (isLinkDraft ? ' is-link' : ' is-note') : ''}`}
+            style={{ visibility: draft.trim() ? 'visible' : 'hidden' }}
+            role="status"
+          >
+            {isLinkDraft ? '检测到链接 → 存为文章，正文自动抓取解析' : '直接打字 → 存入随记'}
+          </span>
+          <span className="inbox-add__spacer" />
+          {!isMobilePlatform && (
+            <button type="button" className="inbox-add__tool" disabled={model.adding || model.batch.running} data-tip="从浏览器保存当前页——抓取浏览器当前标签页的正文，解析后存为文章（桌面端功能）。" onClick={() => void importCurrentBrowserPage()}>
+              <Icon name="external" /> 浏览器保存
+            </button>
+          )}
+          <button type="button" className="inbox-add__tool" disabled={model.adding || model.batch.running} data-tip="打开本地文件导入——支持 HTML / Markdown / 纯文本；在文件管理器里「打开方式」选 Virgo 同效，都落进收件箱。" onClick={() => void openLocalFile()}>
+            <Icon name="folder" /> 打开文件
           </button>
-          <button type="button" className="reading-add__browser" disabled={model.adding || model.batch.running} onClick={() => setBatchOpen(true)}>
-            批量导入
+          <button type="button" className="inbox-add__tool" disabled={model.adding || model.batch.running} data-tip="批量导入——粘贴多行链接一次存为多篇，自动忽略链接之外的文字，支持微信公众号与 X（推特）链接。" onClick={() => setBatchOpen(true)}>
+            <Icon name="download" /> 批量导入
           </button>
-          <SyncControl disabled={model.adding || model.batch.running} onSynced={model.refresh} />
-        </span>
+        </div>
         {model.addError && (
-          <p className="reading-add__error" role="alert">{model.addError}</p>
+          <p className="reading-add__error inbox-add__alert" role="alert">{model.addError}</p>
         )}
         {model.addNotice && (
           <p className="reading-add__status" role="status">{model.addNotice}</p>
@@ -384,19 +625,45 @@ export function ReadingView({ model }: ReadingViewProps) {
       )}
 
       <div className="reading-toolbar">
-        <div className="due-summary reading-filters" role="group" aria-label="按阅读状态筛选">
-          {FILTER_ORDER.map((filter) => (
-            <button
-              type="button"
-              key={filter}
-              className={`due-summary__chip${model.filter === filter ? ' is-active' : ''}`}
-              aria-pressed={model.filter === filter}
-              onClick={() => model.setFilter(filter)}
-            >
-              <span>{READING_FILTER_LABEL[filter]}</span>
-              <strong>{countFor(filter)}</strong>
-            </button>
-          ))}
+        <div className="due-summary reading-filters">
+          <div className="due-summary" role="group" aria-label="按类型筛选">
+            {KIND_ORDER.map((kind) => (
+              <button
+                type="button"
+                key={kind}
+                className={`due-summary__chip${model.kindFilter === kind ? ' is-active' : ''}`}
+                aria-pressed={model.kindFilter === kind}
+                onClick={() => model.setKindFilter(kind)}
+              >
+                <span>{KIND_LABEL[kind]}</span>
+                <strong>{countForKind(kind)}</strong>
+              </button>
+            ))}
+          </div>
+          <span className="reading-filters__divider" aria-hidden="true" />
+          <div className="due-summary" role="group" aria-label="按阅读状态筛选">
+            {FILTER_ORDER.map((filter) => (
+              <button
+                type="button"
+                key={filter}
+                className={`due-summary__chip${model.filter === filter ? ' is-active' : ''}`}
+                aria-pressed={model.filter === filter}
+                onClick={() => model.setFilter(filter)}
+              >
+                <span>{READING_FILTER_LABEL[filter]}</span>
+                <strong>{countFor(filter)}</strong>
+              </button>
+            ))}
+          </div>
+          <span className="reading-toolbar__spacer" />
+          <button
+            type="button"
+            className="text-action"
+            onClick={onOpenTriage}
+            title="随记分拣：把收件箱里的随记转成项目任务，原话留档"
+          >
+            随记分拣 <Icon name="arrow" />
+          </button>
         </div>
       </div>
 
@@ -446,36 +713,57 @@ export function ReadingView({ model }: ReadingViewProps) {
       )}
 
       {model.loading ? (
-        <p className="ai-loading" role="status">正在读取阅读库…</p>
+        <p className="ai-loading" role="status">正在读取收件箱…</p>
       ) : model.articles.length === 0 ? (
         <div className="reading-empty">
-          <h2>还没有保存任何文章</h2>
-          <p>把想读的链接贴到上面。正文会以可读的形式保存到本机，之后即使原文删除也能继续阅读。</p>
+          <h2>收件箱还是空的</h2>
+          <p>粘贴链接存文章，直接打字记随记；文件管理器里「打开方式」选 Virgo 的内容也落在这里。</p>
         </div>
       ) : model.visible.length === 0 ? (
         <div className="reading-empty">
-          <h2>这个筛选下没有文章</h2>
-          <p>换一个状态看看，或者添加新的链接。</p>
+          <h2>这个筛选下没有内容</h2>
+          <p>换一个类型或状态看看，或者从上面的输入框添加。</p>
         </div>
       ) : (
-        <div className="reading-list" role="list" aria-label="已保存的文章">
-          {model.visible.map((article) => (
-            <ReadingCard
-              key={article.id}
-              article={article}
-              busy={model.busy.has(article.id)}
-              opening={model.opening === article.id}
-              onOpen={(id) => void model.openArticle(id)}
-              onSetRead={(id, read) => void model.setRead(id, read)}
-              onRemove={(id) => void model.remove(id)}
-              onRetry={(id) => void model.retryParse(id)}
-              onExportMenu={(id, position) => {
-                if (exportBusy) return;
-                setExportMenu({ id, ...position });
-              }}
-            />
-          ))}
+        <div className="reading-list" role="list" aria-label="收件箱条目">
+          {model.visible.map((article) =>
+            article.kind === 'note' ? (
+              <NoteCard
+                key={article.id}
+                article={article}
+                busy={model.busy.has(article.id)}
+                onEdit={(id) => void editNote(id)}
+                onRemove={(id) => void model.remove(id)}
+              />
+            ) : (
+              <ReadingCard
+                key={article.id}
+                article={article}
+                busy={model.busy.has(article.id)}
+                opening={model.opening === article.id}
+                onOpen={(id) => void model.openArticle(id)}
+                onSetRead={(id, read) => void model.setRead(id, read)}
+                onRemove={(id) => void model.remove(id)}
+                onRetry={(id) => void model.retryParse(id)}
+                onExportMenu={(id, position) => {
+                  if (exportBusy) return;
+                  setExportMenu({ id, ...position });
+                }}
+              />
+            ),
+          )}
         </div>
+      )}
+      {noteEdit && (
+        <NoteDrawer
+          draft={noteEdit.markdown}
+          saving={noteSaving}
+          lastEdited={noteEdit.lastEdited}
+          onChange={(markdown) => setNoteEdit((current) => (current ? { ...current, markdown } : current))}
+          onSave={() => void saveNote()}
+          onDelete={() => void removeNote()}
+          onClose={() => setNoteEdit(null)}
+        />
       )}
       {exportMenu && (
         <ReaderContextMenu
@@ -499,8 +787,9 @@ async function call<T>(command: string, args?: Record<string, unknown>): Promise
 ///
 /// 有配置时自动运行：Rust 侧保持 `/stream` 长连接，连上先补推离线期间攒下的
 /// 条目，之后每次服务器变更自动对账；断线退避重试。这里只负责显示状态和
-/// 手动触发一次。
-function SyncControl({ disabled, onSynced }: { disabled: boolean; onSynced: () => void }) {
+/// 手动触发一次。A′ 定稿后头部用状态芯片形态（inHeader）：teal 圆点 +
+/// 状态文案，点击展开同一套配置面板。
+function SyncControl({ disabled, onSynced, inHeader = false }: { disabled: boolean; onSynced: () => void; inHeader?: boolean }) {
   const [open, setOpen] = React.useState(false);
   const stored = React.useMemo(() => readSyncConfig(), []);
   const [base, setBase] = React.useState(stored?.base ?? 'https://todo-sync.apikv.com');
@@ -582,16 +871,32 @@ function SyncControl({ disabled, onSynced }: { disabled: boolean; onSynced: () =
     setError(null);
   };
 
+  const headerChip = () => {
+    if (busy) return { text: '同步中…', state: 'busy' as const };
+    switch (link.state) {
+      case 'online':
+        return { text: '已同步', state: 'online' as const };
+      case 'connecting':
+        return { text: '连接中…', state: 'busy' as const };
+      case 'offline':
+        return { text: '离线', state: 'offline' as const };
+      default:
+        return { text: '同步', state: 'idle' as const };
+    }
+  };
+  const chip = inHeader ? headerChip() : null;
+
   return (
     <span className="reading-sync">
       <button
         type="button"
-        className="reading-add__browser"
+        className={inHeader ? 'inbox-sync' : 'reading-add__browser'}
         disabled={disabled || busy}
         title={link.state === 'idle' ? '与 todo-sync 服务器双向对账' : linkLabel(link)}
         onClick={() => setOpen((current) => !current)}
       >
-        {busy ? '同步中…' : '同步'}
+        {chip && <i className="inbox-sync__dot" data-state={chip.state} aria-hidden="true" />}
+        {chip ? chip.text : busy ? '同步中…' : '同步'}
       </button>
       {open && (
         <span className="reading-sync__panel">
