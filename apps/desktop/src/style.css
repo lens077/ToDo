@@ -1199,12 +1199,15 @@
   .reader__progress { position: absolute; right: 0; bottom: -1px; left: 0; height: 3px; background: var(--panel-2); }
   .reader__progress > span { display: block; height: 100%; background: var(--primary-fill); transition: width 0.25s var(--ease-out); }
   .reader__columns { display: grid; grid-template-columns: minmax(0, 1fr) clamp(260px, 30%, 380px); min-height: 0; position: relative; }
-  /* 阅读进度竖条：替代被隐藏的滚动条，指示文章长度与当前位置。 */
+  /* 阅读进度竖条：替代被隐藏的滚动条，指示文章长度与当前位置。
+     锚在 .reader__columns（不滚动）而非 .reader-pane：绝对定位元素以滚动
+     内容为包含块，会随续读滚出视口。right 用笔记栏宽度的同一 clamp 公式，
+     与 grid 第二列保持逐像素同步，轨道始终贴正文右缘。 */
   .reader-progress-rail {
     position: absolute;
     top: 16px;
     bottom: 16px;
-    right: 3px;
+    right: calc(clamp(260px, 30%, 380px) + 3px);
     width: 3px;
     z-index: 5;
     border-radius: 3px;
@@ -2084,6 +2087,9 @@
      40% 取高，百分比解析成 73px，连一张卡都放不下；抽屉给固定上限，正文
      与笔记各自滚动，互不挤压。 */
   .reader__columns { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); }
+  /* 窄屏单列：正文占满宽度，竖轨回到贴屏幕右缘；z-index 压到遮罩(2)与
+     抽屉(3)之下，抽屉打开时轨道被 scrim 压暗而不是浮在抽屉上。 */
+  .reader-progress-rail { right: 3px; z-index: 1; }
   .reader-notes {
     position: absolute;
     right: 0;

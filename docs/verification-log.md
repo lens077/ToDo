@@ -1283,3 +1283,11 @@ Session 存为项目内 Markdown（`<project>/.virgo/sessions/s-<ts>.md`），�
 2. **修复**：`ReaderView` 竖轨改条件渲染 `{state !== 'read' && <div className="reader-progress-rail">…</div>}`——已读不渲染（meta「已读」与「标为未读」按钮已表达状态），未读行为不变（0% 不可见、有进度按比例显示）。
 3. **附带确认（未改动）**：竖轨锚在滚动内容顶部（`.reader-pane` 滚动容器内的绝对定位元素随内容滚动），续读跳转后轨道在视口外——恢复位置时只有回到文章顶部才能看到，属既有行为。
 4. **验证**：浏览器 mock——未读 42% 轨道在（高 42%）、标为已读轨道从 DOM 移除、标为未读恢复；vivo V2425A 真机——同一篇文章标为已读后右缘黄段消失（仅剩「已回到上次读到的位置」胶囊的 amber 边框扫到 10px，非竖轨）；e2e 全量 180 passed。
+
+## 2026-11-22 进度竖轨 sticky 化：滚动时钉在视口内（q7vk3m，通过）
+
+1. **问题**（zwmsdd 附带发现，用户确认要修）：续六④的阅读进度竖轨是 `.reader-pane`（滚动容器）内的绝对定位元素，包含块 = 整个滚动内容，续读滚动后轨道随之滚出视口——恢复位置或读到中部时右缘看不到进度指示。
+2. **方案取舍**：CSS sticky 不可行——sticky 必须在流内，轨道插在 ReadingContextPanel 与正文之间会把 `.reader-paper` 整体推下去（垂直方向没有可靠的负 margin 可抵消流内占位：百分比 margin 按宽度解析）。改为把竖轨从 pane 移出，挂到不滚动的 `.reader__columns`（`position: relative` 已具备，高度与 pane 同行等高）。
+3. **定位与层级**：宽屏 `right: calc(clamp(260px, 30%, 380px) + 3px)`——与 grid 第二列（笔记栏宽）同一 clamp 公式，百分比参照相同（columns 无 padding），逐像素同步，轨道恒贴正文右缘；窄屏（≤1000px 单列 + 贴底抽屉）回 `right: 3px`，z-index 5→1 压到 scrim(2)/抽屉(3) 之下，抽屉打开时轨道被遮罩压暗而非浮在抽屉上。已读不渲染（zwmsdd）与未读 0% 不可见行为不变。
+4. **验证**：新增 e2e「进度竖轨钉在视口内，滚动正文时不随内容滚出」——滚到中部后单次测量不变式：rail.y = pane.y+16、rail 高 = pane 高−32、rail 右缘 = pane 右−3（±2px）。首版 before/after 双测量被 `.reader` 的 view-in 入场动画（0.24s translateY, fill both）污染（差 2.16px 假阳，1 flaky），改为等 `getAnimations({subtree:true})` finished 后单次测量。reading.spec 28 passed 连跑 3 次；e2e 全量 181 passed（+1）。浏览器 mock 截图：宽屏（1280×800）滚到底 rail y=146.39（pane 顶 130.39+16）、高 637.61（pane 高 669.61−32）；窄屏（900×800）rail 右缘 897 = 视口−3、抽屉打开被 scrim 压暗。
+5. **待真机验收**：vivo 续读一篇长文滚到中部/底部，右缘进度竖轨应始终可见（已读态仍不渲染）。
