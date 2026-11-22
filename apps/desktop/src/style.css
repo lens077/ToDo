@@ -1472,11 +1472,12 @@
     background: var(--panel);
     border-top: 1px solid var(--hairline);
   }
-  /* Apple 风格（默认）：悬浮圆角栏，四周留缝（≈5px，inset 处取其大），
-     面板浮在页面底色上，圆角与投影同健康 App 的底栏。 */
+  /* Apple 风格（默认）：悬浮圆角栏，上下留缝（≈5px），左右与内容区对齐
+     （16px），面板浮在页面底色上，圆角与投影同健康 App 的底栏。 */
   .mobile-tab-bar[data-tab-style='apple'] {
     width: auto;
-    margin: 0 max(5px, env(safe-area-inset-right)) max(5px, env(safe-area-inset-bottom)) max(5px, env(safe-area-inset-left));
+    /* 左右缝与主内容区的 padding 对齐（16px），栏边缘与卡片边缘竖向一条线。 */
+    margin: 0 max(16px, env(safe-area-inset-right)) max(5px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
     padding: 5px 4px;
     background: var(--panel);
     border: 1px solid var(--hairline);
