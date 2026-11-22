@@ -206,7 +206,8 @@ export function MobileTabBarEditor({ order, onChange, style, onStyleChange }: Mo
                 checked={style === item.value}
                 onChange={() => onStyleChange(item.value)}
               />
-              <span>{item.label}{item.value === 'apple' ? '（默认）' : ''}</span>
+              <span>{item.label}</span>
+              {item.value === 'apple' && <span className="segmented__default" aria-hidden="true">默认</span>}
             </label>
           ))}
         </div>

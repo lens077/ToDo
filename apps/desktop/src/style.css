@@ -1893,6 +1893,9 @@
   .segmented__option:hover { color: var(--ink); }
   .segmented__option.is-active { color: var(--ink); background: var(--panel); box-shadow: 0 1px 2px rgba(27, 21, 71, 0.14); font-weight: 500; }
   .segmented__option:has(input:focus-visible) { outline: 2px solid var(--accent); outline-offset: 1px; }
+  /* 「默认」角标：琥珀主题色小胶囊浮在选项右上角，替代挤进选项文案的
+     「（默认）」后缀（360px 宽的设置面板里会折行）。 */
+  .segmented__default { position: absolute; top: -5px; right: -4px; padding: 1px 5px; color: var(--primary-ink); background: var(--primary-fill); border-radius: 999px; font-size: 9px; font-weight: 500; line-height: 1.2; pointer-events: none; }
 
   /* Source enrollment: the list of every TODO.md found, ticked into the board. */
   .enroll-panel { display: grid; grid-template-rows: auto auto minmax(0, 1fr) auto; width: min(640px, 100%); max-height: calc(100dvh - 40px); overflow: hidden; background: var(--panel); border: 1px solid var(--hairline); border-radius: 14px; box-shadow: var(--shadow-dialog); animation: view-in 0.24s var(--ease-out) both; }
