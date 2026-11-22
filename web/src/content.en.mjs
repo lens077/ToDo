@@ -10,9 +10,9 @@ const mailto = "mailto:support@looke.cloud?subject=" + encodeURIComponent("Sumer
 // the bucket is a cold spare. See docs/macos-release.md, "Unsigned distribution".
 const CDN = "https://virgo-pages.apikv.com";
 const dl = {
-  app: `${CDN}/dl/releases/0.1.0/Sumery-Virgo-0.1.0-aarch64-apple-darwin.app.zip`,
-  cli: `${CDN}/dl/releases/0.1.0/todo-0.1.0-aarch64-apple-darwin.tar.gz`,
-  sums: `${CDN}/dl/releases/0.1.0/SHA256SUMS`,
+  app: `${CDN}/dl/releases/0.1.1/Sumery-Virgo-0.1.1-aarch64-apple-darwin.app.zip`,
+  cli: `${CDN}/dl/releases/0.1.1/todo-0.1.1-aarch64-apple-darwin.tar.gz`,
+  sums: `${CDN}/dl/releases/0.1.1/SHA256SUMS`,
 };
 
 export default {
@@ -35,7 +35,7 @@ export default {
   brand: { kicker: "SUMERY · VIRGO", name: "Virgo", sub: "Local · Markdown is the single source of truth" },
   status: {
     label: "Status",
-    text: "Released: v0.1.0. The macOS (Apple Silicon) build is ready to download; the archive is not Apple-signed or notarized, so the first open needs a manual override.",
+    text: "Released: v0.1.1. The macOS (Apple Silicon) build is ready to download; the archive is not Apple-signed or notarized, so the first open needs a manual override.",
     cta: { label: "Write to us", href: mailto, event: { name: "feedback", data: { from: "status" } } },
   },
   nav: [
@@ -53,7 +53,7 @@ export default {
       { kind: "primary", label: "Download for macOS", href: dl.app, event: { name: "download", data: { from: "hero" } } },
       { kind: "ghost", label: "See how it reconciles", href: "#how" },
     ],
-    fine: "v0.1.0 · Apple Silicon · unsigned build, one-time Gatekeeper override.",
+    fine: "v0.1.1 · Apple Silicon · unsigned build, one-time Gatekeeper override.",
   },
   how: {
     id: "how",
@@ -155,15 +155,15 @@ export default {
     title: "Download Sumery Virgo.",
     sub: null,
     body: [
-      `v0.1.0, macOS (Apple Silicon), free, no sign-up. Unzip the download and drag <code>Sumery Virgo.app</code> into Applications; checksums are in <a href="${dl.sums}" rel="noopener">SHA256SUMS</a>.`,
+      `v0.1.1, macOS (Apple Silicon), free, no sign-up. Unzip the download and drag <code>Sumery Virgo.app</code> into Applications; checksums are in <a href="${dl.sums}" rel="noopener">SHA256SUMS</a>.`,
       `The archive has no Developer ID signature or notarization yet (the Apple developer fee hasn't been paid), so Gatekeeper stops the first open. Pick either override: in System Settings → Privacy & Security, click “Open Anyway”; or run <code>xattr -cr "/Applications/Sumery Virgo.app"</code> in a terminal. One override, and it opens normally afterwards.`,
       `A signed and notarized build will follow; until then this unsigned build is the official release. CLI users can also download the <code>todo</code> CLI on its own. Other platforms come after macOS; nothing is promised for them yet. If it won't open, or anything else breaks, <a href="${mailto}">write to us</a>.`,
     ],
-    cta: { label: "Download Sumery Virgo v0.1.0", href: dl.app, event: { name: "download", data: { from: "get" } } },
+    cta: { label: "Download Sumery Virgo v0.1.1", href: dl.app, event: { name: "download", data: { from: "get" } } },
     tableCaption: "Release status by platform",
     columns: ["Platform", "Status"],
     rows: [
-      ["macOS · Apple Silicon", `v0.1.0 · <a href="${dl.app}">Download .app.zip</a>`],
+      ["macOS · Apple Silicon", `v0.1.1 · <a href="${dl.app}">Download .app.zip</a>`],
       ["macOS CLI · Apple Silicon", `<a href="${dl.cli}">Download todo .tar.gz</a>`],
       ["Other platforms", "Not released"],
     ],
