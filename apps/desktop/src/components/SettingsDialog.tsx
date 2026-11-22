@@ -309,6 +309,8 @@ export function SettingsDialog({ onClose, onOpenProviderSettings, onOpenWizard, 
             <MobileTabBarEditor
               order={settings.mobileTabBar.order}
               onChange={(order) => update({ mobileTabBar: { order, version: 1 } })}
+              style={settings.mobileTabStyle}
+              onStyleChange={(style) => update({ mobileTabStyle: style })}
             />
           )}
 

@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { MOBILE_TAB_MAX, MOBILE_TAB_MIN } from '../lib/appSettings';
+import { MOBILE_TAB_MAX, MOBILE_TAB_MIN, MOBILE_TAB_STYLES, type MobileTabStyle } from '../lib/appSettings';
 import type { MainView } from '../lib/views';
 import { Icon } from './Icon';
 import { navItems } from './Sidebar';
@@ -10,6 +10,9 @@ const DRAG_HOLD_MS = 300;
 interface MobileTabBarEditorProps {
   order: MainView[];
   onChange: (order: MainView[]) => void;
+  /** The bar's shape (floating rounded vs. full-width pinned). */
+  style: MobileTabStyle;
+  onStyleChange: (style: MobileTabStyle) => void;
 }
 
 function labelFor(id: MainView) {
@@ -29,7 +32,7 @@ function iconFor(id: MainView) {
  * Android WebView handles poorly. Slot positions are captured when the drag
  * starts so the hit test does not chase chips as they animate into place.
  */
-export function MobileTabBarEditor({ order, onChange }: MobileTabBarEditorProps) {
+export function MobileTabBarEditor({ order, onChange, style, onStyleChange }: MobileTabBarEditorProps) {
   const [draft, setDraft] = React.useState<MainView[]>(order);
   const draftRef = React.useRef<MainView[]>(order);
   const chipRefs = React.useRef(new Map<MainView, HTMLDivElement>());
@@ -187,6 +190,27 @@ export function MobileTabBarEditor({ order, onChange }: MobileTabBarEditorProps)
     <section className="settings-group settings-tabs" aria-labelledby="settings-tabs">
       <h3 id="settings-tabs">底部导航栏</h3>
       <span className="settings-tabs__hint">长按并拖动调整顺序；点 − 移除，点 ＋ 加入。</span>
+
+      <div className="settings-row settings-row--stack">
+        <span className="settings-row__copy">
+          <strong>导航栏样式</strong>
+          <span>{MOBILE_TAB_STYLES.find((item) => item.value === style)?.note}</span>
+        </span>
+        <div className="segmented" role="radiogroup" aria-label="导航栏样式">
+          {MOBILE_TAB_STYLES.map((item) => (
+            <label key={item.value} className={`segmented__option${style === item.value ? ' is-active' : ''}`}>
+              <input
+                type="radio"
+                name="mobile-tab-style"
+                value={item.value}
+                checked={style === item.value}
+                onChange={() => onStyleChange(item.value)}
+              />
+              <span>{item.label}{item.value === 'apple' ? '（默认）' : ''}</span>
+            </label>
+          ))}
+        </div>
+      </div>
 
       <div className="settings-tabs__preview" aria-label="当前底部导航">
         {draft.map((id) => (

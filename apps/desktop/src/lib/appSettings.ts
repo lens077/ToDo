@@ -43,6 +43,21 @@ export interface MobileTabBarPreference {
   version: 1;
 }
 
+/**
+ * The narrow-screen tab bar's shape.
+ *
+ * - `apple`: a floating rounded bar with a hairline gap to every screen edge,
+ *   translucent over the content behind it. The default.
+ * - `classic`: the original full-width bar pinned to the bottom edge; its
+ *   panel stops above the system navigation area on edge-to-edge devices.
+ */
+export type MobileTabStyle = 'apple' | 'classic';
+
+export const MOBILE_TAB_STYLES: ReadonlyArray<{ value: MobileTabStyle; label: string; note: string }> = [
+  { value: 'apple', label: 'Apple 风格', note: '悬浮圆角栏，四周留出缝隙，半透明毛玻璃。' },
+  { value: 'classic', label: '经典', note: '贴底满宽的传统导航栏。' },
+];
+
 export const MOBILE_TAB_MIN = 2;
 export const MOBILE_TAB_MAX = 6;
 
@@ -107,6 +122,8 @@ export interface AppSettings {
   exportPrefix: string;
   exportSuffix: string;
   mobileTabBar: MobileTabBarPreference;
+  /** Narrow-screen tab bar shape; see `MobileTabStyle`. */
+  mobileTabStyle: MobileTabStyle;
 }
 
 export const APP_SETTINGS_STORAGE_KEY = 'todo.app-settings.v1';
@@ -122,6 +139,7 @@ export const defaultAppSettings: AppSettings = {
   exportPrefix: '',
   exportSuffix: '',
   mobileTabBar: defaultMobileTabBar,
+  mobileTabStyle: 'apple',
 };
 
 function isDensity(value: unknown): value is LayoutDensity {
@@ -130,6 +148,10 @@ function isDensity(value: unknown): value is LayoutDensity {
 
 function isOpenSessionMode(value: unknown): value is OpenSessionMode {
   return value === 'reuse' || value === 'new-tab' || value === 'reuse-existing';
+}
+
+function isMobileTabStyle(value: unknown): value is MobileTabStyle {
+  return value === 'apple' || value === 'classic';
 }
 
 function normalizeMobileTabBar(value: unknown): MobileTabBarPreference {
@@ -165,6 +187,7 @@ function normalize(value: unknown): AppSettings {
     exportPrefix: typeof raw.exportPrefix === 'string' ? raw.exportPrefix : defaultAppSettings.exportPrefix,
     exportSuffix: typeof raw.exportSuffix === 'string' ? raw.exportSuffix : defaultAppSettings.exportSuffix,
     mobileTabBar: normalizeMobileTabBar(raw.mobileTabBar),
+    mobileTabStyle: isMobileTabStyle(raw.mobileTabStyle) ? raw.mobileTabStyle : defaultAppSettings.mobileTabStyle,
   };
 }
 

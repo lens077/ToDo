@@ -586,7 +586,7 @@ export function ReaderView({ detail, model }: ReaderViewProps) {
           </p>
         </div>
         <div className="reader__actions">
-          <button type="button" className="text-action" onClick={() => void desktop.openExternal(detail.url)} title={detail.url}>
+          <button type="button" className="reader__open text-action" onClick={() => void desktop.openExternal(detail.url)} title={detail.url}>
             <Icon name="external" /> 在浏览器打开
           </button>
           {state === 'read' ? (
@@ -645,16 +645,6 @@ export function ReaderView({ detail, model }: ReaderViewProps) {
             )}
           </div>
         </div>
-
-        {/* 进度竖轨锚在 .reader__columns（不滚动）而非 .reader-pane：绝对定位
-           元素以滚动内容为包含块，会随续读滚动滚出视口（zwmsdd 附带发现）。
-           只在未读时渲染：已读的文章 meta 与按钮已标明状态，100% 的整条黄轨
-           贴在右缘只剩噪音（真机反馈）；未读 0% 时轨道本身不可见，行为不变。 */}
-        {state !== 'read' && (
-          <div className="reader-progress-rail" aria-hidden="true">
-            <span style={{ height: `${shownPercent}%` }} />
-          </div>
-        )}
 
         <aside className={`reader-notes${sheetOpen ? ' is-open' : ''}`} id="reader-notes" aria-label="标记与笔记">
           <header className="reader-notes__header">

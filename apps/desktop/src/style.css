@@ -1199,38 +1199,20 @@
   .reader__progress { position: absolute; right: 0; bottom: -1px; left: 0; height: 3px; background: var(--panel-2); }
   .reader__progress > span { display: block; height: 100%; background: var(--primary-fill); transition: width 0.25s var(--ease-out); }
   .reader__columns { display: grid; grid-template-columns: minmax(0, 1fr) clamp(260px, 30%, 380px); min-height: 0; position: relative; }
-  /* 阅读进度竖条：替代被隐藏的滚动条，指示文章长度与当前位置。
-     锚在 .reader__columns（不滚动）而非 .reader-pane：绝对定位元素以滚动
-     内容为包含块，会随续读滚出视口。right 用笔记栏宽度的同一 clamp 公式，
-     与 grid 第二列保持逐像素同步，轨道始终贴正文右缘。 */
-  .reader-progress-rail {
-    position: absolute;
-    top: 16px;
-    bottom: 16px;
-    right: calc(clamp(260px, 30%, 380px) + 3px);
-    width: 3px;
-    z-index: 5;
-    border-radius: 3px;
-    pointer-events: none;
-  }
-  .reader-progress-rail > span {
-    position: absolute;
-    top: 0;
-    left: 0;
-    right: 0;
-    border-radius: 3px;
-    background: var(--primary-fill);
-    transition: height 0.25s var(--ease-out);
-  }
   .reader-pane { position: relative; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 20px 28px 60px; outline: 0; }
   .reader-paper { position: relative; max-width: 720px; margin: 0 auto; padding: 32px 40px 48px; background: var(--panel); border: 1px solid var(--hairline); border-radius: var(--radius-panel); }
-  .reader-resume { position: sticky; top: 0; z-index: 3; display: flex; align-items: center; justify-content: center; gap: 10px; width: fit-content; max-width: 100%; margin: 0 auto 14px; padding: 6px 8px 6px 14px; color: var(--accent); background: var(--accent-wash); border: 1px solid var(--accent); border-radius: 999px; box-shadow: var(--shadow-menu); font-size: 12.5px; font-variant-numeric: tabular-nums; animation: context-in 0.16s var(--ease-out) both; }
-  .reader-resume > button { min-height: 26px; padding: 0 8px; color: var(--accent); background: transparent; border: 0; border-left: 1px solid var(--accent-wash-2); border-radius: 0; font-size: 12.5px; font-weight: 500; }
+  /* 「已回到上次读到的位置」提示条：钉在正文窗格顶部的通栏实面条。旧版
+     是半透明琥珀胶囊，正文从它两侧与底下透出来，进度和文章混在一起读不
+     清（真机反馈）；改成不透明面板底 + 底缘细线 + 投影的通栏条，正文从
+     条下干净地穿过。top 取窗格 padding-top 的负值（钉住基准含 padding），
+     钉住后横幅齐窗格顶缘，顶部不漏出滚过的正文。 */
+  .reader-resume { position: sticky; top: -20px; z-index: 3; display: flex; align-items: center; justify-content: center; gap: 10px; margin: 0 -28px 14px; padding: 9px 16px 9px 20px; color: var(--accent-deep); background: var(--panel); border: 0; border-bottom: 1px solid var(--hairline); border-radius: 0; box-shadow: var(--shadow-card); font-size: 13px; font-variant-numeric: tabular-nums; animation: context-in 0.16s var(--ease-out) both; }
+  .reader-resume > button { min-height: 28px; padding: 0 8px; color: var(--accent); background: transparent; border: 0; border-left: 1px solid var(--hairline); border-radius: 0; font-size: 13px; font-weight: 500; }
   .reader-resume__close { display: grid; place-items: center; width: 26px; padding: 0 !important; }
   .reader-resume__close svg { width: 13px; height: 13px; }
-  /* 另存为导出失败的提示条复用同款胶囊，只换危险色（sv2md9）。 */
-  .reader-resume--error { color: var(--danger); background: var(--danger-wash); border-color: var(--danger); }
-  .reader-resume--error > button { color: var(--danger); border-left-color: var(--danger-wash); }
+  /* 另存为导出失败的提示条复用同款横条，只换危险色（sv2md9）。 */
+  .reader-resume--error { color: var(--danger); }
+  .reader-resume--error > button { color: var(--danger); }
 
   /* The body is untrusted HTML reduced to article elements; typography is
      set here, not by the source page. */
@@ -1381,6 +1363,8 @@
   .reader__bar { grid-template-columns: auto minmax(0, 1fr); padding-inline: 18px; }
   .reader__actions { grid-column: 1 / -1; }
   .reader-pane { padding: 14px 18px 40px; }
+  /* 提示条与窗格同宽、齐顶：跟随此处更窄的窗格内边距出血与 padding-top。 */
+  .reader-resume { top: -14px; margin-inline: -18px; }
   .reader-paper { padding: 20px 20px 32px; }
   :root { --sidebar-width: 68px; }
   .app-shell { min-height: 520px; }
@@ -1460,6 +1444,9 @@
   /* The sidebar is replaced by a dedicated tab bar: four views plus a fixed
      「我的」 slot, rather than nine icons squeezed into two rows. */
   .sidebar { display: none; }
+  /* 「在浏览器打开」是桌面端才有的出口（移动端系统分享即达），窄布局
+     顶栏只剩一行动作位，把它收掉（真机反馈）。 */
+  .reader__open { display: none; }
   .mobile-tab-bar {
     grid-row: 2;
     grid-column: 1;
@@ -1467,11 +1454,30 @@
     grid-template-columns: repeat(var(--mobile-tab-count, 5), minmax(0, 1fr));
     align-items: stretch;
     gap: 3px;
+  }
+  /* 经典：贴底满宽。app 是 edge-to-edge 的（内容铺到系统导航栏后面），
+     inset 区由系统画三键；栏的底色止于导航区上缘（margin 把面板抬出
+     inset 区），不再铺出一条空色带（真机反馈）。
+     inset 为 0 的环境（预览窗口）margin 即 0，栏照旧贴住窗口底。 */
+  .mobile-tab-bar[data-tab-style='classic'] {
     width: 100%;
-    padding: 6px calc(8px + env(safe-area-inset-right)) calc(6px + env(safe-area-inset-bottom)) calc(8px + env(safe-area-inset-left));
+    margin-bottom: env(safe-area-inset-bottom);
+    padding: 6px calc(8px + env(safe-area-inset-right)) 6px calc(8px + env(safe-area-inset-left));
     background: var(--panel);
     border-top: 1px solid var(--hairline);
   }
+  /* Apple 风格（默认）：悬浮圆角栏，四周留缝（≈5px，inset 处取其大），
+     面板浮在页面底色上，圆角与投影同健康 App 的底栏。 */
+  .mobile-tab-bar[data-tab-style='apple'] {
+    width: auto;
+    margin: 0 max(5px, env(safe-area-inset-right)) max(5px, env(safe-area-inset-bottom)) max(5px, env(safe-area-inset-left));
+    padding: 5px 4px;
+    background: var(--panel);
+    border: 1px solid var(--hairline);
+    border-radius: 22px;
+    box-shadow: var(--shadow-menu);
+  }
+  .mobile-tab-bar[data-tab-style='apple'] button { border-radius: 17px; }
   .mobile-tab-bar button {
     position: relative;
     display: grid;
@@ -2087,9 +2093,6 @@
      40% 取高，百分比解析成 73px，连一张卡都放不下；抽屉给固定上限，正文
      与笔记各自滚动，互不挤压。 */
   .reader__columns { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); }
-  /* 窄屏单列：正文占满宽度，竖轨回到贴屏幕右缘；z-index 压到遮罩(2)与
-     抽屉(3)之下，抽屉打开时轨道被 scrim 压暗而不是浮在抽屉上。 */
-  .reader-progress-rail { right: 3px; z-index: 1; }
   .reader-notes {
     position: absolute;
     right: 0;

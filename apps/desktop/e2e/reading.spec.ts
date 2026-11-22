@@ -333,6 +333,13 @@ test.describe('阅读', () => {
     await expect(page.getByRole('heading', { name: '如何建立一个可持续的个人知识系统', level: 1 })).toBeVisible();
     const banner = page.getByRole('status').filter({ hasText: '已回到上次读到的位置 · 42%' });
     await expect(banner).toBeVisible();
+    // 重设计回归：横幅必须不透底——旧版半透明琥珀胶囊让正文从底下透出，
+    // 进度和文章混作一团（真机反馈）。
+    expect(await banner.evaluate((element) => {
+      const match = getComputedStyle(element).backgroundColor.match(/rgba?\(([^)]+)\)/);
+      const parts = match ? match[1].split(',').map((part) => Number(part.trim())) : [];
+      return parts.length === 4 ? parts[3] : 1;
+    })).toBe(1);
     await expect(page.locator('.reader-body .reader-last-read')).toHaveCount(1);
     const pane = page.locator('.reader-pane');
     await expect.poll(async () => pane.evaluate((element) => element.scrollTop)).toBeGreaterThan(0);
@@ -399,34 +406,23 @@ test.describe('阅读', () => {
     await expect(page.getByRole('button', { name: '标为已读' })).toBeVisible();
   });
 
-  // 竖轨锚在 .reader__columns（不滚动）而非 .reader-pane（滚动容器）：
-  // 放进 pane 会以滚动内容为包含块，随续读滚动滚出视口（zwmsdd 附带发现）。
-  test('进度竖轨钉在视口内，滚动正文时不随内容滚出', async ({ page }) => {
+  // 竖轨已整体移除（真机反馈：右缘黄条与滚动条混淆，sticky 化后仍属噪音）。
+  // 顶部横条进度（.reader__progress）保留，未读/已读都不再渲染竖轨。
+  test('阅读页不再渲染右缘进度竖轨', async ({ page }) => {
     await openReading(page);
     await page.getByRole('button', { name: '继续阅读 · 42%' }).click();
-    const rail = page.locator('.reader-progress-rail');
-    await expect(rail).toBeVisible();
-    // .reader 的 view-in 入场动画（0.24s translateY, fill both）没结束前
-    // boundingBox 带 y 偏移，等它结束再量。
-    await page.locator('.reader').evaluate((element) => Promise.all(
-      element.getAnimations({ subtree: true }).map((animation) => animation.finished.catch(() => {})),
-    ));
-    const pane = page.locator('.reader-pane');
-    await pane.evaluate((element) => {
-      element.scrollTop = element.scrollHeight / 2;
-      element.dispatchEvent(new Event('scroll'));
-    });
-    const railBox = await rail.boundingBox();
-    const paneBox = await pane.boundingBox();
-    expect(railBox).not.toBeNull();
-    expect(paneBox).not.toBeNull();
-    // 视口锚定：滚到中部后轨道顶必须仍 = pane 顶 + 16px（旧实现锚在滚动
-    // 内容上，此刻 y 会随内容上移甚至为负——单次测量即可钉死该回归）。
-    expect(Math.abs(railBox!.y - (paneBox!.y + 16))).toBeLessThan(2);
-    // 轨道全长 = pane 视口高 - 上下各 16px 内缩。
-    expect(Math.abs(railBox!.height - (paneBox!.height - 32))).toBeLessThan(2);
-    // 轨道贴正文右缘：right 与笔记栏宽度用同一 clamp 公式，两处必须逐像素同步。
-    expect(Math.abs(railBox!.x + railBox!.width - (paneBox!.x + paneBox!.width - 3))).toBeLessThan(2);
+    await expect(page.locator('.reader-progress-rail')).toHaveCount(0);
+    await page.getByRole('button', { name: '标为已读' }).click();
+    await expect(page.locator('.reader-progress-rail')).toHaveCount(0);
+  });
+
+  // 「在浏览器打开」是桌面端出口；窄布局（tab 栏断点）顶栏收掉它。
+  test('移动端布局隐藏「在浏览器打开」，桌面布局保留', async ({ page }) => {
+    await openReading(page);
+    await page.getByRole('button', { name: '继续阅读 · 42%' }).click();
+    await expect(page.getByRole('button', { name: '在浏览器打开' })).toBeVisible();
+    await page.setViewportSize({ width: 390, height: 844 });
+    await expect(page.getByRole('button', { name: '在浏览器打开' })).toBeHidden();
   });
 
   test('正文右键不再提供另存为，改为阻止系统菜单（另存为收敛到列表卡右键）', async ({ page }) => {

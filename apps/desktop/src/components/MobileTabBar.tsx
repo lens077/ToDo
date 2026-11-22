@@ -70,6 +70,7 @@ export function MobileTabBar({ activeView, counts, onChangeView, onOpenSettings,
       className="mobile-tab-bar"
       aria-label="底部导航"
       data-count={tabs.length + 1}
+      data-tab-style={settings.mobileTabStyle}
       style={{ '--mobile-tab-count': tabs.length + 1 } as React.CSSProperties}
     >
       {tabs.map((id) => {

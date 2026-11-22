@@ -142,6 +142,43 @@ test('a stored bar with fewer than two views falls back to the default four', as
   expect(labels).toEqual(['目标', '收件箱', '总览', '我的']);
 });
 
+// 默认 Apple 风格：悬浮圆角栏，四周留缝（≈5px），不满宽不贴底。
+test('default tab bar floats with a gap on every edge (apple style)', async ({ page }) => {
+  await page.goto('/');
+  const bar = page.getByRole('navigation', { name: '底部导航' });
+  await expect(bar).toBeVisible();
+  await expect(bar).toHaveAttribute('data-tab-style', 'apple');
+  const box = await bar.boundingBox();
+  const viewport = page.viewportSize();
+  expect(box).not.toBeNull();
+  expect(viewport).not.toBeNull();
+  expect(box!.x).toBeGreaterThanOrEqual(4);
+  expect(viewport!.width - (box!.x + box!.width)).toBeGreaterThanOrEqual(4);
+  expect(viewport!.height - (box!.y + box!.height)).toBeGreaterThanOrEqual(4);
+});
+
+// 设置里的「导航栏样式」切到经典：满宽贴底，偏好落 localStorage。
+test('settings switches the tab bar to the classic full-width style', async ({ page }) => {
+  await page.goto('/');
+  const bar = page.getByRole('navigation', { name: '底部导航' });
+  await expect(bar).toBeVisible();
+  await page.getByRole('button', { name: '我的' }).click();
+  const settings = page.getByRole('dialog', { name: '设置' });
+  await expect(settings).toBeVisible();
+  await settings.getByRole('radio', { name: '经典' }).check();
+  await expect(bar).toHaveAttribute('data-tab-style', 'classic');
+  const box = await bar.boundingBox();
+  const viewport = page.viewportSize();
+  expect(box).not.toBeNull();
+  expect(viewport).not.toBeNull();
+  // 预览环境 inset 为 0：经典栏满宽且贴住视口底。
+  expect(box!.x).toBe(0);
+  expect(viewport!.width - (box!.x + box!.width)).toBeLessThanOrEqual(1);
+  expect(viewport!.height - (box!.y + box!.height)).toBeLessThanOrEqual(1);
+  const stored = await page.evaluate(() => JSON.parse(window.localStorage.getItem('todo.app-settings.v1') ?? '{}'));
+  expect(stored.mobileTabStyle).toBe('classic');
+});
+
 test('long-pressing a tab opens the tab editor without switching views', async ({ page }) => {
   await page.goto('/');
   const reading = page.getByRole('navigation', { name: '底部导航' }).getByRole('button', { name: '收件箱', exact: true });
