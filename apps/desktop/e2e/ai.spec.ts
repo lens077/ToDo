@@ -134,7 +134,7 @@ test.describe('AI view', () => {
     await page.getByRole('button', { name: '设置', exact: true }).click();
     const settings = page.getByRole('dialog', { name: '设置' });
     const group = settings.getByRole('radiogroup', { name: '打开会话' });
-    await expect(group.getByRole('radio', { name: '复用同一窗口（默认）' })).toBeChecked();
+    await expect(group.getByRole('radio', { name: '复用同一窗口', exact: true })).toBeChecked();
     await expect(settings).toContainText('在 ToDo 自带的窗口里打开 DSH，再次打开时切换会话，不新开标签页');
     await group.getByRole('radio', { name: '每次新开标签页' }).check();
     await expect(settings).toContainText('用系统默认浏览器打开');

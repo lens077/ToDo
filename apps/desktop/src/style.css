@@ -1887,8 +1887,11 @@
   .settings-export-affixes input { min-width: 0; padding: 6px 9px; color: var(--ink); background: var(--panel); border: 1px solid var(--hairline-2); border-radius: 6px; font: inherit; font-size: 13px; }
   .settings-export-affixes input:focus-visible { outline: 2px solid var(--accent-wash-2); border-color: var(--accent); }
   .settings-export-affixes__note { grid-column: 1 / -1; color: var(--ink-3); font-size: 12px; overflow-wrap: anywhere; }
-  .segmented { display: inline-grid; grid-auto-flow: column; grid-auto-columns: 1fr; gap: 2px; justify-self: start; padding: 2px; background: var(--panel-2); border: 1px solid var(--hairline); border-radius: var(--radius-control); }
-  .segmented__option { position: relative; display: grid; min-height: 28px; padding: 0 16px; place-items: center; color: var(--ink-2); border-radius: 6px; font-size: 12.5px; cursor: pointer; transition: background 0.3s var(--ease-out), color 0.3s var(--ease-out), box-shadow 0.3s var(--ease-out); }
+  /* 列宽按内容自适应（1fr 均分曾把「复用同一窗口」这类长文案在 360px
+     三列下压成「复用同一窗/口」式破词折行）；空间不足时列按内容比例
+     收缩，text-wrap: balance 让残余的折行断在更自然的位置。 */
+  .segmented { display: inline-grid; grid-auto-flow: column; grid-auto-columns: auto; max-width: 100%; gap: 1px; justify-self: start; padding: 2px; background: var(--panel-2); border: 1px solid var(--hairline); border-radius: var(--radius-control); }
+  .segmented__option { position: relative; display: grid; min-height: 28px; padding: 0 12px; place-items: center; color: var(--ink-2); border-radius: 6px; font-size: 12.5px; cursor: pointer; text-wrap: balance; transition: background 0.3s var(--ease-out), color 0.3s var(--ease-out), box-shadow 0.3s var(--ease-out); }
   .segmented__option input { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; opacity: 0; cursor: pointer; }
   .segmented__option:hover { color: var(--ink); }
   .segmented__option.is-active { color: var(--ink); background: var(--panel); box-shadow: 0 1px 2px rgba(27, 21, 71, 0.14); font-weight: 500; }
