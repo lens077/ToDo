@@ -1431,6 +1431,12 @@
     grid-template-rows: minmax(0, 1fr) auto;
     height: 100vh;
     height: 100dvh;
+    /* base 的 max-height 减了 safe-area-inset-top（「避开不透明状态栏」
+       时代的产物）；系统栏转透明 edge-to-edge 后布局视口已是全屏，不减
+       这 42px——否则外壳整体上移，tab 栏与三键区之间多出一条背景空带
+       （真机 vivo 实测 inset-top=42 钳出 758px）。 */
+    max-height: 100vh;
+    max-height: 100dvh;
     min-height: 0;
   }
 
