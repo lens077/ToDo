@@ -229,7 +229,8 @@ export function SettingsDialog({ onClose, onOpenProviderSettings, onOpenWizard, 
                       checked={settings.openSession === item.value}
                       onChange={() => update({ openSession: item.value })}
                     />
-                    <span>{item.label}{item.value === defaultAppSettings.openSession ? '（默认）' : ''}</span>
+                    <span>{item.label}</span>
+                    {item.value === defaultAppSettings.openSession && <span className="segmented__default" aria-hidden="true">默认</span>}
                   </label>
                 ))}
               </div>
