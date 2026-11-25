@@ -6,8 +6,11 @@
 
 use std::{path::PathBuf, sync::Arc};
 
+mod otel;
+
 #[tokio::main]
 async fn main() {
+    let _otel = otel::init("virgo-sync", "todo");
     let data_dir = std::env::var("VIRGO_SYNC_DATA_DIR").expect("VIRGO_SYNC_DATA_DIR 未设置");
     let token = std::env::var("VIRGO_SYNC_TOKEN").expect("VIRGO_SYNC_TOKEN 未设置");
     if token.is_empty() {
@@ -22,6 +25,7 @@ async fn main() {
         .await
         .unwrap_or_else(|error| panic!("无法绑定 {bind}：{error}"));
     eprintln!("virgo-sync listening on {bind}");
+    tracing::info!("virgo-sync listening");
     axum::serve(listener, app)
         .await
         .expect("server runtime failed");

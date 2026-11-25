@@ -37,6 +37,17 @@ htmd = "0.5"
 encoding_rs = "0.8"
 regex = "1"
 
+# 可观测性：tracing 门面 + subscriber，OTel OTLP/HTTP（集群 collector 4318）导出 logs 与 traces。
+# 版本必须成套：opentelemetry / _sdk / -otlp / -appender-tracing 均为 0.33，
+# tracing-opentelemetry 0.34 依赖 opentelemetry 0.33。
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+opentelemetry = "0.33"
+opentelemetry_sdk = { version = "0.33", features = ["rt-tokio"] }
+opentelemetry-otlp = "0.33"
+opentelemetry-appender-tracing = "0.33"
+tracing-opentelemetry = "0.34"
+
 # Ship-ready release profile for the desktop bundle. `strip` drops the symbol
 # table (measured ~6.3 MB off the macOS binary) and cannot change behavior;
 # `lto`/`codegen-units` trade build time for a smaller binary.
