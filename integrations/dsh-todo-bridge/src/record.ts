@@ -8,7 +8,7 @@
 
 import { Buffer } from 'node:buffer'
 import { isAbsolute, relative, sep } from 'node:path'
-import type { BridgeDigest, BridgeInboxRow, BridgeSessionMeta, FeedRecord, FeedState } from './types.ts'
+import type { BridgeDigest, BridgeInboxRow, BridgeSessionMeta, Confirmation, FeedRecord, FeedState } from './types.ts'
 
 /** Contract byte limits (ai-feed-spec §1.1). */
 export const CONTRACT_LIMITS = Object.freeze({
@@ -102,6 +102,18 @@ export interface BuildRecordInput {
   readonly openUrl: string | null
   /** Other absolute spellings of `meta.workspace` (its realpath, for example) for {@link relativeToWorkspace}. */
   readonly workspaceAliases?: readonly string[]
+  /**
+   * v2 confirmation object for this session's pending decision. Only a
+   * `waiting` record can carry one; any other state drops it, because the
+   * contract rejects `action` outside `waiting` (ai-feed-spec §1.1).
+   */
+  readonly confirmation?: Confirmation | undefined
+  /**
+   * Highest `ai-feed-spec` the host's ToDo CLI accepts (see `spec.ts`). The
+   * default `1` drops the confirmation: a build that only accepts `1` rejects
+   * any record declaring `2`, which would fail the whole publish.
+   */
+  readonly feedSpec?: 1 | 2 | undefined
 }
 
 /**
@@ -142,9 +154,11 @@ export function buildRecord(input: BuildRecordInput): FeedRecord {
     .map(file => relativeToWorkspace(file, meta.workspace as string, input.workspaceAliases ?? []))
     .slice(0, CONTRACT_LIMITS.changedFiles)
   const changedFileCount = Math.max(digest?.changedFileCount ?? 0, digest?.changedFiles.length ?? 0)
+  const confirmation = (input.feedSpec ?? 1) === 2 && state === 'waiting' ? input.confirmation : undefined
   return {
-    'ai-feed-spec': 1,
+    'ai-feed-spec': confirmation === undefined ? 1 : 2,
     ...(input.sourceRevision ? { 'ai-feed-source-revision': input.sourceRevision } : {}),
+    ...(confirmation === undefined ? {} : { action: confirmation.action, params: confirmation.params }),
     source: 'dsh',
     session_id: truncateUtf8(meta.sessionId, CONTRACT_LIMITS.sessionIdBytes).text,
     workspace: meta.workspace,

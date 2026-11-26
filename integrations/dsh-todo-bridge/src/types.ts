@@ -78,9 +78,23 @@ export type BridgeCategory = 'unread' | 'seen' | 'running' | 'needsYou' | 'faile
 /** Contract `state` values (ai-feed-spec §2). */
 export type FeedState = 'running' | 'waiting' | 'unread' | 'seen' | 'failed' | 'handled'
 
-/** One ai-feed-spec 1 record as the host writes it (§1.1). */
+/**
+ * One v2 confirmation object (ai-feed-spec §1.1): a session that is `waiting`
+ * says which action it needs approved and with which parameters. ToDo derives
+ * `params_digest` from `params` and refuses `ack` unless the digest matches, so
+ * approving means approving these exact parameters.
+ */
+export interface Confirmation {
+  /** Human-readable action awaiting the decision, ≤ 200 bytes. */
+  readonly action: string
+  /** Pending parameters as a serialized JSON object, ≤ 4096 bytes. */
+  readonly params: string
+}
+
+/** One ai-feed-spec record as the host writes it (§1.1). */
 export interface FeedRecord {
-  readonly 'ai-feed-spec': 1
+  /** `2` whenever the record carries a confirmation object; `1` otherwise. */
+  readonly 'ai-feed-spec': 1 | 2
   /** Optional source revision so ToDo can identify a newer bridge. */
   readonly 'ai-feed-source-revision'?: string
   readonly source: 'dsh'
@@ -96,4 +110,8 @@ export interface FeedRecord {
   readonly changed_file_count: number
   readonly open_url: string | null
   readonly event_at: number
+  /** v2: the action awaiting approval; present only with `state: waiting`. */
+  readonly action?: string
+  /** v2: the parameters that approval would authorize; always with `action`. */
+  readonly params?: string
 }

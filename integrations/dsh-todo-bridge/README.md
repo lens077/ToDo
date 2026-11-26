@@ -1,6 +1,6 @@
 # dsh-todo-bridge
 
-DeepSeek Harness（DSH）扩展包，含宿主与 Web 客户端两半：宿主侧把汇总面板里每个会话的状态发布给 ToDo CLI，客户端侧在 Web GUI 里解析 `?session=<id>` 深链。它是 `docs/ai-panel-spec.md` §7 的「路径 B」实现，只依赖 `docs/ai-feed-spec.md`（`ai-feed-spec: 1`）；宿主侧唯一的输出动作是运行 `todo ai upsert --stdin`，stdin 为一条 §1.1 的 JSON 记录。
+DeepSeek Harness（DSH）扩展包，含宿主与 Web 客户端两半：宿主侧把汇总面板里每个会话的状态发布给 ToDo CLI，客户端侧在 Web GUI 里解析 `?session=<id>` 深链。它是 `docs/ai-panel-spec.md` §7 的「路径 B」实现，只依赖 `docs/ai-feed-spec.md`（基线 `ai-feed-spec: 1`，CLI 支持时叠加 v2 确认对象）；宿主侧唯一的输出动作是运行 `todo ai upsert --stdin`，stdin 为一条 §1.1 的 JSON 记录。
 
 适用对象：在本机同时运行 `dsh web` 与 ToDo 的开发者。安装后无需改动 DSH 仓库，也不改动 ToDo 仓库的构建。
 
@@ -108,6 +108,36 @@ bundle 补丁 `cordis.patch.yml` 插入 `id: todo-bridge` 一行。在 `~/.dsh/p
 其他字段：`workspace` 取 `session.header.cwd`；`title` 取 `title` 投影；`question` / `reply` / `changed_files` / `outcome` 取 `sessionDigest` 投影，`changed_files` 相对 `workspace` 表示并截到 32 项；`open_url` 由 `ctx.webServer.port` 组成 `http://127.0.0.1:<port>` 代入 `{base}`，无 Web 服务时为 `http://127.0.0.1:3080`。
 
 `changed_files` 的相对化按三步进行：路径位于 `workspace` 或其 realpath 之下时去掉该前缀；否则在路径里查找 `workspace` 末尾若干段（先长后短，至少含末段目录名）首次出现的位置，去掉到该处为止的部分（例如工作区 `/work/kubernetes`，会话日志里记录的是 `/mnt/work/kubernetes/components/gateway/README.md`，得到 `components/gateway/README.md`）；两者都不成立则原样保留。
+
+## 确认对象（v2）
+
+会话进入「等你回复」时，记录可以从 v1 状态升级为**确认对象**：`action` 说明在等什么，
+`params` 给出待批准参数，ToDo 据此派生 `params_digest`，`todo ai ack` 必须回传一致的
+`--confirm-digest`，否则拒绝（参数一变，旧审批自动失效）。
+
+- 审批（`approval/request`）：`action` 取工具名与理由；`params` 的 `arguments` 来自宿主
+  日志里的 `tool/call` 事件（按会话与调用 ID 关联，最多保留 500 条）。
+- 提问（`user-questions/request`）：`action` 取首个问题的 `header` 或问题本身；`params`
+  带每个问题的 `id`/`question`/`options`。
+- 两者都受契约上限约束：`action` ≤ 200 字节，`params` ≤ 4096 字节且必须是 JSON 对象。
+  超限时先缩短字符串叶子、再截短数组，最小退化是带 `paramsTruncated` 的对象。
+
+契约版本由挂载时的一次探测决定：插件以一个任何构建都不接受的 spec（`3`）调用
+`todo ai upsert`，从诊断里读出 CLI 支持的范围（`accepts 1-2` 即支持 v2）。探测不写任何
+记录。CLI 只支持 `1` 时，确认对象自动关闭，记录退回纯 v1 形状——向只认 `1` 的构建发送
+`2` 会让每条 `waiting` 记录被拒，进而让发布器在失败预算内暂停。
+
+`feedSpec` 配置可越过探测直接钉住版本：
+
+```yaml
+- id: todo-bridge
+  config:
+    feedSpec: 2
+```
+
+**升级 CLI 才会真正生效**：`0.1.0` 的旧构建（`~/.cargo/bin/todo`）只认 `1`，且它的写入会
+整体重写存储、把所有记录的 `action`/`params`/`params_digest` 抹掉。要让确认对象持久化，
+PATH 上的 `todo` 必须换成支持 `1-2` 的构建（`cargo install --path crates/todo-cli`）。
 
 ## 限制
 

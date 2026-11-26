@@ -30,6 +30,10 @@ interface FakeHost {
   projectionListeners: Listener[]
   disposers: Array<() => unknown>
   calls: Array<{ argv: readonly string[]; record: FeedRecord }>
+  /** Spec range the fake CLI reports when the bridge probes it. */
+  feedSpecCapabilities: '1' | '1-2'
+  /** Spawns the bridge made to detect that range. */
+  probes: Array<readonly string[]>
   logs: string[]
   emit(name: string, ...args: unknown[]): unknown
   waterfall(name: string, request: unknown, inner: () => Promise<unknown>): Promise<unknown>
@@ -45,6 +49,7 @@ function makeHost(): FakeHost {
   const projectionListeners: Listener[] = []
   const disposers: Array<() => unknown> = []
   const calls: FakeHost['calls'] = []
+  const probes: FakeHost['probes'] = []
   const logs: string[] = []
   const host: FakeHost = {
     sessions: new Map(),
@@ -56,6 +61,8 @@ function makeHost(): FakeHost {
     projectionListeners,
     disposers,
     calls,
+    feedSpecCapabilities: '1-2',
+    probes,
     logs,
     ctx: {},
     emit(name, ...args) {
@@ -80,7 +87,19 @@ function makeHost(): FakeHost {
   const subprocess = {
     resolveExecutable: async (command: string) => `/resolved/${command}`,
     spawn: (spec: { argv: readonly string[]; stdio: { stdin: { data: string } } }) => {
-      calls.push({ argv: spec.argv, record: JSON.parse(spec.stdio.stdin.data) as FeedRecord })
+      const raw = JSON.parse(spec.stdio.stdin.data) as { 'ai-feed-spec'?: number }
+      // The bridge probes with a spec no build accepts; answer like the real
+      // CLI (exit 2, range in stderr) without publishing anything.
+      if (raw['ai-feed-spec'] === 3) {
+        probes.push(spec.argv)
+        const text = 'invalid ai-feed record: unsupported ai-feed-spec 3; '
+          + `this build accepts ${host.feedSpecCapabilities}`
+        return {
+          done: Promise.resolve({ exitCode: 2, signal: null }),
+          collected: { stderr: { readFrom: () => ({ text, nextOffset: 0, lossy: false }) } },
+        }
+      }
+      calls.push({ argv: spec.argv, record: raw as unknown as FeedRecord })
       return {
         done: Promise.resolve({ exitCode: 0, signal: null }),
         collected: { stderr: { readFrom: () => ({ text: '', nextOffset: 0, lossy: false }) } },
@@ -214,7 +233,7 @@ describe('todo-bridge plugin', () => {
 
     // An approval request: waiting while pending, running again once answered.
     let answer: (value: string) => void = () => undefined
-    const pending = host.waterfall('approval/request', { agent }, () => new Promise<string>((resolve) => { answer = resolve }))
+    const pending = host.waterfall('approval/request', { agent, toolName: 'bash' }, () => new Promise<string>((resolve) => { answer = resolve }))
     await settle()
     expect(host.calls.at(-1)?.record.state).toBe('waiting')
     answer('allowed-once')
@@ -287,7 +306,7 @@ describe('todo-bridge plugin', () => {
     host.agents.set('a', agent)
     mount(host)
     await settle()
-    await expect(host.waterfall('approval/request', { agent }, () => Promise.resolve('allowed-once'))).resolves.toBe('allowed-once')
+    await expect(host.waterfall('approval/request', { agent, toolName: 'bash' }, () => Promise.resolve('allowed-once'))).resolves.toBe('allowed-once')
     await settle()
     expect(host.calls.map(call => call.record.state)).toEqual(['running'])
   })
@@ -360,6 +379,134 @@ describe('todo-bridge plugin', () => {
     } finally {
       rmSync(base, { recursive: true, force: true })
     }
+  })
+
+  it('publishes a v2 confirmation while an approval is pending', async () => {
+    const host = makeHost()
+    const live = session('a')
+    host.sessions.set('a', live)
+    host.projections.set('a', { sessionDigest: openDigest(), title: 'A' })
+    const agent = { id: 'a', session: live, status: 'running' as const }
+    host.agents.set('a', agent)
+    mount(host)
+    await settle()
+
+    // The host logs the call before asking; the confirmation reads it back.
+    host.emit('session/event', live, {
+      type: 'tool/call',
+      data: { turn: 0, step: 0, callId: 'call-1', name: 'bash', arguments: '{"command":"ls -la"}' },
+    })
+    let answer: (value: string) => void = () => undefined
+    const pending = host.waterfall(
+      'approval/request',
+      { agent, toolName: 'bash', callId: 'call-1', reason: '执行命令' },
+      () => new Promise<string>((resolve) => { answer = resolve }),
+    )
+    await settle()
+    const waiting = host.calls.at(-1)?.record
+    expect(waiting).toMatchObject({
+      state: 'waiting',
+      'ai-feed-spec': 2,
+      action: '批准运行 bash：执行命令',
+    })
+    expect(JSON.parse(waiting?.params ?? '{}')).toMatchObject({
+      kind: 'approval',
+      tool: 'bash',
+      callId: 'call-1',
+      arguments: { command: 'ls -la' },
+    })
+
+    // Answered: the record drops back to v1 and loses the confirmation.
+    answer('allowed-once')
+    await expect(pending).resolves.toBe('allowed-once')
+    await settle()
+    const settled = host.calls.at(-1)?.record
+    expect(settled?.state).toBe('running')
+    expect(settled?.['ai-feed-spec']).toBe(1)
+    expect(settled?.action).toBeUndefined()
+    expect(settled?.params).toBeUndefined()
+  })
+
+  it('drops the confirmation when the CLI accepts only ai-feed-spec 1', async () => {
+    const host = makeHost()
+    host.feedSpecCapabilities = '1'
+    const live = session('a')
+    host.sessions.set('a', live)
+    host.projections.set('a', { sessionDigest: openDigest(), title: 'A' })
+    const agent = { id: 'a', session: live, status: 'running' as const }
+    host.agents.set('a', agent)
+    mount(host)
+    await settle()
+
+    let answer: (value: string) => void = () => undefined
+    const pending = host.waterfall(
+      'approval/request',
+      { agent, toolName: 'bash' },
+      () => new Promise<string>((resolve) => { answer = resolve }),
+    )
+    await settle()
+    expect(host.probes).toHaveLength(1)
+    expect(host.calls.at(-1)?.record).toMatchObject({ state: 'waiting', 'ai-feed-spec': 1 })
+    expect(host.calls.at(-1)?.record.action).toBeUndefined()
+
+    answer('allowed-once')
+    await expect(pending).resolves.toBe('allowed-once')
+  })
+
+  it('pins the contract version when configured, without probing', async () => {
+    const host = makeHost()
+    // The CLI would report spec 1; the pin says otherwise.
+    host.feedSpecCapabilities = '1'
+    const live = session('a')
+    host.sessions.set('a', live)
+    host.projections.set('a', { sessionDigest: openDigest(), title: 'A' })
+    const agent = { id: 'a', session: live, status: 'running' as const }
+    host.agents.set('a', agent)
+    mount(host, { feedSpec: 2 })
+    await settle()
+
+    let answer: (value: string) => void = () => undefined
+    const pending = host.waterfall(
+      'approval/request',
+      { agent, toolName: 'bash' },
+      () => new Promise<string>((resolve) => { answer = resolve }),
+    )
+    await settle()
+    expect(host.probes).toHaveLength(0)
+    expect(host.calls.at(-1)?.record).toMatchObject({ state: 'waiting', 'ai-feed-spec': 2 })
+
+    answer('allowed-once')
+    await expect(pending).resolves.toBe('allowed-once')
+  })
+
+  it('publishes a v2 confirmation while a question is pending', async () => {
+    const host = makeHost()
+    const live = session('a')
+    host.sessions.set('a', live)
+    host.projections.set('a', { sessionDigest: openDigest(), title: 'A' })
+    const agent = { id: 'a', session: live, status: 'running' as const }
+    host.agents.set('a', agent)
+    mount(host)
+    await settle()
+
+    let answer: (value: string) => void = () => undefined
+    const pending = host.waterfall(
+      'user-questions/request',
+      { agent, questions: [{ id: 'q1', question: '继续吗？', options: [{ label: '是' }, { label: '否' }] }] },
+      () => new Promise<string>((resolve) => { answer = resolve }),
+    )
+    await settle()
+    const waiting = host.calls.at(-1)?.record
+    expect(waiting).toMatchObject({ state: 'waiting', 'ai-feed-spec': 2, action: '回答提问：继续吗？' })
+    expect(JSON.parse(waiting?.params ?? '{}')).toMatchObject({
+      kind: 'question',
+      questions: [{ id: 'q1', question: '继续吗？', options: [{ label: '是' }, { label: '否' }] }],
+    })
+
+    answer('继续')
+    await expect(pending).resolves.toBe('继续')
+    await settle()
+    expect(host.calls.at(-1)?.record['ai-feed-spec']).toBe(1)
   })
 
   it('disposes the publisher through the fiber effect', async () => {

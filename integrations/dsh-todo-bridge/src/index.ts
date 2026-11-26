@@ -18,7 +18,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import type { Agent } from '@deepseek-ai/dsh-agent/types'
 import type {} from '@deepseek-ai/dsh-agent'
-import type { Session, SessionHeader, SessionId, SessionLogOffset } from '@deepseek-ai/dsh-session'
+import type { Session, SessionEvent, SessionHeader, SessionId, SessionLogOffset } from '@deepseek-ai/dsh-session'
 import type {} from '@deepseek-ai/dsh-session-projection'
 import type { ProjectionSnapshot } from '@deepseek-ai/dsh-session-projection'
 import type {} from '@deepseek-ai/dsh-session-digest/types'
@@ -33,15 +33,20 @@ import type {} from '@deepseek-ai/dsh-subprocess'
 import type {} from '@deepseek-ai/dsh-user-approval'
 import type {} from '@deepseek-ai/dsh-user-questions'
 import type { DomainChanged } from '@deepseek-ai/dsh-storage-domain'
+import { approvalConfirmation, questionConfirmation } from './confirmation.ts'
+import { probeFeedSpec } from './spec.ts'
 import { classify } from './classify.ts'
 import { buildRecord } from './record.ts'
 import { Publisher } from './publisher.ts'
 import { createNodeSpawner, createSubprocessSpawner } from './spawn.ts'
-import type { BridgeDigest, BridgeInboxRow, BridgeSessionMeta } from './types.ts'
+import type { BridgeDigest, BridgeInboxRow, BridgeSessionMeta, Confirmation } from './types.ts'
 
 export type * from './types.ts'
 export { classify, classifyCategory, eligible, landedSeq, toFeedState } from './classify.ts'
 export { buildRecord, contentKey, eventAtOf, relativeToWorkspace, truncateUtf8, CONTRACT_LIMITS } from './record.ts'
+export { approvalConfirmation, questionConfirmation, CONFIRMATION_LIMITS } from './confirmation.ts'
+export { probeFeedSpec, BRIDGE_FEED_SPEC, SPEC_PROBE_RECORD } from './spec.ts'
+export type { ApprovalFacts, ConfirmationOption, ConfirmationQuestion } from './confirmation.ts'
 export { Publisher, UPSERT_ARGS } from './publisher.ts'
 export type { PublisherLogger, PublisherOptions, PublisherStats, SpawnOutcome, Spawner } from './publisher.ts'
 export { createNodeSpawner, createSubprocessSpawner } from './spawn.ts'
@@ -64,6 +69,12 @@ export interface Config {
   /** Consecutive CLI failures after which publishing pauses. Omit for 5. */
   maxConsecutiveFailures?: number
   /**
+   * Pin the contract version instead of detecting it. Detection probes the CLI
+   * once at mount and reads the spec range from its diagnostics; pin this when
+   * the CLI answers that probe in an unexpected way.
+   */
+  feedSpec?: 1 | 2
+  /**
    * `open_url` template. `{base}` is the Web server's loopback URL and
    * `{sessionId}` the URL-encoded session id. Omit for
    * `{base}/?session={sessionId}`, the deep link this bundle's client half
@@ -84,6 +95,7 @@ export const Config: z<Config> = z.object({
   workspaces: z.array(z.string()).default([]),
   debounceMs: z.natural().default(300),
   maxConsecutiveFailures: z.natural().min(1).default(5),
+  feedSpec: z.union([z.const(1), z.const(2)]),
   openUrlTemplate: z.string().default(DEFAULT_OPEN_URL_TEMPLATE),
 })
 
@@ -94,12 +106,21 @@ const LOOPBACK_HOST = '127.0.0.1'
 /** Projection keys the bridge reads in one consistent cut. */
 const PROJECTION_KEYS = ['sessionDigest', 'title', 'sessionListMetadata'] as const
 
+/** Tool-call argument strings retained for pending approvals. */
+const CALL_ARGUMENTS_MAX = 500
+
 /** Per-session runtime signals the host does not persist. */
 interface Signals {
   /** Pending approvals and questions; `waiting` while positive. */
   pendingInteractions: number
   /** Time of the newest observed signal change, epoch ms. */
   signalAt: number | null
+  /**
+   * Confirmation objects of the still-pending interactions, oldest first. The
+   * newest one describes what the user has to decide next; it clears when the
+   * interaction settles.
+   */
+  confirmations: Confirmation[]
 }
 
 /**
@@ -115,6 +136,7 @@ export function apply(ctx: Context, config: Config = {}): void {
     debounceMs: config.debounceMs ?? 300,
     maxConsecutiveFailures: config.maxConsecutiveFailures ?? 5,
     openUrlTemplate: config.openUrlTemplate ?? DEFAULT_OPEN_URL_TEMPLATE,
+    feedSpec: config.feedSpec,
   }
   if (!settings.enabled) {
     ctx.logger.info('todo-bridge: disabled by configuration')
@@ -141,11 +163,27 @@ export function apply(ctx: Context, config: Config = {}): void {
   })
   ctx.effect(() => async () => { await publisher.dispose() }, 'todo-bridge.publisher')
 
+  // Confirmation objects need a CLI that accepts `ai-feed-spec: 2`; until the
+  // probe answers (or when the CLI is older), records stay on the v1 contract.
+  let feedSpec: 1 | 2 = settings.feedSpec ?? 1
+  if (settings.feedSpec === undefined) {
+    void probeFeedSpec(spawner, settings.todoBinary).then((spec) => {
+      feedSpec = spec
+      ctx.logger.info(
+        spec === 2
+          ? 'todo-bridge: todo CLI accepts ai-feed-spec 1-2; confirmation objects enabled'
+          : 'todo-bridge: todo CLI accepts ai-feed-spec 1 only; confirmation objects disabled',
+      )
+    })
+  } else {
+    ctx.logger.info(`todo-bridge: todo CLI spec pinned to ${String(settings.feedSpec)} by configuration`)
+  }
+
   const signals = new Map<SessionId, Signals>()
   const signalsOf = (id: SessionId): Signals => {
     let entry = signals.get(id)
     if (entry === undefined) {
-      entry = { pendingInteractions: 0, signalAt: null }
+      entry = { pendingInteractions: 0, signalAt: null, confirmations: [] }
       signals.set(id, entry)
     }
     return entry
@@ -184,6 +222,7 @@ export function apply(ctx: Context, config: Config = {}): void {
     meta: BridgeSessionMeta,
     digest: BridgeDigest | undefined,
     row: BridgeInboxRow | undefined,
+    confirmation: Confirmation | undefined,
   ): void => {
     if (meta.workspace === null || !workspaceAllowed(meta.workspace)) return
     const state = classify(digest, row, meta, Date.now())
@@ -196,6 +235,8 @@ export function apply(ctx: Context, config: Config = {}): void {
       state,
       openUrl: openUrlOf(meta.sessionId as SessionId),
       workspaceAliases: aliasesOf(meta.workspace),
+      confirmation,
+      feedSpec,
     }))
   }
 
@@ -222,7 +263,7 @@ export function apply(ctx: Context, config: Config = {}): void {
       archived: archived.has(session.id),
       signalAt: signal?.signalAt ?? null,
     }
-    publish(meta, values.digest, inboxRows.get(session.id))
+    publish(meta, values.digest, inboxRows.get(session.id), signal?.confirmations.at(-1))
   }
 
   /** Evaluate one persisted-but-detached session from the projection cache. */
@@ -253,7 +294,7 @@ export function apply(ctx: Context, config: Config = {}): void {
       archived: archived.has(header.id),
       signalAt: signal?.signalAt ?? null,
     }
-    publish(meta, values.digest, inboxRows.get(header.id))
+    publish(meta, values.digest, inboxRows.get(header.id), undefined)
   }
 
   /** Evaluate by id: the live session when attached, else the cold path. */
@@ -296,27 +337,87 @@ export function apply(ctx: Context, config: Config = {}): void {
     evaluateLive(agent.session)
   })
 
+  // Tool-call arguments, keyed by session and call. An `approval/request`
+  // carries the tool name and call id but never the arguments, so the
+  // confirmation's `params` would otherwise be empty; the session event stream
+  // is where the host logs them (`tool/call` carries `arguments` as JSON).
+  const callArguments = new Map<string, string>()
+  const callKey = (sessionId: string, callId: string): string => `${sessionId}\u0000${callId}`
+  ctx.on('session/event', (session: Session, event: SessionEvent) => {
+    if (event.type !== 'tool/call') return
+    const key = callKey(session.id, event.data.callId)
+    // Re-insert so the newest call is the last evicted candidate.
+    callArguments.delete(key)
+    callArguments.set(key, event.data.arguments)
+    while (callArguments.size > CALL_ARGUMENTS_MAX) {
+      const oldest = callArguments.keys().next()
+      if (oldest.done) break
+      callArguments.delete(oldest.value)
+    }
+  })
+
   // Pending approvals and user questions: the host-side equivalent of the
   // client's pending-interaction set. Registered ahead of the UI answerers
   // (prepend) and always delegating, so the chain is unchanged.
-  const trackInteraction = async <T>(agent: Agent | undefined, next: () => Promise<T>): Promise<T> => {
+  /**
+   * Build one confirmation without letting a builder failure reach the host's
+   * approval chain: a malformed payload must cost the record its v2 fields, not
+   * strand the pending decision.
+   */
+  const safeConfirmation = (build: () => Confirmation | null): Confirmation | null => {
+    try {
+      return build()
+    } catch (error: unknown) {
+      ctx.logger.warn(`todo-bridge: confirmation build failed: ${String(error)}`)
+      return null
+    }
+  }
+
+  const trackInteraction = async <T>(
+    agent: Agent | undefined,
+    next: () => Promise<T>,
+    confirmationOf?: () => Confirmation | null,
+  ): Promise<T> => {
     if (agent === undefined) return next()
     const entry = signalsOf(agent.id)
     entry.pendingInteractions += 1
     entry.signalAt = Date.now()
+    // Built before the first evaluation so the published `waiting` record
+    // already carries what the user has to decide.
+    const confirmation = confirmationOf?.() ?? null
+    if (confirmation !== null) entry.confirmations.push(confirmation)
     evaluateLive(agent.session)
     try {
       return await next()
     } finally {
       entry.pendingInteractions = Math.max(0, entry.pendingInteractions - 1)
       entry.signalAt = Date.now()
+      if (confirmation !== null) {
+        const at = entry.confirmations.indexOf(confirmation)
+        if (at >= 0) entry.confirmations.splice(at, 1)
+      }
       // The agent may already be gone (cancelled turn); a disposed session
       // is simply not re-evaluated.
       if (ctx.sessions.get(agent.id) !== undefined) evaluateLive(agent.session)
     }
   }
-  ctx.on('approval/request', (request, next) => trackInteraction(request.agent, next), true)
-  ctx.on('user-questions/request', (request, next) => trackInteraction(request.agent, next), true)
+  ctx.on('approval/request', (request, next) => trackInteraction(
+    request.agent,
+    next,
+    () => safeConfirmation(() => approvalConfirmation({
+      toolName: request.toolName,
+      callId: request.callId,
+      reason: request.reason,
+      argumentsJson: request.callId === undefined
+        ? undefined
+        : callArguments.get(callKey(request.agent.id, request.callId)),
+    })),
+  ), true)
+  ctx.on('user-questions/request', (request, next) => trackInteraction(
+    request.agent,
+    next,
+    () => safeConfirmation(() => questionConfirmation(request.questions)),
+  ), true)
 
   // Archive set changes ride the workspace domain's global-singleton write.
   ctx.on('domain/changed', (change: DomainChanged) => {

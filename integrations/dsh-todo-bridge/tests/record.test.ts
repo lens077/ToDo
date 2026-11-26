@@ -157,3 +157,68 @@ describe('contentKey', () => {
     expect(contentKey(seen)).not.toBe(contentKey(base))
   })
 })
+
+describe('confirmation gating (ai-feed-spec v2)', () => {
+  const confirmation = Object.freeze({
+    action: '批准运行 bash',
+    params: '{"kind":"approval","tool":"bash"}',
+  })
+
+  it('emits the v2 fields for a waiting record once the CLI accepts spec 2', () => {
+    const record = buildRecord({
+      meta: meta({ waiting: true }),
+      digest: undefined,
+      row: undefined,
+      state: 'waiting',
+      openUrl: null,
+      feedSpec: 2,
+      confirmation,
+    })
+    expect(record['ai-feed-spec']).toBe(2)
+    expect(record.action).toBe('批准运行 bash')
+    expect(record.params).toBe('{"kind":"approval","tool":"bash"}')
+  })
+
+  it('drops the confirmation outside waiting, where the contract forbids action', () => {
+    const record = buildRecord({
+      meta: meta(),
+      digest: openDigest(),
+      row: undefined,
+      state: 'running',
+      openUrl: null,
+      feedSpec: 2,
+      confirmation,
+    })
+    expect(record['ai-feed-spec']).toBe(1)
+    expect(record.action).toBeUndefined()
+    expect(record.params).toBeUndefined()
+  })
+
+  it('drops the confirmation when the CLI accepts only spec 1', () => {
+    const record = buildRecord({
+      meta: meta({ waiting: true }),
+      digest: undefined,
+      row: undefined,
+      state: 'waiting',
+      openUrl: null,
+      feedSpec: 1,
+      confirmation,
+    })
+    expect(record['ai-feed-spec']).toBe(1)
+    expect(record.action).toBeUndefined()
+    expect(record.params).toBeUndefined()
+  })
+
+  it('stays on spec 1 when no confirmation is pending', () => {
+    const record = buildRecord({
+      meta: meta({ waiting: true }),
+      digest: undefined,
+      row: undefined,
+      state: 'waiting',
+      openUrl: null,
+      feedSpec: 2,
+    })
+    expect(record['ai-feed-spec']).toBe(1)
+    expect(record.action).toBeUndefined()
+  })
+})
