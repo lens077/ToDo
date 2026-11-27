@@ -1449,5 +1449,6 @@ file=…/images/<id>/cover.jpg size=843848
    - `todo-0.1.2-aarch64-apple-darwin.tar.gz` 5,141,253 B
    - `virgo-0.1.2-arm64-v8a.apk` 20,438,341 B（`versionName=0.1.2`，debug 签名）
    - `Sumery-Virgo-0.1.2-x64-setup.exe` 7,163,086 B（cargo-xwin 交叉编译，未签名）
-4. 站点：`web/src/content.zh.mjs` / `content.en.mjs` 更新到 0.1.2，新增 `dl.apk` / `dl.win`、hero「下载 Android 版」按钮与下载表两行平台状态。Cloudflare Pages 与 EdgeOne Pages 已手动部署成功；k8s 镜像经 node4 构建推送，但 `helm upgrade` 与 ArgoCD 冲突（该 Deployment 由 ArgoCD 管理），改由推 GitHub main 触发 `.github/workflows/deploy.yml` 回写 values-prod 后由 ArgoCD 同步。
+4. 站点：`web/src/content.zh.mjs` / `content.en.mjs` 更新到 0.1.2，新增 `dl.apk` / `dl.win`、hero「下载 Android 版」按钮与下载表两行平台状态。Cloudflare Pages（`d1a2979b.virgo-overseas.pages.dev`）与 EdgeOne Pages（deployment `dpwjilehuut9`）已手动部署成功；k8s 由 `helm upgrade` 与 ArgoCD 冲突（该 Deployment 归 ArgoCD 管），改由推 GitHub main 触发 `.github/workflows/deploy.yml` 回写 values-prod、ArgoCD 同步。
+   实测 EdgeOne 下载（`https://virgo-pages.apikv.com`）：APK 200 / 20,438,341 B，Windows exe 200 / 7,163,086 B，macOS app.zip 200 / 9,828,045 B，SHA256SUMS 200 / 410 B；`/zh/` 与 `/en/` 页面均为 v0.1.2 且含「下载 Android 版 / Download for Android」。
 5. 待办：真机烟收（下载 APK → 登录 → 打开文章点链接看菜单 → 在浏览器打开 / 复制链接）。
