@@ -120,6 +120,15 @@ export function apply(ctx: Context, config: Config = {}): void {
     ctx.logger.info('todo-bridge: disabled by configuration')
     return
   }
+  // One line at mount: without it a silent publish failure leaves no record
+  // of which build ran or which CLI it addressed.
+  const scope = settings.workspaces.length === 0
+    ? 'every workspace'
+    : `${String(settings.workspaces.length)} configured workspace root(s)`
+  ctx.logger.info(
+    `todo-bridge: ${BRIDGE_SOURCE_REVISION} publishing to "${settings.todoBinary}" `
+    + `(debounce ${String(settings.debounceMs)} ms, ${scope})`,
+  )
 
   const subprocess = ctx.get('subprocess')
   const spawner = subprocess === undefined ? createNodeSpawner() : createSubprocessSpawner(subprocess)

@@ -1,6 +1,6 @@
 {
   "name": "dsh-todo-bridge",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "DeepSeek Harness bundle for the ToDo CLI: a host plugin that publishes session state (`todo ai upsert --stdin`, ai-feed-spec 1) and a Web client half that opens `?session=<id>` deep links.",
   "license": "MIT",
   "type": "module",

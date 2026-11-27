@@ -117,6 +117,7 @@ bundle 补丁 `cordis.patch.yml` 插入 `id: todo-bridge` 一行。在 `~/.dsh/p
 - 冷会话（未挂载）只在投影缓存有 `sessionDigest` 行时才出现在启动快照里，与会话列表的行为一致。
 - 收件箱行被整体清除时没有 `updatedAt` 可用，插件以观测时间作为 `event_at`；宿主重启后启动快照中的会话没有运行时信号，`event_at` 只来自摘要与收件箱时间。
 - 宿主的 `ctx.subprocess` 会剔除凭据类环境变量与 `DSH_*` 变量后再启动 `todo`；PATH 保留。
+- 记录里的 `ai-feed-source-revision` 不在 `docs/ai-feed-spec.md` 的字段表内：`todo ai` 只校验不存储，所以 `todo ai list --json` 里该字段一律为空。要判断某条记录由哪个构建发布，查启动日志里的同名行，不要查存储。
 
 ## 验证
 
@@ -124,7 +125,15 @@ bundle 补丁 `cordis.patch.yml` 插入 `id: todo-bridge` 一行。在 `~/.dsh/p
 pnpm typecheck && pnpm build && pnpm test
 ```
 
-测试覆盖：分类规则（对照 `select.ts` 用例）、记录构建与截断、`changed_files` 相对化的三种分支、发布器的去抖 / 串行 / 失败暂停 / 探测恢复、插件对宿主事件的接线（假 Context）、客户端半对假 `ctx.sessions` 的行为（立即命中、稍后命中、超时放弃、参数剥离），以及在存在 `../../target/debug/todo` 时通过真实 CLI 写入隔离 `HOME` 的端到端用例。客户端半没有浏览器内的自动化验证；安装后可用 `dsh --profile web --dump-config` 确认行存在，再在浏览器里打开一条 `open_url` 检查是否落到对应会话。
+测试覆盖：分类规则（对照 `select.ts` 用例）、记录构建与截断、`changed_files` 相对化的三种分支、发布器的去抖 / 串行 / 失败暂停 / 探测恢复、插件对宿主事件的接线（假 Context）、客户端半对假 `ctx.sessions` 的行为（立即命中、稍后命中、超时放弃、参数剥离），在存在 `../../target/debug/todo` 时通过真实 CLI 写入隔离 `HOME` 的端到端用例，以及 `package.json` 版本与 `BRIDGE_SOURCE_REVISION` 的一致性。客户端半没有浏览器内的自动化验证；安装后可用 `dsh --profile web --dump-config` 确认行存在，再在浏览器里打开一条 `open_url` 检查是否落到对应会话。
+
+启动后先看日志：应有一行给出本次构建、目标可执行文件与发布范围。
+
+```
+todo-bridge: dsh-todo-bridge/0.2.0 publishing to "todo" (debounce 300 ms, every workspace)
+```
+
+三段分别来自 `BRIDGE_SOURCE_REVISION`、`todoBinary` 与 `workspaces` 的配置结果。发布静默失败时先看这一行，不必再反推装的是哪次构建。
 
 安装到配置档后：
 

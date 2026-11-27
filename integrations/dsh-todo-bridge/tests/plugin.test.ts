@@ -7,7 +7,7 @@ import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync } from 'node:
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { apply, Config, DEFAULT_OPEN_URL_TEMPLATE, workspaceAliases } from '../src/index.ts'
+import { apply, BRIDGE_SOURCE_REVISION, Config, DEFAULT_OPEN_URL_TEMPLATE, workspaceAliases } from '../src/index.ts'
 import type { FeedRecord } from '../src/types.ts'
 import { NOW, WORKSPACE, digest, openDigest } from './fixtures.ts'
 
@@ -146,6 +146,15 @@ describe('todo-bridge plugin', () => {
       openUrlTemplate: '{base}/?session={sessionId}',
     })
     expect(new Config({}).openUrlTemplate).toBe(DEFAULT_OPEN_URL_TEMPLATE)
+  })
+
+  it('logs which build is publishing to which CLI at mount', () => {
+    const host = makeHost()
+    mount(host, { todoBinary: '/opt/bin/todo', workspaces: ['/one', '/two'] })
+    expect(host.logs).toContain(
+      `info todo-bridge: ${BRIDGE_SOURCE_REVISION} publishing to "/opt/bin/todo" `
+      + '(debounce 300 ms, 2 configured workspace root(s))',
+    )
   })
 
   it('publishes an initial snapshot of every eligible attached session through ctx.subprocess', async () => {
