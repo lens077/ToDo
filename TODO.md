@@ -42,7 +42,7 @@ columns:
 - [x] 阅读：秒回入列 + 后台解析状态 + 剪贴板导入 <!--t:n0fz2h--> #sync #desktop
       ↳ 粘贴链接秒回入列，正文后台解析（解析中/失败/重试），剪贴板单条/多条提示并按内容指纹去重；真机验收见 docs/verification-log.md <!--n:n0fz2h-->
 - [ ] 阅读正文链接：裸链接识别 + 点击菜单（浏览器打开 / 复制链接） <!--t:a7lnk2--> #desktop #mobile #reading !2
-      ↳ 2026-11-27 实现完成：新增 `apps/desktop/src/lib/links.ts`（`splitLinks` / `trimUrlTrailing` / `linkifyBareUrls`，只认 http(s)，跳过已有 `<a>`、`code`、`pre`、`textarea`，按 RFC 3986 字符集切分以免吞掉中文句读）；`ReaderView` 渲染正文后自动包裹裸链接，点击统一弹 `.reader-link-menu`（「在浏览器打开」走 `desktop.openExternal`，「复制链接」走 `navigator.clipboard`），微信内链不再用 `window.confirm`。`node --test src/lib/links.test.ts` 7 项全绿，`tsc -b` 与 vite 构建绿。待桌面/真机点按验收。 <!--n:a7lnk2-->
+      ↳ 2026-11-27 实现完成：新增 `apps/desktop/src/lib/links.ts`（`splitLinks` / `trimUrlTrailing` / `linkifyBareUrls`，只认 http(s)，跳过已有 `<a>`、`code`、`pre`、`textarea`，按 RFC 3986 字符集切分以免吞掉中文句读）；`ReaderView` 渲染正文后自动包裹裸链接，点击统一弹 `.reader-link-menu`（「在浏览器打开」走 `desktop.openExternal`，「复制链接」走 `navigator.clipboard`），微信内链不再用 `window.confirm`。`node --test src/lib/links.test.ts` 7 项全绿，`tsc -b` 与 vite 构建绿；新增 Playwright 用例「bare URLs become anchors that open a link menu」（mock 文章尾部加裸链接），`reading.spec.ts` 31 passed、`mobile.spec.ts` 14 passed。待桌面/真机点按验收。 <!--n:a7lnk2-->
 - [x] 阅读：修复多链接粘贴与无正文文章解析 <!--t:3571gu--> #sync #desktop
       ↳ 根因是多行粘贴折行拼成畸形 URL；已拆条入队并在两端拒绝脏链接，无正文文章改为仅链接收藏，失败原因落库并显示；真机三条微信链接均 ok，见 docs/verification-log.md <!--n:3571gu-->
 - [x] 阅读：解析保留微信内联样式（卡片/装饰标题不再丢失） <!--t:wst7k4--> #desktop #reading !2

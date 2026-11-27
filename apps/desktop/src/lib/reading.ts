@@ -379,7 +379,9 @@ const MOCK_BODY = `
 <h2>三、小步快跑</h2>
 <p>每天记录一条想法，每周整理一次，每月回顾一次。节奏比强度重要。</p>
 <p>阅读的意义，不在于记住多少内容，而在于它能否改变你看待世界的方式。</p>
+<p>延伸阅读：https://example.com/bare-link。也可以直接复制到别处。</p>
 `;
+
 
 const mockArticles: ReadingArticleDetail[] = [
   {

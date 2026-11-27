@@ -225,6 +225,21 @@ test.describe('阅读', () => {
     await expect(page.getByRole('heading', { name: '收件箱', level: 1 })).toBeVisible();
   });
 
+  test('bare URLs become anchors that open a link menu', async ({ page }) => {
+    await openReading(page);
+    await page.getByTestId('reading-card').filter({ hasText: '可持续的个人知识系统' }).locator('.reading-card__open').click();
+    const link = page.locator('.reader-body a[href="https://example.com/bare-link"]');
+    await expect(link).toHaveCount(1);
+    await expect(link).toHaveText('https://example.com/bare-link');
+    await link.click();
+    const menu = page.getByRole('menu', { name: '链接操作' });
+    await expect(menu).toBeVisible();
+    await expect(menu.getByRole('menuitem', { name: /在浏览器打开/ })).toBeVisible();
+    await expect(menu.getByRole('menuitem', { name: /复制链接/ })).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(menu).toHaveCount(0);
+  });
+
   test('reader image opens a lightbox and outside click closes it', async ({ page }) => {    await openReading(page);
     await page.getByTestId('reading-card').filter({ hasText: '可持续的个人知识系统' }).locator('.reading-card__open').click();
     await expect(page.getByTestId('reader-body')).toBeVisible();

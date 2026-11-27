@@ -1439,4 +1439,4 @@ file=…/images/<id>/cover.jpg size=843848
    - `splitLinks` 按 RFC 3986 ASCII 字符集切分（`https?://[A-Za-z0-9\-._~:/?#[\]@!$&'()*+,;=%]+`），中文正文里紧接着的「。」或汉字不会被吞进链接；
    - `linkifyBareUrls` 用 TreeWalker 把正文文本节点里的裸 URL 包成 `<a rel="noopener noreferrer">`，跳过已有链接、代码块与文本域。
 2. `ReaderView`：正文 `innerHTML` 注入后先 `linkifyBareUrls(body)` 再建标注器；点击 `a[href]` 时对 http(s) 统一 `preventDefault` 并弹出菜单 `.reader-link-menu`（「在浏览器打开」调 `desktop.openExternal`，「复制链接」调 `navigator.clipboard`，复制后 700 ms 自动收起）；Esc、点击菜单外与滚动外均收起。微信内链不再弹 `window.confirm`，与普通外链同一套菜单。
-3. 验证：`node --test src/lib/links.test.ts` 7 项通过（裸链接三段切分、中英文句读剔除、括号配对、多链接、非 http 前缀不识别）；`tsc -b` 绿；`make check-quick` 绿（27s）。未做真机点按验收，也未新增 Playwright 用例。
+3. 验证：`node --test src/lib/links.test.ts` 7 项通过（裸链接三段切分、中英文句读剔除、括号配对、多链接、非 http 前缀不识别）；`tsc -b` 绿；`make check-quick` 绿（27s）。Playwright：mock 文章（`src/lib/reading.ts` 的 `MOCK_BODY`）尾部追加一条裸链接，新增用例断言裸链接被包成 `<a>`、点击弹出 `.reader-link-menu` 且含两项、Esc 关闭；`reading.spec.ts` 31 passed、`mobile.spec.ts` 14 passed（首次并行跑 mobile 有一条 flake，单跑与二次全量均通过）。
