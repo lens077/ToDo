@@ -1281,6 +1281,11 @@
   .reader-toolbar--selection > button + button { border-left: 1px solid var(--hairline); border-radius: 0; }
   .reader-toolbar__remove { color: var(--ink-2); }
   .reader-toolbar__remove:hover { color: var(--danger); }
+  /* 正文链接菜单：点击 <a> 后弹出，提供「在浏览器打开 / 复制链接」。 */
+  .reader-link-menu { position: fixed; z-index: 30; display: grid; gap: 2px; min-width: 178px; padding: 5px; color: var(--ink); background: var(--panel); border: 1px solid var(--hairline-2); border-radius: 10px; box-shadow: var(--shadow-menu); animation: context-in 0.12s var(--ease-out) both; }
+  .reader-link-menu > button { display: inline-flex; align-items: center; gap: 7px; min-height: 32px; padding: 0 10px; color: var(--ink); background: transparent; border: 0; border-radius: 7px; font-size: 13px; text-align: left; white-space: nowrap; }
+  .reader-link-menu > button svg { width: 14px; height: 14px; color: var(--ink-3); }
+  .reader-link-menu > button:hover { background: var(--panel-2); }
   .reader-notes { display: grid; grid-template-rows: auto minmax(0, 1fr) auto; min-height: 0; background: var(--bg); border-left: 1px solid var(--hairline); }
   /* 抽屉形态会贴边；标题要跟卡片同一条边线，圆角才不会切到字。 */
   .reader-notes__header { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 16px 18px 12px; border-bottom: 1px solid var(--hairline); }

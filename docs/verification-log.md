@@ -1432,3 +1432,11 @@ file=…/images/<id>/cover.jpg size=843848
 3. 部署：镜像 `ccr.ccs.tencentyun.com/sumery/virgo-auth:20261127101745`（digest `sha256:b7bcd8c033f5ad86732ea5d25eb35b057ec2dc82a294b3572dccf8f9ef6255fa`），`helm upgrade` 到 revision 9，`values-prod.yaml` tag 已更新。
 4. 生产实测（控制票据，sub `evict-1795746024`）：activate A → 200；activate B → 200；**A 的 refresh → 401 `bad_proof`**；B 的 refresh → 200；PG 只剩一行绑定，`device_name=evict-B`，公钥为 B。测试绑定与 nonce 已删除。
 5. 已知边界：令牌是无状态的 Ed25519，被挤掉设备手里的 Pro 令牌在到期前仍可继续取图（最短 12 小时）；重新登录即可抢回绑定。
+## 2026-11-27 阅读正文链接：裸链接识别与点击菜单
+
+1. 新增 `apps/desktop/src/lib/links.ts`：
+   - `trimUrlTrailing` 去掉 URL 末尾句读（`.,;:!?`、中文标点、括号），URL 自带成对括号时保留结尾 `)`；
+   - `splitLinks` 按 RFC 3986 ASCII 字符集切分（`https?://[A-Za-z0-9\-._~:/?#[\]@!$&'()*+,;=%]+`），中文正文里紧接着的「。」或汉字不会被吞进链接；
+   - `linkifyBareUrls` 用 TreeWalker 把正文文本节点里的裸 URL 包成 `<a rel="noopener noreferrer">`，跳过已有链接、代码块与文本域。
+2. `ReaderView`：正文 `innerHTML` 注入后先 `linkifyBareUrls(body)` 再建标注器；点击 `a[href]` 时对 http(s) 统一 `preventDefault` 并弹出菜单 `.reader-link-menu`（「在浏览器打开」调 `desktop.openExternal`，「复制链接」调 `navigator.clipboard`，复制后 700 ms 自动收起）；Esc、点击菜单外与滚动外均收起。微信内链不再弹 `window.confirm`，与普通外链同一套菜单。
+3. 验证：`node --test src/lib/links.test.ts` 7 项通过（裸链接三段切分、中英文句读剔除、括号配对、多链接、非 http 前缀不识别）；`tsc -b` 绿；`make check-quick` 绿（27s）。未做真机点按验收，也未新增 Playwright 用例。
