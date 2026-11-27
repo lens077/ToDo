@@ -56,3 +56,7 @@ apps/desktop/icon/out/
 /twitter-text/
 /x-downloader/
 /.trae-html-share-packages/
+
+# 手工测试用的自编译产物（20MB 级二进制不入库）
+/dist/
+.smyw/
