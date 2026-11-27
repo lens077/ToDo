@@ -1,0 +1,6 @@
+apiVersion: v2
+name: virgo-auth
+description: Virgo 图片代理授权 —— Casdoor 登录、Pro 判定、设备绑定与短期令牌签发
+type: application
+version: 0.1.0
+appVersion: "1"

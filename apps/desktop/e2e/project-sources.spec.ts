@@ -148,6 +148,16 @@ test('未管理任务只读，选源显示原文并要求两步接管', async ({
   await expect(loose).toHaveAttribute('draggable', 'false');
   await page.getByRole('combobox', { name: '任务来源', exact: true }).selectOption('notes/plain.md');
   await expect(page.getByLabel('来源原文')).toContainText('- [ ] 普通清单原文');
+  // 来源预览也是二级路径：面包屑说明来路，返回键回到聚合看板。
+  const crumb = page.getByRole('navigation', { name: '面包屑' });
+  await expect(crumb).toContainText('目标');
+  await expect(crumb).toContainText('来源预览');
+  await page.getByRole('button', { name: '返回任务看板' }).click();
+  await expect(page.getByRole('combobox', { name: '任务来源', exact: true })).toHaveValue('');
+  await expect(page.getByLabel('来源原文')).toHaveCount(0);
+  // 回到聚合视图后重新选源，继续后面的接管流程。
+  await page.getByRole('combobox', { name: '任务来源', exact: true }).selectOption('notes/plain.md');
+  await expect(page.getByLabel('来源原文')).toContainText('- [ ] 普通清单原文');
   expect(adopts).toHaveLength(0);
   await page.getByRole('button', { name: '预览接管差异' }).click();
   await expect(page.getByRole('table', { name: '左右对比' })).toContainText('todo-spec: 1');

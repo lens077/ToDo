@@ -9,6 +9,7 @@ import {
   countByState,
   coverSource,
   hostOf,
+  reading,
   readingState,
   type BatchScope,
   type ReadingArticle,
@@ -16,7 +17,8 @@ import {
 } from '../lib/reading';
 import { Icon } from './Icon';
 import { ReaderContextMenu } from './ReaderContextMenu';
-import { useArticleExport, openExportedFile, openExportedDir, type ExportNotice } from '../hooks/useArticleExport';
+import { useArticleExport, openExportedFile, openExportedDir, DIR_MISSING_MESSAGE, type ExportNotice } from '../hooks/useArticleExport';
+import { listExportRecords, clearExportRecord, type ReadingExportRecord } from '../lib/readingExportRecords';
 import { useAppSettings } from '../lib/appSettings';
 import {
   markClipboardHandled,
@@ -67,10 +69,14 @@ interface ReadingCardProps {
   article: ReadingArticle;
   busy: boolean;
   opening: boolean;
+  /** 上一次另存为留下的包裹目录记录；有记录时卡片常驻「打开目录」。 */
+  savedDir: ReadingExportRecord | null;
   onOpen: (id: string) => void;
   onSetRead: (id: string, read: boolean) => void;
   onRemove: (id: string) => void;
   onRetry: (id: string) => void;
+  /** 常驻「打开目录」：失败时由调用方切换成「重新下载」提示。 */
+  onOpenSavedDir: (record: ReadingExportRecord) => void;
   /** 右键卡片直接弹「另存为」菜单，不必先进文章（sv2md9）。 */
   onExportMenu: (id: string, position: { x: number; y: number }) => void;
 }
@@ -80,7 +86,7 @@ function displayExcerpt(excerpt: string): string {
   return excerpt.replace(/^(原创[，,]?\s*)(\S+)\s+(.+)$/, '$1$2 · $3');
 }
 
-function ReadingCard({ article, busy, opening, onOpen, onSetRead, onRemove, onRetry, onExportMenu }: ReadingCardProps) {
+function ReadingCard({ article, busy, opening, savedDir, onOpen, onSetRead, onRemove, onRetry, onOpenSavedDir, onExportMenu }: ReadingCardProps) {
   const state = readingState(article);
   const percent = state === 'read' ? 100 : article.progress_percent;
   const parsing = article.parse_status === 'pending';
@@ -149,6 +155,21 @@ function ReadingCard({ article, busy, opening, onOpen, onSetRead, onRemove, onRe
             {opening ? '打开中…' : action}
           </button>
         )}
+        {savedDir && (
+          <div className="reading-card__saved">
+            <span className="reading-chip reading-chip--saved" title={savedDir.dir}>
+              <Icon name="folder" />已保存
+            </span>
+            <button
+              type="button"
+              className="text-action"
+              onClick={() => onOpenSavedDir(savedDir)}
+              title={`打开目录：${savedDir.dir}`}
+            >
+              <Icon name="folder" /> 打开目录
+            </button>
+          </div>
+        )}
         <div className="reading-card__tools">
           <button
             type="button"
@@ -190,7 +211,6 @@ function ReadingCard({ article, busy, opening, onOpen, onSetRead, onRemove, onRe
     </article>
   );
 }
-
 /** 随记卡（统一收件箱 A′）：没有封面与进度，点击进编辑抽屉。 */
 function NoteCard({
   article,
@@ -366,8 +386,40 @@ export function ReadingView({ model, onOpenTriage }: ReadingViewProps) {
   // 列表卡片右键另存为（sv2md9）：菜单记录文章与弹出位置，导出结果与阅读页同一套提示。
   const [exportMenu, setExportMenu] = React.useState<{ id: string; x: number; y: number } | null>(null);
   const [exportNotice, setExportNotice] = React.useState<ExportNotice | null>(null);
-  const reportExportNotice = React.useCallback((notice: ExportNotice) => setExportNotice(notice), []);
-  const { exportArticle, exportBusy } = useArticleExport(exportMenu?.id ?? '', reportExportNotice);
+  // 已保存记录：导出成功后刷新，卡片据此常驻「打开目录」，提示条消失也找得回。
+  const [savedRecords, setSavedRecords] = React.useState<Record<string, ReadingExportRecord>>(() => listExportRecords());
+  const reportExportNotice = React.useCallback((notice: ExportNotice) => {
+    setExportNotice(notice);
+    // 成功（status）或目录失效后重存成功，都要让卡片跟上最新记录。
+    if (notice.kind === 'status') setSavedRecords(listExportRecords());
+  }, []);
+  // 「复制路径」点了之后按钮短暂显示「已复制」，让用户知道剪贴板里是目录绝对路径。
+  const [copiedPath, setCopiedPath] = React.useState(false);
+  const copyExportPath = React.useCallback(async (dir: string) => {
+    if (!dir) return;
+    try {
+      await navigator.clipboard.writeText(dir);
+      setCopiedPath(true);
+      window.setTimeout(() => setCopiedPath(false), 1200);
+    } catch {
+      // 剪贴板权限被拒时保持原样，不打断提示条。
+    }
+  }, []);
+  const { exportArticle, exportBusy } = useArticleExport(reportExportNotice);
+  // 卡片常驻「打开目录」：Rust 侧只放行已存在的目录，打开失败即目录被移动
+  // 或删除——切到「重新下载」提示，按上次的格式与文章 id 重存一遍。
+  const openSavedDirFromCard = React.useCallback(async (record: ReadingExportRecord) => {
+    try {
+      await reading.openSavedDir(record.dir);
+    } catch {
+      setExportNotice({
+        kind: 'dir-missing',
+        message: DIR_MISSING_MESSAGE,
+        dir: record.dir,
+        redownload: { id: record.articleId, format: record.format },
+      });
+    }
+  }, []);
   // 带「打开」按钮的成功通知停留更久，其余 6 秒。
   React.useEffect(() => {
     if (!exportNotice) return undefined;
@@ -694,20 +746,40 @@ export function ReadingView({ model, onOpenTriage }: ReadingViewProps) {
 
       {exportNotice && (
         <p
-          className={`reading-notice${exportNotice.kind === 'error' ? '' : ' reading-notice--ok'}${exportNotice.path ? ' reading-notice--actions' : ''}`}
-          role={exportNotice.kind === 'error' ? 'alert' : 'status'}
+          className={`reading-notice${exportNotice.kind === 'error' ? '' : ' reading-notice--ok'}${exportNotice.path || exportNotice.redownload ? ' reading-notice--actions' : ''}`}
+          role={exportNotice.kind === 'error' || exportNotice.kind === 'dir-missing' ? 'alert' : 'status'}
           data-testid="reading-export-notice"
         >
           <span className="reading-notice__message">{exportNotice.message}</span>
-          {exportNotice.path && (
-            <button type="button" onClick={() => void openExportedFile(exportNotice, reportExportNotice)}>
-              <Icon name="external" /> 打开
+          {exportNotice.kind === 'dir-missing' && exportNotice.redownload ? (
+            <button
+              type="button"
+              disabled={exportBusy}
+              onClick={() => {
+                const target = exportNotice.redownload;
+                if (target) void exportArticle(target.id, target.format);
+              }}
+            >
+              <Icon name="download" /> 重新下载
             </button>
-          )}
-          {exportNotice.dir && (
-            <button type="button" onClick={() => void openExportedDir(exportNotice, reportExportNotice)}>
-              <Icon name="folder" /> 打开目录
-            </button>
+          ) : (
+            <>
+              {exportNotice.path && (
+                <button type="button" onClick={() => void openExportedFile(exportNotice, reportExportNotice)}>
+                  <Icon name="external" /> 打开
+                </button>
+              )}
+              {exportNotice.dir && (
+                <button type="button" onClick={() => void openExportedDir(exportNotice, reportExportNotice)}>
+                  <Icon name="folder" /> 打开目录
+                </button>
+              )}
+              {exportNotice.dir && (
+                <button type="button" onClick={() => void copyExportPath(exportNotice.dir ?? '')}>
+                  {copiedPath ? <Icon name="check" /> : <Icon name="copy" />} {copiedPath ? '已复制' : '复制路径'}
+                </button>
+              )}
+            </>
           )}
         </p>
       )}
@@ -741,10 +813,16 @@ export function ReadingView({ model, onOpenTriage }: ReadingViewProps) {
                 article={article}
                 busy={model.busy.has(article.id)}
                 opening={model.opening === article.id}
+                savedDir={savedRecords[article.id] ?? null}
                 onOpen={(id) => void model.openArticle(id)}
                 onSetRead={(id, read) => void model.setRead(id, read)}
-                onRemove={(id) => void model.remove(id)}
+                onRemove={(id) => {
+                  clearExportRecord(id);
+                  setSavedRecords(listExportRecords());
+                  void model.remove(id);
+                }}
                 onRetry={(id) => void model.retryParse(id)}
+                onOpenSavedDir={(record) => void openSavedDirFromCard(record)}
                 onExportMenu={(id, position) => {
                   if (exportBusy) return;
                   setExportMenu({ id, ...position });
@@ -769,7 +847,7 @@ export function ReadingView({ model, onOpenTriage }: ReadingViewProps) {
         <ReaderContextMenu
           x={exportMenu.x}
           y={exportMenu.y}
-          onExport={(format) => void exportArticle(format)}
+          onExport={(format) => void exportArticle(exportMenu.id, format)}
           onClose={() => setExportMenu(null)}
         />
       )}

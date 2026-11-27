@@ -188,6 +188,10 @@ test.describe('阅读', () => {
     // 用 dispatchEvent 绕开 actionability 重试。
     await page.getByRole('button', { name: /随记分拣/ }).dispatchEvent('click');
     await expect(page.getByRole('heading', { name: /随记/ })).toBeVisible();
+    // 二级路径必须能回去：面包屑说明来路，返回键回到收件箱。
+    const crumb = page.getByRole('navigation', { name: '面包屑' });
+    await expect(crumb).toContainText('收件箱');
+    await expect(crumb).toContainText('随记分拣');
     const ledger = page.locator('.capture-ledger');
     const row = ledger.locator('.capture-item').filter({ hasText: '分拣闭环的随记' });
     await expect(row).toHaveCount(1);
@@ -200,8 +204,28 @@ test.describe('阅读', () => {
     await expect(page.getByTestId('reading-card').filter({ hasText: '分拣闭环的随记' })).toHaveCount(1);
   });
 
-  test('reader image opens a lightbox and outside click closes it', async ({ page }) => {
+  test('every secondary path carries a breadcrumb and a way back', async ({ page }) => {
     await openReading(page);
+
+    // 收件箱 → 随记分拣：面包屑 + 返回收件箱。
+    await page.getByRole('button', { name: /随记分拣/ }).dispatchEvent('click');
+    await expect(page.getByRole('heading', { name: '随记，不急着承诺' })).toBeVisible();
+    const crumb = page.getByRole('navigation', { name: '面包屑' });
+    await expect(crumb).toContainText('收件箱');
+    await expect(crumb).toContainText('随记分拣');
+    await page.getByRole('button', { name: '返回收件箱' }).click();
+    await expect(page.getByRole('heading', { name: '收件箱', level: 1 })).toBeVisible();
+
+    // 收件箱 → 文章阅读：面包屑指回来路，返回列表回到列表。
+    await page.getByTestId('reading-card').filter({ hasText: '可持续的个人知识系统' }).locator('.reading-card__open').click();
+    await expect(page.getByTestId('reader-body')).toBeVisible();
+    await expect(crumb).toContainText('收件箱');
+    await expect(crumb).toContainText('可持续的个人知识系统');
+    await page.getByRole('button', { name: /返回列表/ }).click();
+    await expect(page.getByRole('heading', { name: '收件箱', level: 1 })).toBeVisible();
+  });
+
+  test('reader image opens a lightbox and outside click closes it', async ({ page }) => {    await openReading(page);
     await page.getByTestId('reading-card').filter({ hasText: '可持续的个人知识系统' }).locator('.reading-card__open').click();
     await expect(page.getByTestId('reader-body')).toBeVisible();
     const img = page.locator('.reader-body img').first();

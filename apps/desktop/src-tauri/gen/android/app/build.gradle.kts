@@ -80,4 +80,38 @@ dependencies {
     androidTestImplementation("androidx.test.espresso:espresso-core:3.5.0")
 }
 
+
+// Tauri 的 deep-link 插件按行扫描 AndroidManifest.xml，把 `virgo://` 的
+// intent-filter 插到**每一个** `</activity>` 前面。本应用除了 MainActivity 还有
+// 一个 ShareReceiverActivity（系统分享），如果它也声明 `virgo://`，从浏览器
+// 回跳登录时 Android 可能选中它（分享接收器只认 ACTION_SEND，会静默退出）。
+// 这里在合并清单之前，把自动生成的那段从非 MainActivity 的 activity 里删掉。
+// 分享接收器自身的 SEND 过滤器不受影响。
+//
+// 只捕获 File（可序列化）以保持 configuration cache 可用；不要捕获脚本级 lambda。
+tasks.matching { it.name.startsWith("pre") && it.name.endsWith("Build") }.configureEach {
+    val manifestFile = layout.projectDirectory.file("src/main/AndroidManifest.xml").asFile
+    doFirst {
+        if (manifestFile.isFile) {
+            val marker = "<!-- DEEP LINK PLUGIN. AUTO-GENERATED. DO NOT REMOVE. -->"
+            val activityBlock = Regex("<activity\\b[\\s\\S]*?</activity>")
+            val generated = Regex("\\n[ \\t]*" + Regex.escape(marker) + "[\\s\\S]*?" + Regex.escape(marker))
+            var changed = false
+            val rewritten = activityBlock.replace(manifestFile.readText()) { match ->
+                val activity = match.value
+                if (activity.contains("MainActivity") || !activity.contains(marker)) {
+                    activity
+                } else {
+                    changed = true
+                    activity.replace(generated, "").replace(Regex("(\\n[ \\t]+)+\\n"), "\n")
+                }
+            }
+            // 插件生成的块里每行都带缩进，空白行因此留下尾随空格；
+            // `git diff --check` 会把它当错误。这里顺手 trim 每行行尾。
+            val tidied = rewritten.lines().joinToString("\n") { it.trimEnd() }
+            if (changed || tidied != manifestFile.readText()) manifestFile.writeText(tidied)
+        }
+    }
+}
+
 apply(from = file("tauri.build.gradle.kts"))

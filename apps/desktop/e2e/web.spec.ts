@@ -219,7 +219,11 @@ test.describe('web transport', () => {
     test.skip(!fixturePath, 'E2E_TODO_PATH is required');
     await page.setViewportSize({ width: 640, height: 950 });
     await page.goto('/');
-    await page.getByRole('button', { name: '象限' }).click();
+    // 窄屏（≤719px）没有侧栏：象限不在底部栏里，从「我的」打开设置里的
+    // 更多视图入口切换（A′ 之后的窄屏信息架构）。
+    await page.getByRole('button', { name: '我的' }).click();
+    await page.getByRole('dialog', { name: '设置' }).getByRole('button', { name: '象限', exact: true }).click();
+    await expect(page.getByRole('dialog', { name: '设置' })).toBeHidden();
     const before = await taskFile();
     const historyBefore = await (await page.request.get('/api/v1/history')).json();
     const parent = page.locator(taskNode('parent1'));
@@ -242,7 +246,9 @@ test.describe('web transport', () => {
     test.skip(!fixturePath, 'E2E_TODO_PATH is required');
     await page.setViewportSize({ width: 640, height: 950 });
     await page.goto('/');
-    await page.getByRole('button', { name: '象限' }).click();
+    await page.getByRole('button', { name: '我的' }).click();
+    await page.getByRole('dialog', { name: '设置' }).getByRole('button', { name: '象限', exact: true }).click();
+    await expect(page.getByRole('dialog', { name: '设置' })).toBeHidden();
     const before = await taskFile();
     await page.locator(taskNode('parent1')).getByRole('button', { name: '打开“发布桌面版”的任务菜单', exact: true }).click();
     const priority = page.getByRole('menuitem', { name: '优先级…', exact: true });
@@ -293,7 +299,9 @@ test.describe('web transport', () => {
     test.skip(!fixturePath, 'E2E_TODO_PATH is required');
     await page.setViewportSize({ width: 640, height: 1800 });
     await page.goto('/');
-    await page.getByRole('button', { name: '象限' }).click();
+    await page.getByRole('button', { name: '我的' }).click();
+    await page.getByRole('dialog', { name: '设置' }).getByRole('button', { name: '象限', exact: true }).click();
+    await expect(page.getByRole('dialog', { name: '设置' })).toBeHidden();
     const before = await taskFile();
     const destination = page.getByRole('region', { name: '!1 最高' });
     const parent = page.locator(taskNode('parent1'));

@@ -440,6 +440,20 @@
   .view-heading__title { display: grid; gap: 6px; min-width: 0; }
   .view-heading__meta { display: flex; flex-wrap: wrap; gap: 8px; color: var(--accent); font-size: 13px; font-variant-numeric: tabular-nums; }
 
+  /* ── 二级路径：面包屑 + 返回 ──────────────────────────────────────────
+     一级视图（侧栏里点得到的）不需要它；随记分拣、文章阅读、来源预览这类
+     从一级视图进去的页面，靠这一行说明「从哪来、怎么回去」。 */
+  .sub-view-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; min-width: 0; padding: 20px 28px 0; }
+  .sub-view-head__back { flex: none; }
+  .sub-view-head__back-icon { width: 14px; height: 14px; transform: rotate(90deg); }
+  .sub-view-head__crumbs { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; min-width: 0; color: var(--ink-3); font-size: 12.5px; }
+  .sub-view-head__part { display: inline-flex; align-items: center; gap: 6px; min-width: 0; }
+  .sub-view-head__crumb { min-width: 0; padding: 0; overflow: hidden; color: inherit; background: none; border: 0; font: inherit; text-align: left; text-overflow: ellipsis; white-space: nowrap; }
+  button.sub-view-head__crumb { cursor: pointer; }
+  button.sub-view-head__crumb:hover { color: var(--ink); text-decoration: underline; }
+  .sub-view-head__crumb.is-current { max-width: 42ch; color: var(--ink-2); }
+  .sub-view-head__sep { flex: none; color: var(--ink-3); }
+
   .ribbon { display: block; pointer-events: none; }
   .ribbon--fallback {
     background:
@@ -1130,7 +1144,9 @@
   .reading-card__notes { display: inline-flex; align-items: center; gap: 3px; color: var(--ink-2); }
   .reading-card__notes svg { width: 12px; height: 12px; }
   .reading-card__side { display: grid; justify-items: end; gap: 6px; padding: 12px 14px 14px 0; }
-  .reading-card__tools { display: flex; gap: 4px; opacity: 0; transition: opacity 0.2s var(--ease-out); }
+  /* 卡片操作常驻：宽列也不靠 hover 才出现——重新解析/已读/删除是低频但要
+     一眼找得到的入口，藏起来等于让用户猜哪里能点。 */
+  .reading-card__tools { display: flex; gap: 4px; opacity: 1; transition: opacity 0.2s var(--ease-out); }
   /* 卡片操作按钮比通用 icon-action 大一档，悬浮时用 data-tip 气泡解释。 */
   .reading-card__tools .icon-action { position: relative; width: 38px; height: 38px; }
   .reading-card__tools .icon-action svg { width: 18px; height: 18px; }
@@ -1149,11 +1165,13 @@
     white-space: nowrap;
     pointer-events: none;
   }
-  .reading-card:hover .reading-card__tools, .reading-card:focus-within .reading-card__tools { opacity: 1; }
   .reading-chip { display: inline-flex; align-items: center; gap: 4px; min-height: 26px; padding: 0 10px; border-radius: 999px; font-size: 12px; }
   .reading-chip svg { width: 13px; height: 13px; }
   .reading-chip--read { color: var(--teal-text); background: var(--teal-wash); }
   .reading-chip--pending { color: var(--ink-2); background: var(--panel-2); }
+  /* 已保存：与「已读」同色系的中性提示，指向本地包裹目录，不是阅读进度。 */
+  .reading-chip--saved { color: var(--ink-2); background: var(--panel-2); }
+  .reading-card__saved { display: inline-flex; align-items: center; gap: 8px; }
   .reading-card.is-unparsed .reading-card__title { color: var(--ink-2); }
   /* 解析状态紧贴标题行：解析中给个呼吸点，失败给危险色。 */
   .reading-card__parse { display: inline-flex; align-items: center; gap: 4px; font-size: 11.5px; }
@@ -1186,6 +1204,10 @@
   .reader__back { gap: 6px; }
   .reader__back-icon { transform: rotate(180deg); }
   .reader__heading { display: grid; gap: 3px; min-width: 0; }
+  /* 阅读页头自带「返回列表」按钮，面包屑只补路径、不重复返回键。 */
+  .reader__heading > .sub-view-head { padding: 0; gap: 6px; }
+  .reader__heading > .sub-view-head .sub-view-head__crumbs { font-size: 11.5px; }
+  .reader__heading > .sub-view-head .sub-view-head__crumb.is-current { max-width: 34ch; }
   .reader__heading h1 { overflow: hidden; font-size: 17px; line-height: 1.3; text-overflow: ellipsis; white-space: nowrap; }
   .reader__meta { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px; color: var(--ink-3); font-family: var(--mono); font-size: 11px; font-variant-numeric: tabular-nums; }
   /* 主作者比次信息大一档、颜色深一档；公众号名保持小字。 */
@@ -1386,6 +1408,7 @@
   .quick-add select, .quick-add > kbd { display: none; }
   .quick-add > button { min-width: 50px; }
   .view-heading { align-items: start; padding: 22px 18px 14px; }
+  .sub-view-head { padding: 18px 18px 0; }
   .view-heading__note { max-width: 190px; }
   .view-heading--goal { padding: 16px 18px 12px; }
   .goal-layout { padding-inline: 18px; }
@@ -1613,6 +1636,9 @@
   .workspace.is-read-only .status-banner { top: calc(112px + env(safe-area-inset-top)); }
 
   .view-heading { display: grid; gap: 12px; padding: 20px calc(16px + env(safe-area-inset-right)) 14px calc(16px + env(safe-area-inset-left)); }
+  .sub-view-head { padding: 16px calc(16px + env(safe-area-inset-right)) 0 calc(16px + env(safe-area-inset-left)); }
+  .sub-view-head__back { min-height: 34px; }
+  .sub-view-head__crumb.is-current { max-width: 30ch; }
   .view-heading h1 { font-size: 26px; }
   .view-heading__note { max-width: none; font-size: 12.5px; }
   .view-heading--goal { grid-template-columns: minmax(0, 1fr); justify-content: stretch; }
@@ -1888,6 +1914,20 @@
   .settings-export-affixes input { min-width: 0; padding: 6px 9px; color: var(--ink); background: var(--panel); border: 1px solid var(--hairline-2); border-radius: 6px; font: inherit; font-size: 13px; }
   .settings-export-affixes input:focus-visible { outline: 2px solid var(--accent-wash-2); border-color: var(--accent); }
   .settings-export-affixes__note { grid-column: 1 / -1; color: var(--ink-3); font-size: 12px; overflow-wrap: anywhere; }
+  /* 图片代理区两行单列：代理地址很长，两列会把 URL 折成几段。 */
+  .settings-export-affixes--stack { grid-template-columns: minmax(0, 1fr); }
+  /* Pro 登录态（v9auth）：未登录只给一个登录入口，已登录列账号/设备/令牌。 */
+  .settings-auth { display: grid; gap: 10px; padding: 12px; background: var(--panel-2); border: 1px dashed var(--hairline-2); border-radius: var(--radius-control); }
+  .settings-auth__note { color: var(--ink-2); font-size: 12.5px; line-height: 1.5; }
+  .settings-auth__hint { color: var(--ink-3); font-size: 12px; line-height: 1.5; }
+  .settings-auth__error { padding: 9px 12px; color: var(--ink); background: var(--danger-wash); border: 1px solid var(--danger); border-radius: var(--radius-control); font-size: 12.5px; }
+  .settings-auth__facts { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 6px 14px; margin: 0; font-size: 12.5px; }
+  .settings-auth__facts dt { color: var(--ink-3); }
+  .settings-auth__facts dd { min-width: 0; margin: 0; color: var(--ink); font-family: var(--mono); font-size: 11.5px; overflow-wrap: anywhere; }
+  .settings-auth__actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+  .settings-auth__danger { color: var(--danger); }
+  /* Pro 角标：标明这一项属于付费能力，不塞进标题正文里。 */
+  .settings-pro-badge { display: inline-block; margin-left: 6px; padding: 1px 6px; color: var(--accent-deep); background: var(--accent-wash); border-radius: 4px; font-size: 10.5px; font-weight: 600; letter-spacing: 0.02em; vertical-align: middle; }
   /* 列宽按内容自适应（1fr 均分曾把「复用同一窗口」这类长文案在 360px
      三列下压成「复用同一窗/口」式破词折行）；空间不足时列按内容比例
      收缩，text-wrap: balance 让残余的折行断在更自然的位置。 */
@@ -2217,6 +2257,8 @@
 .source-hints li::before { flex: 0 0 auto; width: 4px; height: 4px; margin-top: 7px; content: ''; background: var(--hairline-2); border-radius: 50%; }
 .source-hints code { color: var(--ink-2); font-size: 11.5px; }
 .source-preview { padding: 24px 28px; display: grid; align-content: start; gap: 16px; }
+/* 预览区已自带内边距，页头只保留自己的行内节奏。 */
+.source-preview > .sub-view-head { padding: 0; }
 .source-preview h2 { font-size: 20px; overflow-wrap: anywhere; }
 .source-preview > p, .source-unavailable { color: var(--ink-2); line-height: 1.6; }
 .source-unavailable { margin: 20px 28px; }
@@ -2259,6 +2301,7 @@
   .app-shell[data-density='medium'] .source-controls { padding-inline: 22px; }
   .app-shell[data-density='medium'] .source-controls__row { min-height: 40px; padding: 4px 0; }
   .app-shell[data-density='medium'] .view-heading { padding: 18px 22px 12px; }
+  .app-shell[data-density='medium'] .sub-view-head { padding: 14px 22px 0; }
   .app-shell[data-density='medium'] .view-heading--goal { gap: 16px; padding: 12px 22px 10px; }
   .app-shell[data-density='medium'] .view-heading--goal h1 { font-size: 22px; }
   .app-shell[data-density='medium'] .view-heading--goal .ribbon--heading { height: 56px; margin: -8px auto; }
@@ -2317,6 +2360,7 @@
   .app-shell[data-density='efficient'] .source-hints { padding: 6px 0 8px; }
 
   .app-shell[data-density='efficient'] .view-heading { padding: 10px 14px 8px; }
+  .app-shell[data-density='efficient'] .sub-view-head { padding: 8px 14px 0; }
   .app-shell[data-density='efficient'] .view-heading h1 { font-size: 20px; }
   .app-shell[data-density='efficient'] .view-heading--goal { grid-template-columns: auto auto; justify-content: space-between; gap: 12px; padding: 8px 14px 6px; }
   .app-shell[data-density='efficient'] .view-heading--goal .view-heading__title { gap: 10px; }

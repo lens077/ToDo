@@ -1,0 +1,24 @@
+[Unit]
+Description=Virgo auth (Casdoor OIDC + device binding + token issue)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/root
+EnvironmentFile=/etc/virgo-auth.env
+ExecStart=/root/virgo-auth
+Restart=always
+RestartSec=2
+# node4 是 2G 内存的共用机器：给授权服务留出上限，别和 imgproxy 抢。
+MemoryMax=192M
+CPUQuota=100%
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=full
+ReadWritePaths=/srv/virgo-auth
+LimitNOFILE=2048
+
+[Install]
+WantedBy=multi-user.target

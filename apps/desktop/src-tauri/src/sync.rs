@@ -284,8 +284,20 @@ where
 mod tests {
     use super::*;
 
+    /// `run` 共用进程级 `SYNC_LOCK`（生产语义是「同一时刻只跑一轮同步」）。
+    /// 测试并行执行时，另一个测试占着闸门会让这一轮合法地返回 `skipped`，
+    /// 断言就随机失败；这里用测试级互斥把同模块的同步用例串起来。
+    static TEST_LOCK: Mutex<()> = Mutex::new(());
+
+    fn test_serial() -> std::sync::MutexGuard<'static, ()> {
+        TEST_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+
     #[test]
     fn a_second_sync_is_skipped_while_one_is_running() {
+        let _serial = test_serial();
         let guard = SYNC_LOCK.lock().unwrap();
         let dir = tempfile::tempdir().unwrap();
         let store = ReadingStore::new(dir.path().join("reading"));
@@ -350,6 +362,7 @@ mod tests {
     fn concurrent_pull_fetches_each_detail_exactly_once() {
         use std::io::{Read, Write};
 
+        let _serial = test_serial();
         const COUNT: usize = 6;
         let detail_hits: &'static AtomicUsize = Box::leak(Box::new(AtomicUsize::new(0)));
 
@@ -437,6 +450,7 @@ mod tests {
             eprintln!("TODO_SYNC_BASE / TODO_SYNC_TOKEN 为空，跳过");
             return;
         }
+        let _serial = test_serial();
         let dir = tempfile::tempdir().unwrap();
         let store = ReadingStore::new(dir.path().join("reading"));
 

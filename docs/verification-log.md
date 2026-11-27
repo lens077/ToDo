@@ -1302,3 +1302,133 @@ Session 存为项目内 Markdown（`<project>/.virgo/sessions/s-<ts>.md`），�
 6. **验证**：tsc + vite build 绿；e2e 全量 **184 passed**（基线 181 +3：竖轨不渲染、移动端按钮隐藏、「apple 默认悬浮缝 ≥4px / 切 classic 满宽贴底 + localStorage 落盘」两例；resume 测试补 backgroundColor alpha=1 不透底断言）；mock 截图：桌面宽、移动 apple/classic、钉住态。实测 apple 样式 bar x=5/width=380/圆角 22px。
 7. **待真机验收**（用户决定跳过，debug APK 已构建）：vivo 上看 classic 栏面板止于三键区上缘、apple 栏悬浮于 inset 区上方；横幅在真机 DPR 3.5 下齐顶。
 8. **真机验收**（vivo V2425A，debug 包 CDP，inset-top=inset-bottom=42px 实测）：首跑 15 项检查 13 PASS——阅读页五项全绿（竖轨 `.reader-progress-rail` count 0、浏览器按钮 count 0、横幅通栏宽=窗格宽、backgroundColor alpha=1、钉住偏移 0）；2 FAIL 同根因：classic/apple 面板底距屏底均 84px（应为 42px）。**新根因**：≤719px 块覆盖了 `.app-shell` 的 `height: 100dvh` 但漏覆盖 base 的 `max-height: calc(100dvh - env(safe-area-inset-top))`——续八转 edge-to-edge（透明状态栏）后布局视口已是全屏，该 42px 减法多余，外壳被钳到 758px、底部多一条背景空带（这也是用户红圈空带的完整构成）。修复 `max-height: 100dvh` 后重装复测：apple 悬浮（x=5、宽 350、圆角 22px、底缝=42=inset）、classic 满宽面板底=三键区上缘（gap=42）全绿；设置切换落盘并还原 apple。验收后重打 release 包恢复设备。
+
+## 2026-11-25 图片代理 Pro 客户端接入：loopback 登录、设备密钥、设置页登录态（v9auth，部分待真人登录）
+
+1. **服务端 loopback 回跳**（`deploy/virgo-auth/cmd/virgo-auth/main.go`）：`/auth/login?client=loopback&port=N&state=S` 把「回跳目标」存进 10 分钟 `HttpOnly; Secure; SameSite=Lax` cookie（`virgo_login_client=loopback|N|S`），`/auth/callback` 于登录成功后 302 到 `http://127.0.0.1:N/auth?ticket=…&state=…`。校验：端口 1024–65535、state 只允许 `[A-Za-z0-9_-]` ≤64、回跳主机固定 `127.0.0.1`（`clientCallbackURL` 再做一次端口校验）。`client=desktop` 继续走 `CLIENT_SCHEME`（`virgo://auth`），`client` 缺省/未知回 JSON。
+2. **Go 单测**（新增 `cmd/virgo-auth/main_test.go`，12 例）：`parseLoginClient` 表驱动（web/desktop/loopback 正常、端口 80/70000/缺失/非数字、state 含 `|`/过长/为空）、cookie 编解码往返（含手工改坏的值不得解析成 loopback）、`clientCallbackURL`（loopback 主机与 state 回送、端口 0/22/1023/65536 拒绝、desktop scheme 前缀、未配置 scheme 回 JSON、web 回 JSON）。`go test ./...` → `ok virgo-auth/cmd/virgo-auth`。
+3. **部署与公网实测**：镜像 `ccr.ccs.tencentyun.com/sumery/virgo-auth:202611250948-loopback`（node4 docker build + push，digest `sha256:a1e97719…`），`helm upgrade -n virgo` revision 5，rollout 成功，Pod 1/1 Running，日志「绑定表落 PostgreSQL」。公网：`GET /auth/login?client=loopback&port=53001&state=abc_123` → 302 到 Casdoor，`set-cookie: virgo_login_client=loopback|53001|abc_123; Path=/; Max-Age=600; HttpOnly; Secure; SameSite=Lax`；`port=80` → 400 `{"error":"bad_client","message":"loopback 端口不合法（须在 1024–65535）"}`；`client=desktop` → 302 且 cookie=`desktop`。
+4. **Rust 客户端**（新增 `apps/desktop/src-tauri/src/auth.rs`，~1300 行含测试）：P-256 `SigningKey`（`p256` 0.14）+ 32 字节随机标量；SPKI 公钥与 ASN.1 DER 签名；设备证明原文 `sub\nPOST\n/v1/refresh\nts\nnonce`；activate/refresh/unbind 用 `reqwest::blocking`；loopback 监听（`TcpListener` 非阻塞轮询 300s、`state` 比对、静态 HTML 回复不回显票据）；后台刷新线程（启动即补、每 10 分钟检查，`TOKEN_MARGIN_SECS=300`）。令牌只在内存，`proxy_config()` 供 `reading_*` 使用；显式 `imageProxyBase/Token` 参数优先（测试/排障）。
+5. **密钥存储**：macOS 走 `/usr/bin/security`（`add-generic-password -U` / `find-generic-password -w` / `delete-generic-password`，进程身份固定，未签名构建重建不弹授权框——`macos_keychain_store_round_trips` ignored 测试实测通过；已知代价：`-w` 把 base64 私钥放进 argv 几毫秒，同一用户可 `ps` 看到，读入时同样，未来换 Security framework 再消）；Android 由 Kotlin `KeystorePlugin`（`gen/android/app/src/main/java/com/sumery/virgo/KeystorePlugin.kt`）用 Keystore 里不可导出的 AES-256-GCM 密钥把 PKCS#8 加密成 `iv.密文` 落盘；Windows/Linux 暂为 0600 文件（单测断言 mode 0600）。
+6. **Rust ↔ Go 交叉验证**：`go_compat_vector` 打印 Rust 的 SPKI 公钥与 DER 签名，Go 侧 `x509.ParsePKIXPublicKey` + `sha256` + `ecdsa.VerifyASN1` 返回 `verify: true`；服务端受控 E2E（用 k8s Secret 的 `state-secret` 自签合法票据、跳过 Casdoor）`VIRGO_TEST_TICKET=… cargo test -p todo-desktop --lib live_activate_refresh_unbind -- --ignored`：激活 200 → `proxy_config()` 有令牌 → 设备证明刷新 200 → 解绑 200 且本机私钥被删；Pro 令牌 `https://virgo-img.apikv.com/img?url=pbs.twimg.com/media/HW0lFRKbsAA9c9z.jpg` → 200 / 140459 B / 1.69s（`file` 认作 JPEG 1200×480）。测试期间在 `virgo_auth` 产生的 `e2e-rust*` 绑定/解绑/nonce 行已用 `psql` 清零（三表各 0 行）。
+7. **前端**：`appSettings.ts` 删 `imageProxyBase/imageProxyToken`（旧档的这两个键在 normalize 时被丢弃）；`reading.ts` 不再回调传代理参数；新增 `lib/auth.ts`（`auth_status/auth_start_login/auth_refresh/auth_unbind` + `auth://changed` 订阅 + 浏览器 mock）与 `hooks/useAuth.ts`；`SettingsDialog` 的图片代理组改为登录态（未登录 CTA、登录中「等待浏览器登录…」、已登录账号/设备/订阅/绑定时间/令牌剩余、刷新、二次确认解绑 + 24h 冷却提示），样式 `.settings-auth*`。
+8. **Android**：`tauri-plugin-deep-link` 2.6.3 + `tauri.conf.json > plugins.deep-link`（desktop `schemes:["virgo"]`、mobile `scheme:["virgo"]`）；`setup` 里 `app.deep_link().on_open_url(...)` → `auth::handle_deep_link`；Android 打开浏览器用 `tauri-plugin-opener`（桌面端仍走 `open`/`cmd start`/`xdg-open`，`open_web_url` 在 Android 上没有可执行文件）。插件按行把 intent-filter 插到**每个** `</activity>`（本应用有 `ShareReceiverActivity`，会误吞 `virgo://` 登录回跳），`gen/android/app/build.gradle.kts` 加 `pre*Build` 钩子把非 MainActivity 的那段自动生成块删掉；`aapt2 dump xmltree … AndroidManifest.xml | grep -c 'scheme="virgo"'` = **1**（修复前为 2）。APK `app-universal-release-signed.apk` 20.4 MB，`classes.dex` 含 `KeystorePlugin` 与 `OpenerPlugin`，`cargo check --target aarch64-linux-android` 绿。
+9. **上线前收紧**：node4 `/srv/virgo-imgproxy/tokens.json` 备份后改为 `{"tokens": []}`（移除 `devtoken`，热加载无需重启）；同一 URL 用 `Authorization: Bearer devtoken` → 401 `unknown token`，Pro 令牌 → 200。`virgo_auth` 与 imgproxy 之外无临时资源残留；`kubectl get pods -A | grep Terminating` 为空。
+10. **门禁**：`go test ./...` 绿（device/token/cmd 全 `ok`）；`cargo test -p todo-desktop --lib` 30 passed + 3 ignored（其中 1 个为真实网络 E2E）；`cargo clippy --workspace --all-targets -- -D warnings` 绿；`tsc -b`/`vite build` 绿；Playwright 全量 **187 passed / 16 skipped**（新增 `e2e/auth.spec.ts` 2 例：登录态替换手填字段且 localStorage 无令牌键、二次确认解绑回到未登录）；`./scripts/e2e-web.sh` **15 passed**（顺带修了 3 例窄屏用例：640px 下入口已从侧栏「象限」改为「我的 → 设置 → 更多视图」，是 A′ 底部栏改版遗留的陈旧路径）；`cargo run -p todo-cli -- contract check` → `contract ok`；**首轮** `cargo test --workspace` 出现 1 例失败（`tests/sync.rs::sync_roundtrip_between_local_store_and_server`，固定端口 18127 的 `virgo-sync` 子进程首次起服竞态），单独重跑与整轮重跑均绿，属既有 flake（`TODO.md` `onfv6x` 同族，未在本段改动）；桌面二进制 `target/debug/todo-desktop` 冷启动 25s 无 panic（print `tauri-debug app_*_dir`，无 `auth.json` 属未登录预期）。
+11. **未覆盖（下次验）**：①Casdoor 应用 `redirectUris` 是否已注册 `https://virgo-auth.apikv.com/auth/callback`——需要 admin token 读 `get-application`，真人登录才能最终确认（Casdoor 在 authorize 阶段不校验）；②Android 真机（无设备连接）：装 signed APK、完成登录、`virgo://auth` 回跳、Keystore 密文落盘 `files/.todo/device.key.enc`、X 长文图片落盘；③imgproxy 不校验设备证明，12 小时内令牌可拷到别处使用（`TODO.md` `f8tokn`）；④Windows/Linux 私钥保护（`TODO.md` `k9dpae`）。
+
+## 2026-11-26 图片代理 Pro 真人登录：Casdoor 角色判定修复 + Android 真机全链路（v9auth / q7andr）
+
+1. **Casdoor 复核**（admin token 读 `admin/virgo-todo`）：`clientId=9e0cec1ddffbd6777d7f`（与 k8s secret 一致）、`redirectUris` 已含 `https://virgo-auth.apikv.com/auth/callback`（另有旧入口 `http://localhost:9000/callback`，建议删）、`grantTypes` 含 `authorization_code`、`cert=virgo-todo`。`GET /api/get-groups?owner=lens` 只有 `beta-free`/`beta-pro`，没有 `virgo-pro` 组；用户 `admin_01` 的 `groups=[]`、`roles=["admin","customer","virgo_pro"]`，userinfo 返回 `groups: null` + `roles: [...]`。
+2. **Pro 判定 bug 与修复**（`deploy/virgo-auth`）：原 `isPro` 只遍历 `p.Groups`，`lens/virgo_pro` 配置在 `PRO_ROLE` 里但 roles 从未被读取，导致有 `virgo_pro` 角色的真人账号登录后 403 `not_pro`。修复：`oidc.Profile` 增 `Roles []string`；`isPro` 遍历 `append(Groups, Roles...)`；新增 `proClaimMatches`（大小写不敏感，允许一边 `owner/name` 全名、一边短名，两个全名必须同 owner）。新增 `TestProClaimMatches`（8 例）与 `TestIsProReadsGroupsAndRoles`（4 例），`go test ./...` 全绿。镜像 `ccr.ccs.tencentyun.com/sumery/virgo-auth:20261125121503`（digest `sha256:3ee60044…`），helm revision 7，新 Pod 12:20:01Z 起。
+3. **Android release 包三处真机 bug**（只有 R8 + 真机才暴露）：
+   - **R8 改名插件方法**：`classes.dex` 里 `KeystorePlugin` 的 `seal`/`unseal` 被裁成 `a`/`d`，Rust 报 `No command seal found for plugin com.sumery.virgo.KeystorePlugin`，激活失败。`gen/android/app/proguard-rules.pro` 增 `-keep class com.sumery.virgo.KeystorePlugin { *; }`、两个 InvokeArg 参数类、`-keepattributes RuntimeVisibleAnnotations`；重建后 dexdump 可见 `seal`/`unseal` 原名。
+   - **Android HTTPS panic**：`reqwest` 默认 `rustls-platform-verifier`，本包未附 JVM 组件，首个请求即 `panicked ... Expect rustls-platform-verifier to be initialized`（logcat `RustStdoutStderr` 可见），激活线程挂掉。`auth.rs` 改用 `todo_core::tls::http_client_builder()`（Android 用随包 webpki 根证书）；为此 `crates/todo-core/src/lib.rs` 的 `tls` 改为 `pub mod`。同时把后台错误接进界面：`useAuth` 把 Rust `status.error` 提到 `auth.error`（激活失败发生在后台线程，原来界面只显示「未登录」，看不到原因）。
+   - **重启后私钥读不出**：`AuthState::new` 在 `.manage()` 阶段就 `store.load()`，而 Android Keystore 插件在 Tauri `setup` 里才登记，构造期 `unseal` 必失败 → 重启后「设备私钥不在本机」。改为惰性：`load_key()` 首次用到才读；`sign()` 只 load 绝不生成（避免换钥毁绑定）；`public_key()` 才生成。
+4. **真机实测**（vivo V2425A / Android 17，signed release APK，`pm install -r` 成功）：
+   - 受控票据（k8s `state-secret` 自签、`am start -a VIEW -d virgo://auth?ticket=…`）：激活 200，`device_bindings` 出现 `android-verify-1795607571`/`Android`；设置页显示账号/设备/Pro 有效/绑定时间/「已启用 · 令牌剩余约 12 小时」；点「刷新令牌」后 `proof_nonces` 新增行；force-stop 重启后账号恢复、启动自动 refresh 成功（新 nonce `9IKGm0FS…`），无「私钥不在本机」；两步确认解绑 → 绑定删除、`device_unbinds` 一行、界面回未登录。测试行（`android-*`）随后从三表清零。
+   - 真人登录：非 Pro 账号 → 403 `not_pro`，界面「这个账号不是 Pro 订阅」，不写绑定行；`admin_01` 在服务端修好后再登录 → 激活 200，`device_bindings` 写入 `ca8ceec3-3345-48ce-b2db-40afe710eb69`/`Android`（05:15:26Z），设置页「Pro 有效 · 令牌剩余约 12 小时」，点刷新后 `proof_nonces` 新增一行（05:16:08Z）。
+5. **未完成 / 阻塞**：`https://virgo-img.apikv.com` 当前无响应——TLS 握手与 HTTP/2 流正常，但 Pangolin 不再转发到 node4（curl 无响应直到超时）；node4 本机 `127.0.0.1:8765/healthz` 返回 `{"ok":true}`，imgproxy service active，newt websocket 已连（siteId 16，重启/关 ping 重连均无效），故判断是 Pangolin 侧 resource→site 关联或站点状态，需要控制台/DB 权限才能修（已记入 README 待办与 TODO）。因此「手机阅读一篇 X 长文确认图片落盘」未验（同时手机上的 25 篇阅读库没有 X 文章）。imgproxy 仍只验令牌不验设备证明（`f8tokn`）、Windows/Linux 私钥保护（`k9dpae`）。
+
+## 2026-11-26 设备证明落地（f8tokn）+ Casdoor 对象 + 图片域根因（v4imgd）
+
+1. **f8tokn（imgproxy 校验设备证明）**：
+   - 服务端 `deploy/virgo-auth`：`token.Claims` 增 `dpk`（设备 P-256 公钥，SPKI base64），`Issue` 多一个 `devicePub` 参数，activate / refresh 都把请求里的公钥写进令牌；`go test ./...` 全绿（token 包测试同步更新）。
+   - `deploy/imgproxy`：新增 `verify_device_proof(claims, method, path, headers)`——带 `dpk` 的令牌必须附 `X-Virgo-Ts` / `X-Virgo-Nonce` / `X-Virgo-Sig`，签 `GET\n{path}\n{ts}\n{nonce}`，`cryptography` ECDSA-P256 验签，±300s 时间窗，nonce 一次性（TTL 表，4096 条上限），缺头/过期/重放/签名错/公钥坏分别返回原因；无 `dpk` 老令牌路径不变。
+   - 客户端：`crates/todo-core::reading` 的 `ImageProxyConfig` 增 `pro` / `proof`、`ProxyProof`、`ProofSigner`、`proxy_headers`、`request_target`；Pro 令牌改发 `X-Virgo-Token`——**旧实现发 `Authorization: Bearer`，而 imgproxy 只从 `X-Virgo-Token`/`?vgt=` 读，Pro 取图必然 401**，本次一并修正；证明头按请求逐签。`apps/desktop/src-tauri/src/auth.rs::proxy_config` 用设备私钥签 `GET\n{path}\n{ts}\n{nonce}`（拿不到私钥就不带证明，imgproxy 会拒）。
+   - **实测**（node4 上用新代码起 18765 端口，真实令牌 + node4 生成的 P-256 测试键）：有效证明 → 200 / 12302 B JPEG；同一 nonce 重放 → 401「设备证明重复使用」；篡改 DER 签名 → 401「设备证明签名不对」；无 `dpk` 令牌 200；无令牌 401。
+   - 测试：`deploy/imgproxy/tests/test_device_proof.py` 7 例全过（node4 上跑，Mac 无 `cryptography`）、`todo-core` 新增 2 例（`request_target_keeps_path_and_query_without_host`、`proxy_headers_follow_token_kind`）全过、Go token 测试全过。
+   - **未部署**：远端 imgproxy/virgo-auth 仍是旧版。上线顺序必须先发客户端（旧令牌无 `dpk`，多发的证明头会被旧代理忽略），再上线带 `dpk` 的服务端与新 imgproxy；客户端需重打 APK/桌面包。
+
+2. **Casdoor 对象（用 admin token 补齐）**：
+   - 新建 `lens/virgo-pro` 组（Physical）、`lens/virgo-todo` 定价页的 schema 校验通过；`lens/virgo_pro` 角色（display「Virgo Pro」）与 `lens/virgo-pro` 套餐（1 个月 / 29 CNY / role=virgo_pro）确认存在；定价页 plans=[virgo-pro]、application=virgo-todo。
+   - `admin/virgo-todo` 应用：`redirectUris` 收敛为唯一 `https://virgo-auth.apikv.com/auth/callback`（旧 `http://localhost:9000/callback` 已删），`cert=virgo-todo`。
+   - `casdoor-setup.sh` 修三个坑：默认 `REDIRECT_URI` 原误写成 `virgo-img.apikv.com`；脚本会回填 localhost 入口；Casdoor 的「用户名,令牌」`Authorization` 在 role/group 端点返回 `Unauthorized operation`，改 `Bearer` 后全通，并补建组步骤、`update-application` 带 `?id=`。
+
+3. **v4imgd 根因（图片域回源中断）**：不是 Pangolin 配置错——resource 92 存在（`virgo-img.apikv.com` → site node4 `127.0.0.1:8765`，enabled/approved），Traefik 也把请求转给 `100.89.128.32:59023`（access.log `OriginStatus 499`、`Duration 9.95s`）。断在数据面：node4 向 node3:51820 发 WireGuard handshake initiate，node3 tcpdump 能看到 init 与回包，**node4 eth0 收不到任何入站 UDP**；node3 → node4 公网 IP 171.105.167.193 的 ICMP 100% 丢包；node4 本机 ufw/iptables/nft 均放行。结论：node4 云侧 NAT/安全组未放行入站 UDP（51820/21820）。需用户在云控制台放行（或加 UDP 端口映射）；恢复判据 `https://virgo-img.apikv.com/healthz` = 200。
+
+## 2026-11-26 k9dpae：Windows / Linux 私钥保护改用系统凭据库（本轮）
+
+1. **实现**：`apps/desktop/src-tauri/src/auth.rs` 的 `SecretStore` 新增 `#[cfg(any(windows, linux))] DesktopKeyring { service, account, fallback }`：
+   - 读：`keyring::Entry::get_secret()`；`NoEntry` → `Ok(None)`；其他错误（无 DBus / 无 keyring 守护 / Credential Manager 不可用）回退读 `fallback` 文件。
+   - 写：`set_secret(base64(pkcs8))`，成功后删回退文件；失败则 `write_private_file(fallback, ...)`（mode 0600，Unix）。
+   - 清：`delete_credential()` + 删回退文件，幂等。
+   - 依赖：`[target.'cfg(any(target_os = "windows", target_os = "linux"))'.dependencies] keyring = { version = "3", features = ["windows-native", "sync-secret-service", "crypto-rust"] }`。
+2. **验证**：macOS 主机无法整包交叉检查（aws-lc-sys 需要 `windows.h`，Linux target 因网络拿不到 `rust-std`；node4 无 Rust 工具链）。用最小 crate 复刻同一段 keyring 调用，`cargo check --target x86_64-pc-windows-msvc` 通过（keyring 3.6.3 + windows-sys 0.60.2），即 Windows 侧的 API 用法可编译；Linux 走同一 API 面，但未在该目标编译。
+3. **未实测**：Windows / Linux 运行时路径（登录 → 重启 → 刷新 → 解绑、无 DBus 时回退 0600 文件）；macOS 与 Android 分支 cfg 关闭，行为不变，`make check-quick` 绿（124s）。
+4. **v4imgd 复查（仍未恢复）**：23:30 在 node4 抓包仍是只有 `10.4.0.5:* → 193.112.22.183:51820` 的 WG initiate、没有入站 UDP 回包；`https://virgo-img.apikv.com/healthz` 仍 `000`。等用户在 node4 云控制台放行入站 UDP 51820/21820（或加端口映射）。
+5. **本轮第二阶段（2026-11-27 00:00 前后）**：新版 imgproxy **已部署到 node4**（旧文件备份 `/root/imgproxy.py.bak-20261126`，`systemctl restart virgo-imgproxy` 后 `{"ok":true}`）。生产端口实测：`dpk` 令牌 + 有效证明 → 200 / 12302 B JPEG；`dpk` 令牌不带证明 → 401「缺少设备证明」；无 `dpk` 旧令牌 → 200（向后兼容）；同一 nonce 重放 → 401。另做跨实现验签：Rust `proof_signer` 生成的 P-256 DER 签名（`apps/desktop` 单测 `print_proof_for_cross_check`，`--ignored`）交给 node4 的 `cryptography` 验证通过，说明客户端签名与 imgproxy 验签的消息格式/编码一致。`virgo-auth` 的 `dpk` 签发**尚未部署**（按「先客户端、后服务端」顺序，等客户端发版后一起上）。仍缺：真机上「登录 → 阅读含图文章 → 图片落盘」端到端（被 v4imgd 卡住）。
+6. **本轮第三阶段（2026-11-27 00:0x）**：`virgo-auth` 新版上线——镜像 `ccr.ccs.tencentyun.com/sumery/virgo-auth:20261126234900`（digest `sha256:76d04b98ee4bc631859be27b57a8f52b6b65b34aef924b59a11c69620eff1a20`），`helm upgrade` revision 8，Pod `virgo-auth-7c49ffd499-ktqnq` READY，`/auth/login`（web 与 loopback）均 302。用 k8s `virgo-auth-env/state-secret` 自签票据激活一台测试设备：`/v1/activate` 200，令牌 payload 里 `dpk` 存在且与请求的 SPKI 公钥逐字节一致；再用该令牌 + P-256 证明请求 node4 新版 imgproxy（127.0.0.1:8765）→ **200 / 12302 B JPEG**。测试绑定与 nonce 已从 PG 清零（现存 1 条真实 `admin_01` 绑定 + 1 条 nonce）。Android 新 APK 已构建并签名（`apps/desktop/src-tauri/gen/android/app/build/outputs/apk/universal/release/app-universal-release-signed.apk`，20.4 MB，debug keystore），但 adb 当前无设备，未安装/未实测。
+## 2026-11-27 v4imgd 修复：node3-local newt + 反向 SSH 隧道（公网 200 实测）
+
+1. **根因**：node4 在 NAT 后面，只映射了 SSH（公网 `170.106.184.3:34126` → node4:22），没有 UDP DNAT。node4 的 newt 与 gerbil 的 WireGuard（UDP 51820/21820）只有出站 initiate，回包永远到不了 node4；node3 侧 tcpdump 能看到 init 与回包。node3 自己到 `pbs.twimg.com` 返回 000，所以 imgproxy 不能落在 node3。
+2. **修复**：用户把 Pangolin resource 92 的 target 从 site node4（16）改到 `node3-local`（15，127.0.0.1:8765，internalPort 47041，authToken）。我补了 node4 → node3 的反向 SSH 隧道（node4 主动连 node3 映射端口 34125；systemd `virgo-img-tunnel`，`ssh -N -R 127.0.0.1:8765:127.0.0.1:8765`，Restart=always），把 node4 的 imgproxy 暴露到 node3 的 127.0.0.1:8765。
+3. **过程失误与回滚**：我一度把 target 改成 site 1（`name=node1, type=local`），Traefik 生成 `http://127.0.0.1:8765` 后全站 502（Traefik 在容器网络里，127.0.0.1 是它自己的 loopback）。改前备份了整库（`/root/pangolin-db-before-virgo-img-target-*.sqlite`）与 target 行（`/root/virgo-img-target-backup.json`），已恢复为用户的 site 15 配置。
+4. **公网实测**：`https://virgo-img.apikv.com/healthz` 200（连测 3 次）；无令牌取图 401 `unknown token`；受控票据激活（`/v1/activate` 200，令牌带 `dpk`）+ P-256 证明从公网取图 → 200 / 12302 B JPEG。测试绑定与 nonce 已清零。
+5. **旁路修复**：node4 磁盘曾被 `/tmp/newt-dbg2.log`（我的 DEBUG 实例）写到 32G 占满（100%），另有 2 个多余 newt 进程；已杀掉并清理，磁盘回到 21%，只保留 systemd 的 newt。
+## 2026-11-27 q7andr 网络排查（真机 vivo V2425A / Android 17，`10AEB72BCN000EJ`）
+
+1. 手机浏览器实测：`https://virgo-img.apikv.com/healthz` → 渲染 `{"ok": true}`（200，图片代理从手机可达）；
+   `https://x.com/…` 停在「正在努力加载」，`https://api.fxtwitter.com/i/status/1`、`https://cdn.syndication.twimg.com/tweet-result?id=1&token=x`、`https://pbs.twimg.com/profile_images/…jpg` 全部「网页打不开，请检查网络」。
+   结论：正文接口与图片 CDN 在这张网络上都被挡，只有 virgo-img 可达；X 长文导入在这一网络下不可行。
+2. 新 APK 安装后登录态保持（账号 `ca8ceec3-…`、Android、Pro 有效、绑定 2026/11/26 13:15），「刷新令牌」成功并新增 `proof_nonces` 行（`16:15:08Z`，nonce `ef4JtKpV…`）。
+3. 重装后应用丢了项目目录（首屏为「选择项目目录」引导），收件箱的「打开文件 / 批量导入」点击无反应（应用处于只读态）；已把一篇合成 HTML（含真实 `pbs.twimg.com` 图片地址）推到 `/sdcard/Download/x-article-test.html` 备用。待用户在应用内重新选择项目目录后，可用该文件验证「导入 → 图片经 Pro 代理落盘 → 飞行模式仍可见」；真正的 X 长文验收还需手机切到可访问 X 正文接口的网络。
+## 2026-11-27 q7andr 应用侧排查（同一台真机）
+
+1. 重装新 APK 后应用进入无项目态（首屏「选择项目目录」引导）。在「目标」空态与「收件箱」工具行上点「选择项目」「打开文件」「批量导入」，界面均无反应（`mCurrentFocus` 始终是 MainActivity，没有 SAF picker）；同一屏的底部导航与「开始阅读」可正常响应，说明 WebView 的点击链路正常，是这几个 CTA 被应用状态禁用或处理函数抛错。
+2. `App.tsx` 的只读判定是 `serverReadOnly = transportCapabilities()?.writable === false`（来自同步服务端下发的设备能力）。当前这台手机极可能被同步服务标记为**不可写设备**，于是「新增/导入/选择项目」全被禁用。待确认：把该设备在同步端改成可写角色，或在应用里找到角色开关。
+3. 手机没有安装任何 VPN/代理类应用（`pm list packages` 只有系统 `vpnservice`/`vpndialogs`），因此 `x.com`、`api.fxtwitter.com`、`cdn.syndication.twimg.com` 都不可达；`pbs.twimg.com` 同样不可达，只有 `virgo-img.apikv.com` 可达。
+4. 已准备 `/sdcard/Download/x-article-test.html`（合成文章 + 真实 twimg 图片地址）与 `/sdcard/Documents/VirgoSmoke/TODO.md`（烟雾测试项目），等设备可写、项目可选后即可验证「导入 → Pro 代理取图落盘 → 飞行模式仍可见」。
+## 2026-11-27 真机二轮：Android 目录/文件选择缺口（q7andr / a2pick）
+
+1. **修好一个真 bug**：`todo-core` 的 `WorkspaceStore::global()` 依赖 `dirs::home_dir()`，Android 沙箱里为 `None`，界面报「工作空间注册表不可用：无法确定用户主目录」。在 `apps/desktop/src-tauri/src/lib.rs::run()` 启动时（`#[cfg(mobile)]`）把 `TODO_WORKSPACE_STORE` 指到 `mobile_data_dir()/.todo/workspace`；重装 APK 后工作空间页正常显示「默认工作空间 / 添加项目」，不再报错。
+2. **目录选择缺失**：用键盘焦点 + Enter 触发「添加项目」，应用内联报错 `Folder picker is not implemented on mobile`——Tauri dialog 插件在移动端不实现目录选择，项目根目录无法选。
+3. **文件选择 URI 不兼容**：键盘触发「打开文件」后系统文件选择器能打开（`DocumentsUI`），选中 `/sdcard/Download/x-article-test.html` 后返回 `content://com.android.providers.downloads.document/…`；应用的 Rust 侧按路径 `File::open`，报 `I/O error for content://…: No such file or directory (os error 2)`。
+4. **图片代理在手机上可用**：手机浏览器打开 `https://virgo-img.apikv.com/img?url=pbs.twimg.com%2Fprofile_images%2F1683325380441128960%2FyRsRRjGO.jpg&vgt=<服务端 Ed25519 令牌>`（令牌无 `dpk`，走旧静态令牌路径），页面直接渲染出 400×400 的 X 图标 —— 手机网络 → virgo-img → node3 隧道 → node4 imgproxy → twimg 整条链路在真机上成立。
+5. 手机没有 VPN/代理类应用；`x.com`、`api.fxtwitter.com`、`cdn.syndication.twimg.com` 都不可达，X 长文正文抓取在这张网络下无法进行。
+## 2026-11-27 a2pick 文件部分：Android content:// 导入桥（实现，待真机验证）
+
+1. Kotlin 插件 `apps/desktop/src-tauri/gen/android/app/src/main/java/com/sumery/virgo/UriPlugin.kt`：`@Command read(uri)` 用 `ContentResolver.openInputStream` 读出字节，`OpenableColumns.DISPLAY_NAME` 拿显示名，返回 `{data: base64, name}`；注册名 `virgo-uri`，proguard 保留 `UriPlugin`/`ReadUriArgs`。
+2. Rust `apps/desktop/src-tauri/src/uri.rs`：`materialize(path)` 在 Android 上把 `content://` 读成字节、写入 `TMPDIR`/应用私有目录（文件名清洗，默认 `import.html`），返回 `ImportSource { path, temporary }`；上限 64 MB。`reading_import_file` 先 `materialize` 再 `import_local_file`，成功后删除临时文件；非 Android 直接原样返回路径。
+3. 构建：`tauri android build --target aarch64` 成功，APK 已签名（20.4 MB，08:32）。**未安装**：adb 设备在构建完成后掉线（`adb devices` 空），等待重连。
+4. 待真机验收：安装后走「收件箱 → 打开文件 → Downloads/x-article-test.html」，预期不再报 `I/O error for content://…`，文章进入收件箱；再确认图片经 `virgo-img` 代理落到本地（飞行模式下仍可见）。
+## 2026-11-27 a2pick 文件桥真机验证（vivo V2425A / Android 17，`10AEB72BCN000EJ`）
+
+1. 新 APK（08:46:32 安装，`lastUpdateTime` 已确认）走「收件箱 → 打开文件」（键盘焦点 + Enter 拉起 `DocumentsUI`，在「下载」里选 `x-article-test.html`）→ 导入成功，收件箱 25 → 26，标题「X 长文（本地导入测试）」，正文完整；`I/O error for content://…` 不再出现。
+2. 第二份更长、含 `<img src="https://pbs.twimg.com/…">` 的 HTML（`x-article-test2.html`，1938 字节）同样导入成功，收件箱 26 → 27，标题「X 长文（代理取图验收 B）」；但正文里没有图片，node4 imgproxy 当日计数为空 —— readability 提取把 `<img>` 丢掉了，`localize_images` 根本没有拿到图片地址，代理没有被调用。
+3. 尝试用局域网页面强制走「抓取 → 提取 → 本地化图片」：Mac 上起 `python3 -m http.server 8123`（`192.168.3.220`），手机同网段可达（浏览器能打开页面），但应用在收件箱粘贴链接后直接拒绝：**`不能抓取本机或内网地址`**（SSRF 防护）。
+4. 结论：`a2pick` 的文件一半在真机上成立；图片经代理落盘还差一个「公网可达、正文里带 twimg 图片」的文章或真 X 长文。X 正文接口在这张网络上仍不可达，需要 VPN 或换网络。
+## 2026-11-27 Mac 端真实验收：X 长文经 virgo-img 取图落盘
+
+两个默认忽略、用环境变量开启的真实网络测试（`crates/todo-core/src/reading.rs`）：
+
+1. `virgo_proxy_localizes_x_image_end_to_end`（`VIRGO_PROXY_TOKEN`）：构造一篇带真实 `pbs.twimg.com` 图片的正文，直连 X 图床失败后回退 virgo-img，落盘 `images/<id>/1.jpg` = **12302 字节**；node4 imgproxy 计数出现 `pro:mac-e2e`。
+2. `x_status_article_localizes_images_through_proxy`（`VIRGO_PROXY_TOKEN` + `VIRGO_ARTICLE_URL`）：用真 X 长文 `https://x.com/NASA/status/2051361508181856362`（NASA「Artemis II」四图贴）走 `store.add` → fxtwitter 取正文、图片回退 virgo-img：
+
+```
+title=Start your week with some new photos from Artemis II! images=4 bytes=3223439
+file=…/images/<id>/1.jpg size=843848
+file=…/images/<id>/2.jpg size=1136676
+file=…/images/<id>/3.jpg size=399067
+file=…/images/<id>/cover.jpg size=843848
+```
+
+   正文 `content_html` 已引用 `images/…` 本地文件；node4 imgproxy 当日计数 `pro:mac-e2e: requests=4, bytes=6962208`。整条链（X 正文 → 图片地址 → 直连失败 → virgo-img 回退 → 本地落盘）在 Mac 上成立，且本机直连 `pbs.twimg.com` 是 000，回退路径确凿。
+
+说明：这两个测试用 dpk-less 的 Pro 令牌（`plan=pro`、`hosts=pbs.twimg.com,abs.twimg.com`），服务端只校验令牌签名，因此不依赖设备证明；设备证明那一半由 `f8tokn` 的 imgproxy 测试覆盖。
+## 2026-11-27 Windows 登录失败修复：cmd 把回跳 URL 的 `&` 当命令分隔符
+
+1. **现象**：Windows 测试机上点登录，服务端返回 `bad_client` / `loopback 端口不合法（须在 1024–65535）`。
+2. **根因**：桌面端登录用 loopback 回跳（`/auth/login?client=loopback&port=<p>&state=<s>`）。Windows 上打开浏览器走 `cmd /C start "" <url>`，`cmd` 会重新解析命令行，未加引号的 `&` 被当成命令分隔符，浏览器实际只打开到 `?client=loopback`，`port` 与 `state` 丢失；服务端 `strconv.Atoi("")` 失败 → `bad_client`。
+3. **修复**：`apps/desktop/src-tauri/src/lib.rs::open_web_url` 的 Windows 分支改用 `CommandExt::raw_arg` 把整条命令行原样交给 `cmd`，并给 URL 加引号、把 `"` 转义成 `%22`；抽出 `windows_start_command_line()` 便于断言。新增单测 `windows_start_command_line_keeps_query_ampersands`（`&port=50123&state=abc` 保持完整、引号被转义）。
+4. 重新构建 Windows 产物：`Sumery Virgo_0.1.1_x64-setup.exe`（7,162,076 字节，SHA-256 `245a258bbf3547d9f80f6b5da920256d3e2eaebea084f98773a7365b6aa27fc8`）、`virgo-msix-kit.zip`（9,948,901 字节，SHA-256 `a819e7a81ce42b619e2160af5b37874fda199570e17edd886406f73c256fd1b1`）。
+## 2026-11-27 Windows 验收（用户实测）
+
+用户在新构建的 Windows 包上完成验收：NSIS 安装包可安装启动，登录（loopback 回跳）不再报 `bad_client: loopback 端口不合法`，Pro 状态与令牌刷新正常，X 文章经 `virgo-img` 取图可用。产物为 `dist/windows/Sumery Virgo_0.1.1_x64-setup.exe`（7,162,076 字节，SHA-256 `245a258bbf3547d9f80f6b5da920256d3e2eaebea084f98773a7365b6aa27fc8`）；MSIX 套件（`virgo-msix-kit.zip`）未在本次验收范围内。
+## 2026-11-27 单设备绑定改为「新设备自动挤掉旧设备」（已上线）
+
+1. 代码：`deploy/virgo-auth/internal/device` 的 `Memory.Activate` 与 `PG.Activate` 不再返回 `ErrAlreadyBound`；同账号出现不同公钥时直接覆盖绑定（`bound_at` 重置为当前时间），同一公钥重复激活保持幂等并保留原 `bound_at`。文档注释与 `virgo-auth/README.md` 同步。
+2. 单测：`device_test.go` 改为断言「B 激活后绑定变成 B、A 的证明返回 `ErrBadProof`、B 重复激活幂等、再切回 A 同样直接生效」；`go test ./...` 全绿。
+3. 部署：镜像 `ccr.ccs.tencentyun.com/sumery/virgo-auth:20261127101745`（digest `sha256:b7bcd8c033f5ad86732ea5d25eb35b057ec2dc82a294b3572dccf8f9ef6255fa`），`helm upgrade` 到 revision 9，`values-prod.yaml` tag 已更新。
+4. 生产实测（控制票据，sub `evict-1795746024`）：activate A → 200；activate B → 200；**A 的 refresh → 401 `bad_proof`**；B 的 refresh → 200；PG 只剩一行绑定，`device_name=evict-B`，公钥为 B。测试绑定与 nonce 已删除。
+5. 已知边界：令牌是无状态的 Ed25519，被挤掉设备手里的 Pro 令牌在到期前仍可继续取图（最短 12 小时）；重新登录即可抢回绑定。

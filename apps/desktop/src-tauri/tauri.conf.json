@@ -65,5 +65,21 @@
       "hardenedRuntime": true,
       "signingIdentity": null
     }
+  },
+  "plugins": {
+    "deep-link": {
+      "desktop": {
+        "schemes": [
+          "virgo"
+        ]
+      },
+      "mobile": [
+        {
+          "scheme": [
+            "virgo"
+          ]
+        }
+      ]
+    }
   }
 }

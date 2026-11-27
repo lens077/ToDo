@@ -1,0 +1,753 @@
+{
+ "code": 200,
+ "tweet": {
+  "text": "https://x.com/i/article/2120378122310926336",
+  "url": "https://x.com/sonic0828/status/2120395702987821533",
+  "author": {
+   "name": "Sonic的奇思妙想",
+   "screen_name": "sonic0828"
+  },
+  "article": {
+   "title": "我拆了 Fable 5.2 做的港口枪战游戏，1.4 MB 里都装了什么",
+   "cover_media": {
+    "media_info": {
+     "original_img_url": "https://pbs.twimg.com/media/HW0lFRKbsAA9c9z.jpg"
+    }
+   },
+   "content": {
+    "blocks": [
+     {
+      "data": {},
+      "entityRanges": [],
+      "inlineStyleRanges": [],
+      "key": "8em5f",
+      "text": "今早赖在床上看到 Fable 5.2 做的这个港口枪战游戏 Saltline，有雨、有反光、有枪械和敌人，看到整个游戏只有 1.4 MB，还是一个 HTML时，我直接弹起来了。。。",
+      "type": "unstyled"
+     },
+     {
+      "data": {},
+      "entityRanges": [
+       {
+        "key": 0,
+        "length": 1,
+        "offset": 0
+       }
+      ],
+      "inlineStyleRanges": [],
+      "key": "fuajd",
+      "text": " ",
+      "type": "atomic"
+     },
+     {
+      "data": {},
+      "entityRanges": [],
+      "inlineStyleRanges": [],
+      "key": "cbies",
+      "text": "最先想确认一下，是这个大小有没有把资源算全。",
+      "type": "unstyled"
+     },
+     {
+      "data": {},
+      "entityRanges": [],
+      "inlineStyleRanges": [
+       {
+        "length": 27,
+        "offset": 13,
+        "style": "Bold"
+       }
+      ],
+      "key": "4c66u",
+      "text": "把公开副本下下来量了一遍，1,425,509 字节，Three.js 也在里面。然后做了格式化，按渲染、关卡、战斗、AI、音效和 UI 拆开，跑起来看了看。\n",
+      "type": "unstyled"
+     },
+     {
+      "data": {},
+      "entityRanges": [],
+      "inlineStyleRanges": [
+       {
+        "length": 32,
+        "offset": 0,
+        "style": "Bold"
+       },
+       {
+        "length": 32,
+        "offset": 0,
+        "style": "Italic"
+       }
+      ],
+      "key": "1bd5o",
+      "text": "如果平时不写代码，可以先把它理解成一本很薄的“港口搭建说明书”。",
+      "type": "blockquote"
+     },
+     {
+      "data": {},
+      "entityRanges": [],
+      "inlineStyleRanges": [],
+      "key": "5j49u",
+      "text": "里面写着箱子怎么搭、表面怎么生锈、枪声怎么做。浏览器打开文件，再照着这些规则生成模型、贴图和声音。这样就比较好理解它为什么能这么小了。\n",
+      "type": "unstyled"
+     },
+     {
+      "data": {},
+      "entityRanges": [],
+      "inlineStyleRanges": [],
+      "key": "b5205",
+      "text": "具体拆下来，有五个地方值得分享：",
+      "type": "unstyled"
+     },
+     {
+      "data": {},
+      "entityRanges": [],
+      "inlineStyleRanges": [],
+      "key": "246s6",
+      "text": "一、模型、贴图、声音，都在现场生成",
+      "type": "header-two"
+     },
+     {
+      "data": {},
+      "entityRanges": [],
+      "inlineStyleRanges": [],
+      "key": "aspkq",
+      "text": "翻到道具代码，能看到集装箱的尺寸、箱体、波纹板、门、锁杆这些东西，都有对应的构建逻辑。不同型号的集装箱复用同一个生成器，改一下参数，就能换尺寸、颜色和细节。",
+      "type": "unstyled"
+     },
+     {
+      "data": {},
+      "entityRanges": [
+       {
+        "key": 1,
+        "length": 1,
+        "offset": 0
+       }
+      ],
+      "inlineStyleRanges": [],
+      "key": "6h1od",
+      "text": " ",
+      "type": "atomic"
+     },
+     {
+      "data": {},
+      "entityRanges": [],
+      "inlineStyleRanges": [],
+      "key": "8q6pj",
+      "text": "所以你确实可以用几行调用生成一个箱子。不过别误会，调用后面还跟着完整的生成器，精细模型也没简单到总共就几行代码。",
+      "type": "unstyled"
+     },
+     {
+      "data": {},
+      "entityRanges": [],
+      "inlineStyleRanges": [],
+      "key": "brtu8",
+      "text": "材质这部分会在 GPU 上算出颜色、粗糙度、金属度和法线等信息，再拿这些结果去渲染物体。锈迹、油漆、沥青这些表面，都是这样做出来的。",
+      "type": "unstyled"
+     },
+     {
+      "data": {},
+      "entityRanges": [],
+      "inlineStyleRanges": [],
+      "key": "de1gm",
+      "text": "翻了音效，枪声是几层不同频段的噪声、衰减和共振叠起来，生成采样数组，再写进 `AudioBuffer` 播放。风、雨、海浪也有自己的生成函数。",
+      "type": "unstyled"
+     },
+     {
+      "data": {},
+      "entityRanges": [],
+      "inlineStyleRanges": [],
+      "key": "ci28p",
+      "text": "这就省掉了很多需要随包下载的模型、图片和录音。尤其是重复性强的东西，一套规则能反复用，大小自然就下来了。",
+      "type": "unstyled"
+     },
+     {
+      "data": {},
+      "entityRanges": [],
+      "inlineStyleRanges": [],
+      "key": "8029d",
+      "text": "",
+      "type": "unstyled"
+     },
+     {
+      "data": {},
+      "entityRanges": [],
+      "inlineStyleRanges": [],
+      "key": "a1ulb",
+      "text": "二、港口这个题材，选得特别精妙",
+      "type": "header-two"
+     },
+     {
+      "data": {},
+      "entityRanges": [],
+      "inlineStyleRanges": [],
+      "key": "80rav",
+      "text": "看完生成器再回头看场景，就能发现它俩是配套的。",
+      "type": "unstyled"
+     },
+     {
+      "data": {},
+      "entityRanges": [
+       {
+        "key": 2,
+        "length": 1,
+        "offset": 0
+       }
+      ],
+      "inlineStyleRanges": [],
+      "key": "65itv",
+      "text": " ",
+      "type": "atomic"
+     },
+     {
+      "data": {},
+      "entityRanges": [],
+      "inlineStyleRanges": [],
+      "key": "5ndsu",
+      "text": "港口里最多的是什么？集装箱、钢架、管道、起重机。很多东西本来就长得差不多，换个尺寸、颜色、箱号、磨损程度，放在一起也不会奇怪。",
+      "type": "unstyled"
+     },
+     {
+      "data": {},
+      "entityRanges": [],
+      "inlineStyleRanges": [],
+      "key": "7sl6i",
+      "text": "敌人也是机器，关节和动作可以用程序控制。要换成大量真人角色，做自然的表情、衣服变形、对白，事情就复杂多了。",
+      "type": "unstyled"
+     },
+     {
+      "data": {},
+      "entityRanges": [],
+      "inlineStyleRanges": [],
+      "key": "ukbm",
+      "text": "材质也是同样的思路。下面这张图是我把原代码的材质展示模式打开后截的，从左到右是红漆、蓝漆、锈钢、混凝土、沥青和木材。",
+      "type": "unstyled"
+     },
+     {
+      "data": {},
+      "entityRanges": [
+       {
+        "key": 3,
+        "length": 1,
+        "offset": 0
+       }
+      ],
+      "inlineStyleRanges": [],
+      "key": "8l8il",
+      "text": " ",
+      "type": "atomic"
+     },
+     {
+      "data": {},
+      "entityRanges": [],
+      "inlineStyleRanges": [],
+      "key": "1tsko",
+      "text": "这些东西都适合用噪声和分层来做，而且放在港口里很合理。湿润程度还会影响粗糙度和表面表现，所以雨也能体现在物体上。",
+      "type": "unstyled"
+     },
+     {
+      "data": {},
+      "entityRanges": [],
+      "inlineStyleRanges": [
+       {
+        "length": 27,
+        "offset": 11,
+        "style": "Bold"
+       }
+      ],
+      "key": "75g93",
+      "text": "我觉得这点很值得参考：做小体积 Demo，选什么内容，和怎么写代码一样重要。 一个满是重复工业结构的港口，确实更容易发挥程序化生成的优势。",
+      "type": "unstyled"
+     },
+     {
+      "data": {},
+      "entityRanges": [],
+      "inlineStyleRanges": [],
+      "key": "4v8qh",
+      "text": "",
+      "type": "header-two"
+     },
+     {
+      "data": {},
+      "entityRanges": [],
+      "inlineStyleRanges": [],
+      "key": "a54g2",
+      "text": "三、画面的功夫，花在了很显眼的地方",
+      "type": "header-two"
+     },
+     {
+      "data": {},
+      "entityRanges": [],
+      "inlineStyleRanges": [],
+      "key": "9ioks",
+      "text": "我最先注意到的就是地面的反光，拆开后这块也确实做了不少东西。",
+      "type": "unstyled"
+     },
+     {
+      "data": {},
+      "entityRanges": [],
+      "inlineStyleRanges": [],
+      "key": "d0ht4",
+      "text": "它用的是平面反射，简单说就是把镜头翻到地面另一侧，再画一遍，用这张画面当倒影。港口地面比较平，这种做法很合适。当然，它也要多渲染一次，照样吃性能。",
+      "type": "unstyled"
+     },
+     {
+      "data": {},
+      "entityRanges": [],
+      "inlineStyleRanges": [],
+      "key": "5j8in",
+      "text": "更细的是，地面没有全部做成一样亮。",
+      "type": "unstyled"
+     },
+     {
+      "data": {},
+      "entityRanges": [
+       {
+        "key": 4,
+        "length": 1,
+        "offset": 0
+       }
+      ],
+      "inlineStyleRanges": [],
+      "key": "6jaj2",
+      "text": " ",
+      "type": "atomic"
+     },
+     {
+      "data": {},
+      "entityRanges": [],
+      "inlineStyleRanges": [],
+      "key": "1kdtc",
+      "text": "代码里区分了积水、浸湿、潮湿和较干的区域。水坑里的倒影清楚一点，湿沥青上的反光模糊一点，粗糙度会跟着变化。否则整个地面都闪闪发光，很容易像一大块塑料。",
+      "type": "unstyled"
+     },
+     {
+      "data": {},
+      "entityRanges": [],
+      "inlineStyleRanges": [],
+      "key": "dj80o",
+      "text": "雾也会考虑太阳和遮挡。箱子之间、仓库门口的光束，和远处那层雾，做法不完全一样。再配上阴影、环境遮蔽、曝光和 bloom，画面就有了现在这个感觉。",
+      "type": "unstyled"
+     },
+     {
+      "data": {},
+      "entityRanges": [],
+      "inlineStyleRanges": [],
+      "key": "1677n",
+      "text": "所以它的观感，很大一部分来自这些效果配合得好。清晨逆光、雨雾、积水，放在同一片港口里，挺占便宜的。",
+      "type": "unstyled"
+     },
+     {
+      "data": {},
+      "entityRanges": [],
+      "inlineStyleRanges": [],
+      "key": "3e8a4",
+      "text": "",
+      "type": "unstyled"
+     },
+     {
+      "data": {},
+      "entityRanges": [],
+      "inlineStyleRanges": [],
+      "key": "fa9ho",
+      "text": "四、里面也确实写了游戏规则",
+      "type": "header-two"
+     },
+     {
+      "data": {},
+      "entityRanges": [],
+      "inlineStyleRanges": [],
+      "key": "2e8m5",
+      "text": "接着翻了任务和 AI。代码里有一套明确的流程：进港口，切断三处中继，应对增援，最后到船边撤离。死亡、重试、暂停和结算也都有。",
+      "type": "unstyled"
+     },
+     {
+      "data": {},
+      "entityRanges": [],
+      "inlineStyleRanges": [
+       {
+        "length": 6,
+        "offset": 9,
+        "style": "Bold"
+       },
+       {
+        "length": 5,
+        "offset": 29,
+        "style": "Bold"
+       }
+      ],
+      "key": "8onh6",
+      "text": "切中继需要靠近到 2.2 米内，面向目标，按住 E 约  2.4 秒。松开后进度会往回掉。这就给交互留了一个短暂的暴露时间，附近还有敌人的话，玩家就得考虑先处理哪件事。",
+      "type": "unstyled"
+     },
+     {
+      "data": {},
+      "entityRanges": [],
+      "inlineStyleRanges": [],
+      "key": "4hcp4",
+      "text": "敌人有两类，飞行的 Gull 和四足 Hound。它们会巡逻、调查、交战、搜索，也会检查视线遮挡，记录玩家最后出现的位置。丢失视线以后要去找，不会一直知道你在哪。",
+      "type": "unstyled"
+     },
+     {
+      "data": {},
+      "entityRanges": [
+       {
+        "key": 5,
+        "length": 1,
+        "offset": 0
+       }
+      ],
+      "inlineStyleRanges": [],
+      "key": "dv8ea",
+      "text": " ",
+      "type": "atomic"
+     },
+     {
+      "data": {},
+      "entityRanges": [],
+      "inlineStyleRanges": [],
+      "key": "6eemb",
+      "text": "代码还限制了同时攻击的敌人数，以及场上存活的敌人数量。这个小处理挺实际，不然所有敌人一起开火，玩家可能刚露头就没了。",
+      "type": "unstyled"
+     },
+     {
+      "data": {},
+      "entityRanges": [],
+      "inlineStyleRanges": [
+       {
+        "length": 5,
+        "offset": 34,
+        "style": "Bold"
+       }
+      ],
+      "key": "d8s2b",
+      "text": "战斗里也有一些细节，比如先检测环境遮挡，再检测敌人命中，弱点伤害是 2.2 倍。",
+      "type": "unstyled"
+     },
+     {
+      "data": {},
+      "entityRanges": [],
+      "inlineStyleRanges": [],
+      "key": "6sd3j",
+      "text": "不过这块我还没完整打通关。目前实际验证的是移动、射击、换弹、暂停等基本操作，上面这些任务和 AI 分支，是我从源码里确认的。能不能一直玩下去还觉得有意思，得另外花时间测。",
+      "type": "unstyled"
+     },
+     {
+      "data": {},
+      "entityRanges": [],
+      "inlineStyleRanges": [],
+      "key": "c4ta3",
+      "text": "",
+      "type": "unstyled"
+     },
+     {
+      "data": {},
+      "entityRanges": [],
+      "inlineStyleRanges": [],
+      "key": "5l3v6",
+      "text": "五、文件小，不代表运行起来也轻",
+      "type": "header-two"
+     },
+     {
+      "data": {},
+      "entityRanges": [],
+      "inlineStyleRanges": [],
+      "key": "8ug9f",
+      "text": "前面那本“搭建说明书”很薄，但电脑照着它搭出来的东西，还是要占内存和显存。",
+      "type": "unstyled"
+     },
+     {
+      "data": {},
+      "entityRanges": [],
+      "inlineStyleRanges": [
+       {
+        "length": 6,
+        "offset": 44,
+        "style": "Bold"
+       }
+      ],
+      "key": "4icn0",
+      "text": "举个例子，一张 2048 × 2048 的 RGBA8 纹理，展开后光基础像素数据就有 16 MiB，还没算 mipmap。生成它的代码可以很短，生成结果该有多大还是多大。",
+      "type": "unstyled"
+     },
+     {
+      "data": {},
+      "entityRanges": [],
+      "inlineStyleRanges": [
+       {
+        "length": 6,
+        "offset": 50,
+        "style": "Bold"
+       }
+      ],
+      "key": "10ovp",
+      "text": "我在 M5 Pro 上用 Chrome 跑了内置 benchmark，low 画质，这次截图里大约 60 FPS，错误计数是 0。",
+      "type": "unstyled"
+     },
+     {
+      "data": {},
+      "entityRanges": [
+       {
+        "key": 6,
+        "length": 1,
+        "offset": 0
+       }
+      ],
+      "inlineStyleRanges": [],
+      "key": "8bctg",
+      "text": " ",
+      "type": "atomic"
+     },
+     {
+      "data": {},
+      "entityRanges": [],
+      "inlineStyleRanges": [],
+      "key": "63b7c",
+      "text": "图里还有两个容易看错的数字：",
+      "type": "unstyled"
+     },
+     {
+      "data": {},
+      "entityRanges": [],
+      "inlineStyleRanges": [
+       {
+        "length": 11,
+        "offset": 0,
+        "style": "Bold"
+       }
+      ],
+      "key": "7bovn",
+      "text": "约 187 万个三角形，是这一帧累计绘制的数量，里面有多次渲染的重复计算，不能当成地图里独立模型的面数。",
+      "type": "unordered-list-item"
+     },
+     {
+      "data": {},
+      "entityRanges": [],
+      "inlineStyleRanges": [
+       {
+        "length": 8,
+        "offset": 0,
+        "style": "Bold"
+       }
+      ],
+      "key": "91orl",
+      "text": "140 个纹资源，包括程序生成的纹理和渲染目标等，也不等于下载了 140 张图片。",
+      "type": "unordered-list-item"
+     },
+     {
+      "data": {},
+      "entityRanges": [],
+      "inlineStyleRanges": [],
+      "key": "86iuv",
+      "text": "所以它仍然需要画质档位。high 开启更多效果，体积光用 24 步采样，ultra 加到 40 步。文件还是那个文件，显卡要干的活已经不同了。",
+      "type": "unstyled"
+     },
+     {
+      "data": {},
+      "entityRanges": [],
+      "inlineStyleRanges": [],
+      "key": "e02tf",
+      "text": "另外，约一半 JavaScript 是内嵌的 Three.js，浏览器也提供了 WebGL、Web Audio 这些基础能力。看“1.4 MB”这个数字时，这些条件也得一起看。",
+      "type": "unstyled"
+     },
+     {
+      "data": {},
+      "entityRanges": [],
+      "inlineStyleRanges": [],
+      "key": "b3juc",
+      "text": "最后还有个拆代码时顺手测的结果。",
+      "type": "unstyled"
+     },
+     {
+      "data": {},
+      "entityRanges": [],
+      "inlineStyleRanges": [
+       {
+        "length": 6,
+        "offset": 7,
+        "style": "Bold"
+       },
+       {
+        "length": 24,
+        "offset": 32,
+        "style": "Bold"
+       }
+      ],
+      "key": "dbc1r",
+      "text": "我把它整理成 21 个模块，对照检查了原始逻辑，重新打包出来是 1,425,728 字节，只多了 219 字节。",
+      "type": "unstyled"
+     },
+     {
+      "data": {},
+      "entityRanges": [],
+      "inlineStyleRanges": [],
+      "key": "4ouv1",
+      "text": "现在要调光照、改 AI，都有各自的文件可以找，发布出去还是一个差不多大的 HTML。代码好不好维护，和最终文件有多小，其实可以分开处理。",
+      "type": "unstyled"
+     },
+     {
+      "data": {},
+      "entityRanges": [],
+      "inlineStyleRanges": [],
+      "key": "9ktsl",
+      "text": "*补充：实测文件来自公开镜像，没能和原站逐字节比对；网页字体仍会请求 Google Fonts。上面的游戏画面和模型都是本地实际渲染，流程说明是按源码整理的。*",
+      "type": "unstyled"
+     }
+    ],
+    "entityMap": [
+     {
+      "key": "4",
+      "value": {
+       "data": {
+        "caption": "本地高画质实景，能看到积水倒影、湿地反光和逆光中的雾",
+        "entityKey": "633d3eff-5682-4ab9-8abc-73c91a62bf5a",
+        "mediaItems": [
+         {
+          "localMediaId": "8",
+          "mediaCategory": "DraftTweetImage",
+          "mediaId": "2120384256845500416"
+         }
+        ]
+       },
+       "mutability": "Immutable",
+       "type": "MEDIA"
+      }
+     },
+     {
+      "key": "5",
+      "value": {
+       "data": {
+        "caption": "原代码中的两类敌人，以及根据源码整理的任务流程",
+        "entityKey": "3e441b8f-8692-4266-afc0-468cf2cf07f2",
+        "mediaItems": [
+         {
+          "localMediaId": "10",
+          "mediaCategory": "DraftTweetImage",
+          "mediaId": "2120384493186105344"
+         }
+        ]
+       },
+       "mutability": "Immutable",
+       "type": "MEDIA"
+      }
+     },
+     {
+      "key": "6",
+      "value": {
+       "data": {
+        "caption": "本机 benchmark 实际截图，以及运行统计的解释",
+        "entityKey": "7ea1339c-6e17-4bee-8b4c-56255b72355a",
+        "mediaItems": [
+         {
+          "localMediaId": "12",
+          "mediaCategory": "DraftTweetImage",
+          "mediaId": "2120384742122209282"
+         }
+        ]
+       },
+       "mutability": "Immutable",
+       "type": "MEDIA"
+      }
+     },
+     {
+      "key": "1",
+      "value": {
+       "data": {
+        "caption": "原代码生成的道具，以及模型、材质、声音的生成路径",
+        "entityKey": "872a82d9-a258-4213-b619-72abe8a88920",
+        "mediaItems": [
+         {
+          "localMediaId": "15",
+          "mediaCategory": "DraftTweetImage",
+          "mediaId": "2120394233492422656"
+         }
+        ]
+       },
+       "mutability": "Immutable",
+       "type": "MEDIA"
+      }
+     },
+     {
+      "key": "0",
+      "value": {
+       "data": {
+        "tweetId": "2119925633564463609"
+       },
+       "mutability": "Immutable",
+       "type": "TWEET"
+      }
+     },
+     {
+      "key": "2",
+      "value": {
+       "data": {
+        "entityKey": "b0b0e14c-1f90-4e84-8127-52bac5dc25e1",
+        "mediaItems": [
+         {
+          "localMediaId": "19",
+          "mediaCategory": "DraftTweetImage",
+          "mediaId": "2120395031991492609"
+         }
+        ]
+       },
+       "mutability": "Immutable",
+       "type": "MEDIA"
+      }
+     },
+     {
+      "key": "3",
+      "value": {
+       "data": {
+        "caption": "原代码生成的道具，以及模型、材质、声音的生成路径",
+        "entityKey": "675a3b9c-5142-4c1b-963f-b3df1567a8d4",
+        "mediaItems": [
+         {
+          "localMediaId": "17",
+          "mediaCategory": "DraftTweetImage",
+          "mediaId": "2120394360793735168"
+         }
+        ]
+       },
+       "mutability": "Immutable",
+       "type": "MEDIA"
+      }
+     }
+    ]
+   },
+   "media_entities": [
+    {
+     "media_id": "2120394360793735168",
+     "media_info": {
+      "original_img_url": "https://pbs.twimg.com/media/HW0nb9LaIAAIWmw.jpg"
+     }
+    },
+    {
+     "media_id": "2120394233492422656",
+     "media_info": {
+      "original_img_url": "https://pbs.twimg.com/media/HW0nUi8aQAAzudO.jpg"
+     }
+    },
+    {
+     "media_id": "2120395031991492609",
+     "media_info": {
+      "original_img_url": "https://pbs.twimg.com/media/HW0oDBlbIAE-B5P.jpg"
+     }
+    },
+    {
+     "media_id": "2120384493186105344",
+     "media_info": {
+      "original_img_url": "https://pbs.twimg.com/media/HW0edleawAAbqq9.jpg"
+     }
+    },
+    {
+     "media_id": "2120384256845500416",
+     "media_info": {
+      "original_img_url": "https://pbs.twimg.com/media/HW0eP1CbUAADIvF.jpg"
+     }
+    },
+    {
+     "media_id": "2120384742122209282",
+     "media_info": {
+      "original_img_url": "https://pbs.twimg.com/media/HW0esE1aQAIYu1b.jpg"
+     }
+    }
+   ]
+  }
+ }
+}

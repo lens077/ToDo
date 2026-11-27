@@ -1,0 +1,48 @@
+{{- if .Values.networkPolicy.enabled -}}
+{{- $name := include "virgo-auth.fullname" . -}}
+# 必须用 CiliumNetworkPolicy：Cilium Gateway 的流量身份是 ingress entity
+# （envoy 跑在 cilium-agent 里），k8s NetworkPolicy 的 namespaceSelector
+# 拦不到它——首次上线表现为网关 503、公网 401，与 sponsor-api 图当年同坑。
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "virgo-auth.labels" . | nindent 4 }}
+spec:
+  endpointSelector:
+    matchLabels:
+      {{- include "virgo-auth.selector" . | nindent 6 }}
+  enableDefaultDeny:
+    ingress: true
+    egress: true
+  ingress:
+    - fromEntities:
+        - ingress
+        - host
+        - remote-node
+      toPorts:
+        - ports:
+            - { port: {{ .Values.auth.containerPort | quote }}, protocol: TCP }
+  egress:
+    # DNS
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: kube-system
+            k8s-app: kube-dns
+      toPorts:
+        - ports:
+            - { port: "53", protocol: UDP }
+            - { port: "53", protocol: TCP }
+    # 集群内 PostgreSQL：Cilium 对 pod-to-pod 必须用 toEndpoints，
+    # 仅靠 toCIDRSet 0.0.0.0/0 不足以覆盖集群内端点（实测 dial timeout）。
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: postgresql
+      toPorts:
+        - ports:
+            - { port: "5432", protocol: TCP }
+    # Casdoor 等公网 HTTPS
+    - toCIDRSet:
+        - cidr: 0.0.0.0/0
+{{- end -}}

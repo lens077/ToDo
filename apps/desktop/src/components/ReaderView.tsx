@@ -18,6 +18,7 @@ import {
 import { ReadingContextPanel } from './ReadingContextPanel';
 import { Icon } from './Icon';
 import { ImageLightbox } from './ImageLightbox';
+import { SubViewHeader } from './SubViewHeader';
 import { useAppSettings } from '../lib/appSettings';
 
 interface ReaderViewProps {
@@ -569,6 +570,8 @@ export function ReaderView({ detail, model }: ReaderViewProps) {
           <Icon name="arrow" className="reader__back-icon" /> 返回列表
         </button>
         <div className="reader__heading">
+          {/* 二级路径：回到收件箱的另一条路（返回列表按钮在左侧栏位）。 */}
+          <SubViewHeader crumbs={[{ label: '收件箱', onClick: leave }, { label: detail.title }]} />
           <h1 id="reader-title" title={detail.title}>{detail.title}</h1>
           <p className="reader__meta">
             {detail.byline && <span className="reader__author">{detail.byline}</span>}

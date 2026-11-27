@@ -1,0 +1,133 @@
+{{- $name := include "virgo-auth.fullname" . -}}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "virgo-auth.labels" . | nindent 4 }}
+spec:
+  selector:
+    {{- include "virgo-auth.selector" . | nindent 4 }}
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "virgo-auth.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.auth.replicas }}
+  revisionHistoryLimit: 5
+  selector:
+    matchLabels:
+      {{- include "virgo-auth.selector" . | nindent 6 }}
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  template:
+    metadata:
+      labels:
+        {{- include "virgo-auth.selector" . | nindent 8 }}
+    spec:
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      terminationGracePeriodSeconds: 15
+      imagePullSecrets:
+        - name: {{ .Values.auth.imagePullSecret }}
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        # Secret 卷里的文件属主是 root，靠 fsGroup 让非 root 进程能读。
+        fsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: virgo-auth
+          image: {{ include "virgo-auth.image" .Values.auth.image | quote }}
+          imagePullPolicy: {{ .Values.auth.image.pullPolicy }}
+          ports:
+            - { name: http, containerPort: {{ .Values.auth.containerPort }} }
+          env:
+            # 容器内必须监听 0.0.0.0，Service 才能转发。
+            - name: LISTEN
+              value: "0.0.0.0:{{ .Values.auth.containerPort }}"
+            - name: CASDOOR_URL
+              value: https://casdoor.apikv.com
+            - name: CASDOOR_REDIRECT_URL
+              value: {{ .Values.config.redirectUrl | quote }}
+            - name: PRO_ROLE
+              value: {{ .Values.config.proRole | quote }}
+            - name: PRO_GROUP
+              value: {{ .Values.config.proGroup | quote }}
+            - name: TOKEN_TTL
+              value: {{ .Values.config.tokenTTL | quote }}
+            - name: CLIENT_SCHEME
+              value: {{ .Values.config.clientScheme | quote }}
+            - name: TOKEN_KEY_FILE
+              value: /etc/virgo-auth/{{ .Values.tokenKey.fileName }}
+            # 把 CA 目录指给 pgx：DSN 里用 sslmode=verify-full 时靠它验 CNPG 证书。
+            - name: PGSSLROOTCERT
+              value: {{ .Values.database.caFile | quote }}
+            - name: CASDOOR_CLIENT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.secret.name }}
+                  key: client-id
+            - name: CASDOOR_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.secret.name }}
+                  key: client-secret
+            - name: AUTH_STATE_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.secret.name }}
+                  key: state-secret
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.database.secretName }}
+                  key: {{ .Values.database.key }}
+          volumeMounts:
+            - name: token-key
+              mountPath: /etc/virgo-auth
+              readOnly: true
+            - name: pg-ca
+              mountPath: /etc/virgo-pg
+              readOnly: true
+          readinessProbe:
+            httpGet: { path: /healthz, port: http }
+            initialDelaySeconds: 3
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: { path: /healthz, port: http }
+            initialDelaySeconds: 20
+            periodSeconds: 20
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          resources:
+            {{- toYaml .Values.auth.resources | nindent 12 }}
+      volumes:
+        - name: token-key
+          secret:
+            secretName: {{ .Values.tokenKey.secretName }}
+            items:
+              - key: {{ .Values.tokenKey.fileName }}
+                path: {{ .Values.tokenKey.fileName }}
+            defaultMode: 0440
+        - name: pg-ca
+          secret:
+            secretName: {{ .Values.database.caSecretName }}
+            items:
+              - key: {{ .Values.database.caKey }}
+                path: {{ .Values.database.caKey }}

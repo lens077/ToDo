@@ -1,0 +1,27 @@
+{{- if .Values.route.enabled -}}
+{{- $name := include "virgo-auth.fullname" . -}}
+{{- $gw := .Values.route.gateway -}}
+# 只认领 /auth 与 /v1：同一域名的 /img 由 node4 的 imgproxy 负责，
+# 由 Pangolin 按 path 分流到不同 site，k8s 侧不接管图片请求。
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "virgo-auth.labels" . | nindent 4 }}
+spec:
+  parentRefs:
+    - name: {{ $gw.name }}
+      namespace: {{ $gw.namespace }}
+      sectionName: {{ $gw.httpsSection }}
+  hostnames:
+    {{- toYaml .Values.route.hostnames | nindent 4 }}
+  rules:
+    - matches:
+        {{- range .Values.route.paths }}
+        - path: { type: PathPrefix, value: {{ . | quote }} }
+        {{- end }}
+      backendRefs:
+        - name: {{ $name }}
+          port: 80
+{{- end -}}

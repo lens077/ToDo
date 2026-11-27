@@ -24,7 +24,7 @@ mod reading;
 mod reconcile;
 mod scan;
 mod session;
-mod tls;
+pub mod tls;
 mod workspace;
 mod write;
 
@@ -72,9 +72,10 @@ pub use prompt::{
     RejectedVerdict, Verdict, ALIGNMENT_PROMPT,
 };
 pub use reading::{
-    reading_stats, ReadingAnnotation, ReadingAnnotationInput, ReadingArticle, ReadingArticleDetail,
-    ReadingContext, ReadingContextInput, ReadingExportFormat, ReadingExportNaming,
-    ReadingExportResult, ReadingLink, ReadingStore,
+    reading_stats, ImageProxyConfig, ProofSigner, ProxyProof, ReadingAnnotation,
+    ReadingAnnotationInput, ReadingArticle, ReadingArticleDetail, ReadingContext,
+    ReadingContextInput, ReadingExportFormat, ReadingExportNaming, ReadingExportResult,
+    ReadingLink, ReadingStore,
 };
 pub use reconcile::*;
 pub use scan::{import_text, scan, CodeComment, LooseCheckbox, ScanOptions, ScanReport, ScanStats};

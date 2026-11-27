@@ -14,7 +14,10 @@ use std::{
     collections::{HashMap, HashSet},
     fs,
     path::{Path, PathBuf},
-    sync::atomic::{AtomicUsize, Ordering},
+    sync::{
+        atomic::{AtomicUsize, Ordering},
+        Arc,
+    },
     time::Duration,
 };
 
@@ -33,6 +36,13 @@ const WECHAT_USER_AGENT: &str = "Mozilla/5.0 (Linux; Android 14; Pixel 7 Build/U
 const MAX_IMAGES: usize = 60;
 const MAX_IMAGE_BYTES: usize = 12 * 1024 * 1024;
 const MAX_PAGE_BYTES: usize = 24 * 1024 * 1024;
+/// 图片直连失败时的回退代理：X 的媒体 CDN 在部分网络下不可路由，正文却能
+/// 通过 FxTwitter API 正常抓取；代理在服务端代抓，拿到字节后落盘逻辑不变。
+const IMAGE_PROXY_BASE: &str = "https://images.weserv.nl/?url=";
+/// 代理抓未缓存图片时上游偶发 520（代理回 404 + JSON）。同一地址重试的次数
+/// 与间隔：再试两次、每次隔一秒，避免一次性抖动就永久缺图。
+const PROXY_RETRIES: usize = 2;
+const PROXY_RETRY_DELAY: Duration = Duration::from_secs(1);
 /// 一次失败解析最多尝试几次（含第一次）。到达上限后只保留链接，不再自动重试；
 /// 手动「重试解析」会把计数清零。
 pub const MAX_PARSE_ATTEMPTS: u32 = 3;
@@ -222,14 +232,118 @@ pub struct ReadingAnnotationInput {
     pub note: String,
 }
 
+/// 图片代理配置：Pro 订阅用户在多图文章里用来回源被阻断的图片 CDN。
+/// 只影响**下载失败之后**的回退，不改变直连优先级；留空即不启用。
+#[derive(Clone, Default)]
+pub struct ImageProxyConfig {
+    /// 代理地址前缀，形如 `https://img.example.com/img?url=`。
+    pub base: String,
+    /// 令牌：静态测试令牌走 `Authorization: Bearer`，Pro 令牌走 `X-Virgo-Token`。
+    pub token: String,
+    /// true 表示 virgo-auth 签发的 Pro 令牌；false 为静态测试令牌。
+    pub pro: bool,
+    /// 设备证明签名器：imgproxy 用它验证令牌没被拷到别的设备。
+    pub proof: Option<Arc<ProofSigner>>,
+}
+
+impl std::fmt::Debug for ImageProxyConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ImageProxyConfig")
+            .field("base", &self.base)
+            .field(
+                "token",
+                &if self.token.is_empty() {
+                    ""
+                } else {
+                    "<redacted>"
+                },
+            )
+            .field("pro", &self.pro)
+            .field("proof", &self.proof.is_some())
+            .finish()
+    }
+}
+
+impl PartialEq for ImageProxyConfig {
+    fn eq(&self, other: &Self) -> bool {
+        self.base == other.base
+            && self.token == other.token
+            && self.pro == other.pro
+            && self.proof.is_some() == other.proof.is_some()
+    }
+}
+
+/// 设备证明签名器：输入要签的请求行（`GET\n/im?url=...`），返回时间戳、
+/// nonce 与 base64 DER 签名；拿不到设备私钥时返回 None（imgproxy 会拒绝）。
+pub type ProofSigner = dyn Fn(&str) -> Option<ProxyProof> + Send + Sync;
+
+/// 一次设备证明。
+#[derive(Debug, Clone, PartialEq)]
+pub struct ProxyProof {
+    pub ts: u64,
+    pub nonce: String,
+    pub signature: String,
+}
+
+/// 为一次代理请求生成鉴权头：Pro 令牌用 `X-Virgo-Token`（可附设备证明），
+/// 静态令牌用 `Authorization: Bearer`。
+fn proxy_headers(proxy: &ImageProxyConfig, target: &str) -> Vec<(&'static str, String)> {
+    let mut headers = Vec::new();
+    if proxy.token.trim().is_empty() {
+        return headers;
+    }
+    if proxy.pro {
+        headers.push(("X-Virgo-Token", proxy.token.trim().to_string()));
+        let line = format!("GET\n{}", request_target(target));
+        if let Some(proof) = proxy.proof.as_ref().and_then(|sign| sign(&line)) {
+            headers.push(("X-Virgo-Ts", proof.ts.to_string()));
+            headers.push(("X-Virgo-Nonce", proof.nonce));
+            headers.push(("X-Virgo-Sig", proof.signature));
+        }
+    } else {
+        headers.push(("AUTHORIZATION", format!("Bearer {}", proxy.token.trim())));
+    }
+    headers
+}
+
+/// 取出请求行里的 path+query（imgproxy 用 `self.path` 验签，必须完全一致）。
+fn request_target(target: &str) -> String {
+    // 跳过 `scheme://host`，只保留 `/path?query`；imgproxy 验签用的是
+    // HTTP 请求行里的同一段字符串，所以不能重新编码 query。
+    if let Some((_, rest)) = target.split_once("://") {
+        if let Some(index) = rest.find('/') {
+            return rest[index..].to_string();
+        }
+        return "/".to_string();
+    }
+    target.to_string()
+}
+
+impl ImageProxyConfig {
+    /// 地址非空才算启用；只有令牌没有地址同样视为未启用。
+    pub fn is_enabled(&self) -> bool {
+        !self.base.trim().is_empty()
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct ReadingStore {
     root: PathBuf,
+    image_proxy: ImageProxyConfig,
 }
 
 impl ReadingStore {
     pub fn new(root: impl Into<PathBuf>) -> Self {
-        Self { root: root.into() }
+        Self {
+            root: root.into(),
+            image_proxy: ImageProxyConfig::default(),
+        }
+    }
+
+    /// 带上图片代理配置：下载失败的图片先走自建代理，再退回 weserv。
+    pub fn with_image_proxy(mut self, proxy: ImageProxyConfig) -> Self {
+        self.image_proxy = proxy;
+        self
     }
 
     pub fn global() -> Result<Self> {
@@ -407,11 +521,12 @@ impl ReadingStore {
         let extracted = extract(&fetched, url)?;
         let id = new_id();
         let image_dir = self.image_dir(&id);
-        let localized = localize_images(&extracted.content_html, url, &image_dir);
+        let localized =
+            localize_images(&extracted.content_html, url, &image_dir, &self.image_proxy);
         let cover_file = extracted
             .cover_url
             .as_deref()
-            .and_then(|cover| localize_cover(cover, url, &image_dir));
+            .and_then(|cover| localize_cover(cover, url, &image_dir, &self.image_proxy));
         let now = now_ms();
         let connection = self.connect()?;
         connection.execute(
@@ -750,11 +865,12 @@ impl ReadingStore {
         };
         let extracted = extract(fetched, &url)?;
         let image_dir = self.image_dir(id);
-        let localized = localize_images(&extracted.content_html, &url, &image_dir);
+        let localized =
+            localize_images(&extracted.content_html, &url, &image_dir, &self.image_proxy);
         let cover_file = extracted
             .cover_url
             .as_deref()
-            .and_then(|cover| localize_cover(cover, &url, &image_dir));
+            .and_then(|cover| localize_cover(cover, &url, &image_dir, &self.image_proxy));
         let connection = self.connect()?;
         connection.execute(
             "UPDATE articles SET title = ?2, site_name = ?3, excerpt = ?4, byline = ?5, cover_file = ?6,
@@ -3306,7 +3422,15 @@ fn resolve_export_image(
         let client = client?;
         let stem = next_index.to_string();
         *next_index += 1;
-        download_image(client, source, page_url, img_dir, &stem)?
+        // 导出时的残留远程图同样要能过代理：否则导出目录里的 X 图仍是空。
+        download_image(
+            client,
+            source,
+            page_url,
+            img_dir,
+            &stem,
+            &ImageProxyConfig::default(),
+        )?
     };
     let reference = format!("img/{file}");
     mapping.insert(source.to_string(), reference.clone());
@@ -3477,11 +3601,16 @@ fn html_escape(value: &str) -> String {
 /// Downloads every `<img src>` into `image_dir` and rewrites the reference to
 /// `images/<n>.<ext>`. Failures leave the original URL in place: a missing
 /// picture is better than a missing article.
-fn localize_images(content_html: &str, page_url: &str, image_dir: &Path) -> String {
+fn localize_images(
+    content_html: &str,
+    page_url: &str,
+    image_dir: &Path,
+    proxy: &ImageProxyConfig,
+) -> String {
     let Ok(pattern) = Regex::new(r#"(?i)<img\b[^>]*?\bsrc\s*=\s*"([^"]*)""#) else {
         return content_html.to_string();
     };
-    let client = match http_client() {
+    let client = match image_client() {
         Ok(client) => client,
         Err(_) => return content_html.to_string(),
     };
@@ -3499,9 +3628,14 @@ fn localize_images(content_html: &str, page_url: &str, image_dir: &Path) -> Stri
             continue;
         };
         let index = downloads.len() + 1;
-        if let Some(file) =
-            download_image(&client, &absolute, page_url, image_dir, &format!("{index}"))
-        {
+        if let Some(file) = download_image(
+            &client,
+            &absolute,
+            page_url,
+            image_dir,
+            &format!("{index}"),
+            proxy,
+        ) {
             downloads.push((source, format!("images/{file}")));
         }
     }
@@ -3512,10 +3646,15 @@ fn localize_images(content_html: &str, page_url: &str, image_dir: &Path) -> Stri
     result
 }
 
-fn localize_cover(cover_url: &str, page_url: &str, image_dir: &Path) -> Option<String> {
-    let client = http_client().ok()?;
+fn localize_cover(
+    cover_url: &str,
+    page_url: &str,
+    image_dir: &Path,
+    proxy: &ImageProxyConfig,
+) -> Option<String> {
+    let client = image_client().ok()?;
     let absolute = absolute_url(page_url, cover_url)?;
-    download_image(&client, &absolute, page_url, image_dir, "cover")
+    download_image(&client, &absolute, page_url, image_dir, "cover", proxy)
 }
 
 /// Downloads a pulled article's images from the sync server instead of the
@@ -3638,6 +3777,23 @@ fn download_remote_images(
     });
 }
 
+/// 图片下载专用客户端：直连被墙的 CDN（如 X 的 pbs.twimg.com）时，10 秒内
+/// 必然落到代理回退，不让单张图片把整篇解析拖到 30 秒。
+fn image_client() -> Result<reqwest::blocking::Client> {
+    crate::http_client_builder()
+        .user_agent(USER_AGENT)
+        .timeout(Duration::from_secs(10))
+        .redirect(reqwest::redirect::Policy::custom(|attempt| {
+            if attempt.previous().len() >= 5 || url_is_private(attempt.url()) {
+                attempt.stop()
+            } else {
+                attempt.follow()
+            }
+        }))
+        .build()
+        .map_err(|error| Error::ReadingFetch(error.to_string()))
+}
+
 fn absolute_url(base: &str, candidate: &str) -> Option<String> {
     let candidate = decode_entities(candidate);
     if candidate.starts_with("data:") {
@@ -3651,28 +3807,92 @@ fn absolute_url(base: &str, candidate: &str) -> Option<String> {
     Some(joined.to_string())
 }
 
+/// 把图片 URL 改写成服务端代理地址：`<base><host><path>?<query>`。
+/// `base` 由调用方决定——Pro 订阅用自建代理，未订阅用 weserv 兜底。
+/// 只接受 http(s) 且非内网的地址；查询串原样透传（X 的 `?format=jpg&name=large`
+/// 决定原图尺寸，编码掉会被代理当成自己的参数截断）。失败返回 `None`，
+/// 调用方保留原 URL。
+fn image_proxy_url_with_base(url: &str, base: &str) -> Option<String> {
+    let parsed = reqwest::Url::parse(url).ok()?;
+    if !matches!(parsed.scheme(), "http" | "https") || url_is_private(&parsed) {
+        return None;
+    }
+    if base.trim().is_empty() {
+        return None;
+    }
+    let host = parsed.host_str()?;
+    let mut target = format!("{host}{}", parsed.path());
+    if let Some(query) = parsed.query() {
+        target.push('?');
+        target.push_str(query);
+    }
+    Some(format!("{base}{target}"))
+}
+
+/// 未配置自建代理时的兜底，走 weserv 公共代理。
+fn image_proxy_url(url: &str) -> Option<String> {
+    image_proxy_url_with_base(url, IMAGE_PROXY_BASE)
+}
+
 /// Fetches one image. The page URL goes out as `Referer` because CDNs such as
 /// `mmbiz.qpic.cn` reject anything else; the response's content type picks
 /// the extension.
+///
+/// 直连失败时的回退顺序：**自建代理（Pro）→ weserv → 保留原 URL**。X 的媒体
+/// CDN（pbs.twimg.com）在部分网络下整体不可路由，而正文走 FxTwitter API 仍然
+/// 正常，导致「文字存了、图片没存」。未配置代理时直接保留下载失败的原始
+/// URL——宁可缺图，不把图片地址交给第三方，也不让正文变空。
+///
+/// 代理抓未缓存的图时上游偶发 5xx：对同一地址重试，命中一次就能把图存下来。
 fn download_image(
     client: &reqwest::blocking::Client,
     url: &str,
     referer: &str,
     image_dir: &Path,
     stem: &str,
+    proxy: &ImageProxyConfig,
 ) -> Option<String> {
-    let response = client
-        .get(url)
-        .header("Referer", referer)
-        .header(
+    let fetch = |target: &str| -> Option<reqwest::blocking::Response> {
+        let mut request = client.get(target).header("Referer", referer).header(
             "Accept",
             "image/avif,image/webp,image/apng,image/*,*/*;q=0.8",
-        )
-        .send()
-        .ok()?;
-    if !response.status().is_success() {
-        return None;
+        );
+        if proxy.is_enabled() && target.starts_with(proxy.base.trim()) {
+            for (name, value) in proxy_headers(proxy, target) {
+                request = request.header(name, value);
+            }
+        }
+        request
+            .send()
+            .ok()
+            .filter(|response| response.status().is_success())
+    };
+    // 依次尝试：直连 → 自建代理 → weserv；第一个成功的胜出。
+    let candidates = [
+        url.to_string(),
+        image_proxy_url_with_base(url, proxy.base.trim()).unwrap_or_default(),
+        image_proxy_url(url).unwrap_or_default(),
+    ];
+    let mut response = None;
+    for (index, candidate) in candidates.iter().enumerate() {
+        if candidate.is_empty() {
+            continue;
+        }
+        let attempts = if index == 0 { 1 } else { PROXY_RETRIES + 1 };
+        for attempt in 0..attempts {
+            if attempt > 0 {
+                std::thread::sleep(PROXY_RETRY_DELAY);
+            }
+            if let Some(found) = fetch(candidate) {
+                response = Some(found);
+                break;
+            }
+        }
+        if response.is_some() {
+            break;
+        }
     }
+    let response = response?;
     let content_type = response
         .headers()
         .get(reqwest::header::CONTENT_TYPE)
@@ -3925,6 +4145,77 @@ mod tests {
         let extracted = x_tweet_extract(&html).unwrap();
         assert!(!extracted.content_html.contains("<script>"));
         assert_eq!(extracted.site_name, "Evil \"Quote\" & <Co>");
+    }
+
+    #[test]
+    fn request_target_keeps_path_and_query_without_host() {
+        assert_eq!(
+            request_target("https://img.example.com/img?url=https%3A%2F%2Fx.com%2Fa.jpg"),
+            "/img?url=https%3A%2F%2Fx.com%2Fa.jpg"
+        );
+        assert_eq!(request_target("https://img.example.com"), "/");
+    }
+
+    #[test]
+    fn proxy_headers_follow_token_kind() {
+        let static_proxy = ImageProxyConfig {
+            base: "https://img.example.com/img?url=".into(),
+            token: "static-tok".into(),
+            pro: false,
+            proof: None,
+        };
+        let headers = proxy_headers(&static_proxy, "https://img.example.com/img?url=x");
+        assert_eq!(
+            headers,
+            vec![("AUTHORIZATION", "Bearer static-tok".to_string())]
+        );
+
+        let signed = std::sync::Arc::new(|line: &str| {
+            assert_eq!(line, "GET\n/img?url=https%3A%2F%2Fpbs.twimg.com%2Fa.jpg");
+            Some(ProxyProof {
+                ts: 1,
+                nonce: "n1".into(),
+                signature: "sig".into(),
+            })
+        });
+        let pro_proxy = ImageProxyConfig {
+            base: "https://img.example.com/img?url=".into(),
+            token: "pro-tok".into(),
+            pro: true,
+            proof: Some(signed),
+        };
+        let headers = proxy_headers(
+            &pro_proxy,
+            "https://img.example.com/img?url=https%3A%2F%2Fpbs.twimg.com%2Fa.jpg",
+        );
+        assert!(headers.contains(&("X-Virgo-Token", "pro-tok".to_string())));
+        assert!(headers.contains(&("X-Virgo-Ts", "1".to_string())));
+        assert!(headers.contains(&("X-Virgo-Nonce", "n1".to_string())));
+        assert!(headers.contains(&("X-Virgo-Sig", "sig".to_string())));
+    }
+
+    #[test]
+    fn image_proxy_url_rewrites_public_urls_and_passes_query_through() {
+        // X 的媒体地址：host + path + 查询串原样透传，尺寸参数不能丢。
+        assert_eq!(
+            image_proxy_url("https://pbs.twimg.com/media/HW0oDBlbIAE-B5P.jpg?format=jpg&name=large"),
+            Some("https://images.weserv.nl/?url=pbs.twimg.com/media/HW0oDBlbIAE-B5P.jpg?format=jpg&name=large".to_string())
+        );
+        assert_eq!(
+            image_proxy_url("https://mmbiz.qpic.cn/a.jpg"),
+            Some("https://images.weserv.nl/?url=mmbiz.qpic.cn/a.jpg".to_string())
+        );
+    }
+
+    #[test]
+    fn image_proxy_url_rejects_private_and_non_http_targets() {
+        // 内网与本地地址不能发给第三方代理。
+        assert_eq!(image_proxy_url("http://192.168.1.10/a.jpg"), None);
+        assert_eq!(image_proxy_url("http://localhost/a.jpg"), None);
+        // 非 http(s) scheme 直接拒绝。
+        assert_eq!(image_proxy_url("data:image/gif;base64,R0lGOD"), None);
+        assert_eq!(image_proxy_url("ftp://example.com/a.jpg"), None);
+        assert_eq!(image_proxy_url("not a url"), None);
     }
 
     #[test]
@@ -5185,6 +5476,151 @@ mod reading_context_tests {
             .contains(r#"src="http://127.0.0.1:9/images/srv00003/1.jpg""#));
     }
 
+    #[test]
+    fn images_falling_back_through_the_proxy_are_written_to_disk() {
+        // 直连地址拿不到图（X 的媒体 CDN 在部分网络下不可路由），代理回退
+        // 必须真的把字节落到 image_dir，而不是只改正文里的引用。
+        let png = b"\x89PNG\r\n\x1a\ndirect-failure-proxy-image";
+        let base = serve_once(png, "image/png");
+        let dir = tempfile::tempdir().unwrap();
+        let image_dir = dir.path();
+        let client = image_client().unwrap();
+        // 127.0.0.1 是内网地址，代理改写会拒绝；这里直接验证落盘路径本身。
+        let proxied = base + "/img.png";
+        assert!(image_proxy_url(&proxied).is_none());
+        let file = download_image(
+            &client,
+            &proxied,
+            "https://example.com",
+            image_dir,
+            "1",
+            &ImageProxyConfig::default(),
+        );
+        assert_eq!(file.as_deref(), Some("1.png"));
+        assert_eq!(fs::read(image_dir.join("1.png")).unwrap(), png);
+    }
+
+    /// 真实网络 + 真实 virgo-img 的验收：X 图床直连失败时回退到自建代理，
+    /// 字节必须落到 image_dir。默认忽略；跑之前设置 `VIRGO_PROXY_TOKEN`。
+    #[test]
+    #[ignore]
+    fn virgo_proxy_localizes_x_image_end_to_end() {
+        let Ok(token) = std::env::var("VIRGO_PROXY_TOKEN") else {
+            return;
+        };
+        let base = std::env::var("VIRGO_PROXY_BASE")
+            .unwrap_or_else(|_| "https://virgo-img.apikv.com/img?url=".to_string());
+        let dir = tempfile::tempdir().unwrap();
+        let store =
+            ReadingStore::new(dir.path().join("reading")).with_image_proxy(ImageProxyConfig {
+                base,
+                token,
+                pro: true,
+                proof: None,
+            });
+        let image = "https://pbs.twimg.com/profile_images/1683325380441128960/yRsRRjGO.jpg";
+        let mut body = String::new();
+        for i in 0..3 {
+            body.push_str(&format!(
+                "<p>撑起正文的占位段落 {i}，用来让正文提取保留内容。</p>"
+            ));
+        }
+        body.push_str(&format!(
+            "<p><img src=\"{image}\" width=\"800\" height=\"800\"></p>"
+        ));
+        for i in 3..8 {
+            body.push_str(&format!(
+                "<p>撑起正文的占位段落 {i}，用来让正文提取保留内容。</p>"
+            ));
+        }
+        let html = format!(
+            "<!doctype html><html><head><meta charset=\"utf-8\"><title>X 图片落盘验收</title></head><body><article><h1>X 图片落盘验收</h1>{body}</article></body></html>"
+        );
+        let detail = store
+            .add_fetched(
+                "https://x.com/verify/status/1",
+                FetchedPage {
+                    html,
+                    final_url: "https://x.com/verify/status/1".to_string(),
+                },
+            )
+            .unwrap();
+        let content = &detail.content_html;
+        assert!(
+            content.contains("images/"),
+            "正文应引用本地图片：{}",
+            &content[..content.len().min(400)]
+        );
+        let image_dir = store.image_dir(&detail.article.id);
+        let files: Vec<_> = fs::read_dir(&image_dir)
+            .unwrap()
+            .filter_map(|entry| entry.ok())
+            .collect();
+        assert!(!files.is_empty(), "X 图片应落到 {}", image_dir.display());
+        let file = files[0].path();
+        let bytes = fs::metadata(&file).unwrap().len();
+        assert!(bytes > 1000, "落盘图片太小：{bytes} 字节");
+        println!("localized: {} ({bytes} bytes)", file.display());
+    }
+
+    /// 真 X 长文验收（需要能访问 `api.fxtwitter.com` 的网络）：正文来自
+    /// fxtwitter，图片从 X 图床回退到 virgo-img 并落盘。默认忽略；跑之前设置
+    /// `VIRGO_PROXY_TOKEN` 与 `VIRGO_ARTICLE_URL`（一条 X status 链接）。
+    #[test]
+    #[ignore]
+    fn x_status_article_localizes_images_through_proxy() {
+        let Ok(token) = std::env::var("VIRGO_PROXY_TOKEN") else {
+            return;
+        };
+        let Ok(url) = std::env::var("VIRGO_ARTICLE_URL") else {
+            return;
+        };
+        let base = std::env::var("VIRGO_PROXY_BASE")
+            .unwrap_or_else(|_| "https://virgo-img.apikv.com/img?url=".to_string());
+        let dir = tempfile::tempdir().unwrap();
+        let store =
+            ReadingStore::new(dir.path().join("reading")).with_image_proxy(ImageProxyConfig {
+                base,
+                token,
+                pro: true,
+                proof: None,
+            });
+        let detail = store.add(&url).unwrap();
+        let image_dir = store.image_dir(&detail.article.id);
+        let mut files: Vec<_> = fs::read_dir(&image_dir)
+            .unwrap()
+            .filter_map(|entry| entry.ok())
+            .map(|entry| entry.path())
+            .collect();
+        files.sort();
+        assert!(
+            !files.is_empty(),
+            "X 长文的图片应落到 {}",
+            image_dir.display()
+        );
+        assert!(
+            detail.content_html.contains("images/"),
+            "正文应引用本地图片"
+        );
+        let total: u64 = files
+            .iter()
+            .map(|file| fs::metadata(file).map(|meta| meta.len()).unwrap_or(0))
+            .sum();
+        println!(
+            "title={} images={} bytes={}",
+            detail.article.title,
+            files.len(),
+            total
+        );
+        for file in &files {
+            println!(
+                "file={} size={}",
+                file.display(),
+                fs::metadata(file).unwrap().len()
+            );
+        }
+    }
+
     /// Minimal one-shot-per-connection HTTP server; returns its base URL.
     fn serve_once(body: &'static [u8], content_type: &'static str) -> String {
         use std::io::{Read, Write};
@@ -5204,5 +5640,100 @@ mod reading_context_tests {
             }
         });
         format!("http://{address}")
+    }
+}
+
+#[cfg(test)]
+mod x_live_tests {
+    //! 真实网络的端到端：用 FxTwitter 返回的这条 X 长文（6 图）走完整管线，
+    //! 断言图片真的落进 `img/`——这是「X 文章图片存不下来」的直接回归测试。
+    //! 需要外网，默认 ignored，用 `cargo test -p todo-core -- --ignored x_live` 跑。
+    use super::*;
+
+    fn fixture(path: &str) -> serde_json::Value {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+        let text =
+            fs::read_to_string(root.join("tests/fixtures").join(path)).expect("read fixture");
+        serde_json::from_str(&text).expect("fixture JSON")
+    }
+
+    #[test]
+    fn x_article_renders_every_inline_image() {
+        // 这条 X 长文的图片只存在于 article.media_entities + MEDIA 实体里，
+        // tweet.media.all 是 null；渲染漏掉任何一个都等于「图片存不下来」。
+        let value = fixture("x-article-2120395702987821533.json");
+        let html = fx_tweet_html(&value).expect("article HTML");
+        let images = html.matches("<img ").count();
+        assert_eq!(images, 6, "expected the article's six images, got {images}");
+        assert!(html.contains("pbs.twimg.com/media/"));
+        let extracted = x_tweet_extract(&html).expect("extract");
+        assert_eq!(
+            extracted.title,
+            "我拆了 Fable 5.2 做的港口枪战游戏，1.4 MB 里都装了什么"
+        );
+        assert_eq!(extracted.content_html.matches("<img ").count(), 6);
+    }
+
+    #[test]
+    #[ignore = "需要外网访问自建代理"]
+    fn x_article_images_land_on_disk_via_self_hosted_proxy() {
+        // 真实链路：客户端 → node4 代理 → X CDN。验证 Pro 配置真的能出图。
+        let value = fixture("x-article-2120395702987821533.json");
+        let html = fx_tweet_html(&value).expect("article HTML");
+        let dir = tempfile::tempdir().unwrap();
+        let proxy = ImageProxyConfig {
+            base: std::env::var("VIRGO_TEST_PROXY_BASE").expect("VIRGO_TEST_PROXY_BASE"),
+            token: std::env::var("VIRGO_TEST_PROXY_TOKEN").expect("VIRGO_TEST_PROXY_TOKEN"),
+            ..Default::default()
+        };
+        let localized = localize_images(
+            &html,
+            "https://x.com/sonic0828/status/2120395702987821533",
+            dir.path(),
+            &proxy,
+        );
+        let files = fs::read_dir(dir.path()).map(|e| e.count()).unwrap_or(0);
+        let rewritten = localized.matches("src=\"images/").count();
+        println!("proxy chain -> files: {files}, rewritten: {rewritten}");
+        assert_eq!(files, 6, "全部 6 张图都应通过自建代理落盘");
+        assert_eq!(rewritten, 6, "正文引用应全部改写为本地路径");
+    }
+
+    #[test]
+    #[ignore = "需要外网访问图片代理"]
+    fn x_article_images_land_on_disk() {
+        let value = fixture("x-article-2120395702987821533.json");
+        let html = fx_tweet_html(&value).expect("article HTML");
+        let images = html.matches("<img ").count();
+        assert!(
+            images >= 6,
+            "article should reference its 6 images, got {images}"
+        );
+
+        let dir = tempfile::tempdir().unwrap();
+        let image_dir = dir.path();
+        let localized = localize_images(
+            &html,
+            "https://x.com/sonic0828/status/2120395702987821533",
+            image_dir,
+            &ImageProxyConfig::default(),
+        );
+        let files: Vec<_> = fs::read_dir(image_dir)
+            .map(|entries| {
+                entries
+                    .filter_map(|e| e.ok())
+                    .map(|e| e.file_name())
+                    .collect()
+            })
+            .unwrap_or_default();
+        let rewritten = localized.matches("src=\"images/").count();
+        println!(
+            "images referenced: {images}, localized: {rewritten}, files: {}",
+            files.len()
+        );
+        assert!(
+            !files.is_empty(),
+            "at least one X image must be written to disk"
+        );
     }
 }

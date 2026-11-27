@@ -19,7 +19,7 @@ import { OnboardingWizard } from './components/OnboardingWizard';
 import { ProviderSettings } from './components/ProviderSettings';
 import { ReviewView } from './components/ReviewView';
 import { SettingsDialog } from './components/SettingsDialog';
-import { Sidebar, type MainView } from './components/Sidebar';
+import { Sidebar, navItems, type MainView } from './components/Sidebar';
 import { WorkspaceView } from './components/WorkspaceView';
 import { OverviewView } from './components/OverviewView';
 import { StatusBanner } from './components/StatusBanner';
@@ -379,7 +379,13 @@ export function App() {
           ) : activeView === 'reading' ? (
             <ReadingView model={readingModel} onOpenTriage={() => setActiveView('capture')} />
           ) : activeView === 'capture' && transportCapabilities() ? (
-            <p className="source-unavailable" role="status">HTTP 项目服务不开放个人随记，请使用桌面版。不会显示或写入模拟随记。</p>
+            <div className="inbox-http-note">
+              <p className="source-unavailable" role="status">HTTP 项目服务不开放个人随记，请使用桌面版。不会显示或写入模拟随记。</p>
+              {/* 这一屏也是随记分拣的落点：HTTP 模式下同样要给一条回程。 */}
+              <button type="button" className="text-action" onClick={() => setActiveView('reading')}>
+                返回收件箱 <Icon name="arrow" />
+              </button>
+            </div>
           ) : activeView === 'capture' ? (
             <CaptureView
               snapshot={snapshot}
@@ -392,6 +398,7 @@ export function App() {
               onDelete={model.deleteCapture}
               onTriage={model.triageCapture}
               triageUnavailable={sourceBoundUnavailable || Boolean(selected && !selected.writable)}
+              onBack={() => setActiveView('reading')}
             />
           ) : activeView === 'ai' ? (
             <AiView
@@ -406,7 +413,15 @@ export function App() {
           ) : activeView === 'contract' ? (
             <ContractView readOnly={readOnly} hasCompletedTask={completedCount > 0} />
           ) : selected && selected.status !== 'managed' ? (
-            <SourcePreview key={`${sourceContextKey}:${selected.revision}:${selected.loose ? 'loose' : ''}`} source={selected} readOnly={serverReadOnly || model.sourceBusy} onAdopt={model.adoptSource} onSetLoose={setLoose} />
+            <SourcePreview
+              key={`${sourceContextKey}:${selected.revision}:${selected.loose ? 'loose' : ''}`}
+              source={selected}
+              readOnly={serverReadOnly || model.sourceBusy}
+              onAdopt={model.adoptSource}
+              onSetLoose={setLoose}
+              onBack={() => void model.selectSource(null)}
+              parentLabel={navItems.find((item) => item.id === activeView)?.label ?? '任务看板'}
+            />
           ) : activeView === 'quadrant' && snapshot ? (
             <QuadrantView
               snapshot={snapshot}

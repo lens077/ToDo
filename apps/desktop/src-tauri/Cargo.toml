@@ -18,10 +18,22 @@ tauri = { version = "2.8.5", features = ["protocol-asset"] }
 tauri-plugin-clipboard-manager = "2"
 tauri-plugin-dialog = "2.4.0"
 tauri-plugin-global-shortcut = "2.3.0"
+# Android 登录回跳用自定义 scheme virgo://auth；桌面端走 loopback，不依赖它。
+tauri-plugin-deep-link = "2.6.3"
+# Android 打开系统浏览器：桌面端仍是 `open`/`xdg-open`，移动端走 Intent。
+tauri-plugin-opener = "2.5.5"
 notify = "8.2.0"
 serde.workspace = true
 serde_json.workspace = true
 reqwest.workspace = true
+p256 = { version = "0.14", features = ["ecdsa", "pkcs8", "getrandom"] }
+base64 = "0.22"
+getrandom.workspace = true
+
+# Windows / Linux 的设备私钥保护：优先系统凭据库（Windows Credential Manager /
+# Linux Secret Service），没有可用后端时回退应用目录的 0600 文件。
+[target.'cfg(any(target_os = "windows", target_os = "linux"))'.dependencies]
+keyring = { version = "3", features = ["windows-native", "sync-secret-service", "crypto-rust"] }
 
 [dev-dependencies]
 tempfile.workspace = true

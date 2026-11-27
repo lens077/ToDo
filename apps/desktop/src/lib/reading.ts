@@ -506,6 +506,12 @@ function mockFind(id: string): ReadingArticleDetail {
 
 let mockSequence = 3;
 
+
+/**
+ * 抓图走哪条代理由 Rust 侧决定：已登录 Pro 设备时自动带上短期令牌
+ * （令牌只在本机内存里，前端拿不到）。这里不再从前端设置里拼参数。
+ */
+
 export const reading = {
   /** Whether this build can hold a library at all. */
   available(): boolean {

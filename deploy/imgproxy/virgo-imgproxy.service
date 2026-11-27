@@ -1,0 +1,28 @@
+[Unit]
+Description=Virgo image proxy (Pro 图片回源)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/root
+Environment=VIRGO_IMGPROXY_ROOT=/srv/virgo-imgproxy
+EnvironmentFile=-/etc/virgo-imgproxy.env
+# Pro 令牌验签公钥：由 virgo-auth 导出（deploy/virgo-auth）。缺省时只接受
+# 静态 Bearer 令牌（tokens.json），Pro 链路不可用。
+Environment=VIRGO_PRO_PUBKEY_FILE=/srv/virgo-imgproxy/pro.pub
+ExecStart=/usr/bin/python3 /root/imgproxy.py --root /srv/virgo-imgproxy --host 127.0.0.1 --port 8765 --cache-gb 4 --pro-pubkey /srv/virgo-imgproxy/pro.pub
+Restart=always
+RestartSec=2
+# 2G 内存的小机器：限制并发与内存，避免 OOM 拖垮同机其他服务。
+LimitNOFILE=4096
+MemoryMax=512M
+CPUQuota=150%
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=full
+ReadWritePaths=/srv/virgo-imgproxy
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,58 @@
+# 通用默认值。生产差异（镜像 tag）放 values-prod.yaml。
+
+auth:
+  replicas: 1
+  image:
+    repository: ccr.ccs.tencentyun.com/sumery/virgo-auth
+    tag: ""
+    pullPolicy: IfNotPresent
+  resources:
+    requests: { cpu: 20m, memory: 64Mi }
+    limits: { cpu: 500m, memory: 192Mi }
+  imagePullSecret: virgo-tcr
+  containerPort: 8766
+
+config:
+  # 登录回调必须与 Casdoor 应用里注册的 redirect URI 完全一致。
+  # 双域名方案：授权服务独占 virgo-auth，图片由 virgo-img 独占。
+  redirectUrl: https://virgo-auth.apikv.com/auth/callback
+  # Pro 判定读 Casdoor 角色/群组全名。
+  proRole: lens/virgo_pro
+  proGroup: lens/virgo-pro
+  tokenTTL: 12h
+  # 桌面端登录后回跳的自定义 scheme。
+  clientScheme: virgo://auth
+
+# 环境变量与密钥：默认由集群里的 Secret 提供（kubectl 建，不进 Git）。
+secret:
+  name: virgo-auth-env
+# Ed25519 令牌私钥（挂载为文件，imgproxy 用对应公钥验签）。
+tokenKey:
+  secretName: virgo-auth-token
+  fileName: token.ed25519
+# PostgreSQL：binding 落盘。DSN 由 secret 提供（含密码），不进 values。
+database:
+  secretName: virgo-auth-db
+  key: url
+  # CNPG 的 CA（由 kubectl 从 postgresql 命名空间复制过来）。
+  caSecretName: virgo-pg-ca
+  caKey: ca.crt
+  caFile: /etc/virgo-pg/ca.crt
+
+route:
+  enabled: true
+  gateway:
+    name: cilium-gateway
+    namespace: default
+    httpsSection: https
+    httpSection: http
+  # 双域名：本服务独占 virgo-auth.apikv.com，接全部路径；
+  # 图片走另一个域名 virgo-img.apikv.com，由 node4 的 imgproxy 独占。
+  hostnames:
+    - virgo-auth.apikv.com
+  paths:
+    - /
+  redirectHttp: false
+
+networkPolicy:
+  enabled: true

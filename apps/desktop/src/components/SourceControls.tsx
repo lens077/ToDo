@@ -2,6 +2,7 @@ import * as React from 'react';
 import { desktop, type AdoptPreview, type DesktopSnapshot, type TaskSource } from '../lib/desktop';
 import { DiffView } from './DiffView';
 import { Icon } from './Icon';
+import { SubViewHeader } from './SubViewHeader';
 
 export function SourceControls({ snapshot, busy, discoveredCount, pendingCount, onSelect, onAdjustEnrollment, onBatchAdopt }: {
   /** The board's snapshot: only enrolled sources. */
@@ -81,12 +82,16 @@ export function SourceControls({ snapshot, busy, discoveredCount, pendingCount, 
   </section>;
 }
 
-export function SourcePreview({ source, readOnly, onAdopt, onSetLoose }: {
+export function SourcePreview({ source, readOnly, onAdopt, onSetLoose, onBack, parentLabel = '任务看板' }: {
   source: TaskSource;
   readOnly: boolean;
   onAdopt: (path: string, hash: string) => Promise<boolean>;
   /** Turns the loose list reader (Beta) on or off for this source. */
   onSetLoose?: (path: string, loose: boolean) => void;
+  /** 返回任务看板：清空来源选择，回到聚合视图。来源预览是二级路径。 */
+  onBack?: () => void;
+  /** 一级视图名，面包屑第一段（预览会顶掉当前视图的内容）。 */
+  parentLabel?: string;
 }) {
   const [preview, setPreview] = React.useState<AdoptPreview | null>(null);
   const [busy, setBusy] = React.useState(false);
@@ -122,6 +127,11 @@ export function SourcePreview({ source, readOnly, onAdopt, onSetLoose }: {
   };
   const looseOffer = Boolean(onSetLoose) && !source.loose && source.status !== 'error' && source.task_count === 0 && (source.loose_candidates ?? 0) > 0;
   return <section className="source-preview" aria-label="来源只读预览">
+    <SubViewHeader
+      crumbs={[{ label: parentLabel, onClick: onBack }, { label: '来源预览' }]}
+      onBack={onBack}
+      backLabel="返回任务看板"
+    />
     <h2>{source.path}{source.loose && <span className="beta-badge">宽松解析 · Beta</span>}</h2>
     <p>{source.loose
       ? `宽松解析已开启：把「- 文字」列表项当作任务显示，共 ${source.task_count} 项，只读。文件没有被修改；要让它们可勾选、可拖动，需接管——接管会把这些行改写为「- [ ] 文字」并附上稳定 ID。`

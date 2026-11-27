@@ -4,6 +4,7 @@ import type { Capture, DesktopColumn, DesktopSnapshot, TriageResult } from '../l
 import type { PartialTriageState } from '../hooks/useDesktop';
 import { formatCaptureTime, shortId } from '../lib/format';
 import { Icon } from './Icon';
+import { SubViewHeader } from './SubViewHeader';
 
 interface CaptureViewProps {
   triageUnavailable?: boolean;
@@ -16,6 +17,8 @@ interface CaptureViewProps {
   onAppend: (text: string) => Promise<boolean>;
   onDelete: (id: string) => Promise<boolean>;
   onTriage: (id: string, column: string) => Promise<TriageResult | null>;
+  /** 返回收件箱：随记分拣是收件箱的二级路径，没有侧栏入口。 */
+  onBack?: () => void;
 }
 
 interface CaptureItemProps {
@@ -262,6 +265,7 @@ export function CaptureView({
   onDelete,
   onTriage,
   triageUnavailable = false,
+  onBack,
 }: CaptureViewProps) {
   const [draft, setDraft] = React.useState('');
   const submit = async () => {
@@ -272,6 +276,11 @@ export function CaptureView({
 
   return (
     <section className="capture-view" aria-labelledby="capture-title">
+      <SubViewHeader
+        crumbs={[{ label: '收件箱', onClick: onBack }, { label: '随记分拣' }]}
+        onBack={onBack}
+        backLabel="返回收件箱"
+      />
       <header className="view-heading view-heading--capture">
         <div className="view-heading__title">
           <h1 id="capture-title">随记，不急着承诺</h1>

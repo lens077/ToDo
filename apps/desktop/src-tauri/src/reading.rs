@@ -47,6 +47,33 @@ impl ReadingState {
             .clone()
             .ok_or_else(|| "阅读库不可用：无法确定用户主目录".to_string())
     }
+
+    /// 带图片代理配置的 store：先用显式参数（测试与内部排障），没有则用
+    /// 已登录 Pro 设备的令牌。都没有就与默认行为一致——直连失败才退回
+    /// weserv，不会把请求转给第三方。
+    fn store_with_proxy(
+        &self,
+        base: Option<String>,
+        token: Option<String>,
+        auth: &crate::auth::AuthState,
+    ) -> Result<ReadingStore, String> {
+        let store = self.store()?;
+        let explicit = todo_core::ImageProxyConfig {
+            base: base.unwrap_or_default(),
+            token: token.unwrap_or_default(),
+            ..Default::default()
+        };
+        let proxy = if explicit.is_enabled() {
+            explicit
+        } else {
+            auth.proxy_config().unwrap_or_default()
+        };
+        Ok(if proxy.is_enabled() {
+            store.with_image_proxy(proxy)
+        } else {
+            store
+        })
+    }
 }
 
 #[tauri::command]
@@ -138,10 +165,13 @@ pub fn reading_clipboard_text(app: AppHandle) -> Option<String> {
 #[tauri::command]
 pub fn reading_quick_add(
     state: State<'_, ReadingState>,
+    auth: State<'_, crate::auth::AuthState>,
     app: AppHandle,
     url: String,
+    image_proxy_base: Option<String>,
+    image_proxy_token: Option<String>,
 ) -> Result<ReadingArticle, String> {
-    let store = state.store()?;
+    let store = state.store_with_proxy(image_proxy_base, image_proxy_token, auth.inner())?;
     let detail = store.add_pending(&url).map_err(|error| error.to_string())?;
     if detail.article.parse_status == "pending" {
         spawn_parse(app, store, detail.article.id.clone());
@@ -153,10 +183,13 @@ pub fn reading_quick_add(
 #[tauri::command]
 pub fn reading_retry_parse(
     state: State<'_, ReadingState>,
+    auth: State<'_, crate::auth::AuthState>,
     app: AppHandle,
     id: String,
+    image_proxy_base: Option<String>,
+    image_proxy_token: Option<String>,
 ) -> Result<ReadingArticle, String> {
-    let store = state.store()?;
+    let store = state.store_with_proxy(image_proxy_base, image_proxy_token, auth.inner())?;
     store.mark_pending(&id).map_err(|error| error.to_string())?;
     let article = store.get(&id).map_err(|error| error.to_string())?.article;
     spawn_parse(app, store, id);
@@ -209,9 +242,12 @@ pub async fn reading_import_browser(
 #[tauri::command]
 pub async fn reading_add(
     state: State<'_, ReadingState>,
+    auth: State<'_, crate::auth::AuthState>,
     url: String,
+    image_proxy_base: Option<String>,
+    image_proxy_token: Option<String>,
 ) -> Result<ReadingArticleDetail, String> {
-    let store = state.store()?;
+    let store = state.store_with_proxy(image_proxy_base, image_proxy_token, auth.inner())?;
     tauri::async_runtime::spawn_blocking(move || store.add(&url))
         .await
         .map_err(|error| format!("抓取任务中断：{error}"))?
@@ -296,10 +332,19 @@ pub async fn reading_import_file(
     path: String,
 ) -> Result<ReadingArticleDetail, String> {
     let store = state.store()?;
-    tauri::async_runtime::spawn_blocking(move || store.import_local_file(&path))
-        .await
-        .map_err(|error| format!("文件导入任务中断：{error}"))?
-        .map_err(|error| error.to_string())
+    tauri::async_runtime::spawn_blocking(move || {
+        // Android 上选择器给的是 content:// URI，先物化成缓存里的真实文件。
+        let source = crate::uri::materialize(&path)?;
+        let result = store
+            .import_local_file(&source.path.to_string_lossy())
+            .map_err(|error| error.to_string());
+        if source.temporary {
+            let _ = std::fs::remove_file(&source.path);
+        }
+        result
+    })
+    .await
+    .map_err(|error| format!("文件导入任务中断：{error}"))?
 }
 
 #[derive(Debug, Deserialize)]

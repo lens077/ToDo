@@ -2,6 +2,8 @@ import * as React from 'react';
 import { EXPORT_NAMING_MODES, LAYOUT_DENSITIES, OPEN_SESSION_MODES, defaultAppSettings, useAppSettings } from '../lib/appSettings';
 import { readProviderSettings } from '../lib/providerSettings';
 import { Icon } from './Icon';
+import { useAuth, type AuthBusy } from '../hooks/useAuth';
+import type { AuthStatus } from '../lib/auth';
 import { MobileTabBarEditor } from './MobileTabBarEditor';
 import { navItems, type MainView } from './Sidebar';
 
@@ -41,6 +43,8 @@ export function SettingsDialog({ onClose, onOpenProviderSettings, onOpenWizard, 
   };
 
   const provider = readProviderSettings();
+  // 图片代理 Pro：登录态来自 Rust，令牌不进这个组件。
+  const auth = useAuth();
   const panelRef = React.useRef<HTMLElement>(null);
   // 窄屏下设置占的是工作区那一行，底部导航仍可操作，所以不再是模态浮层。
   const [compact, setCompact] = React.useState(() => window.matchMedia('(max-width: 719px)').matches);
@@ -185,6 +189,24 @@ export function SettingsDialog({ onClose, onOpenProviderSettings, onOpenWizard, 
                   <span className="settings-export-affixes__note">预览：{settings.exportPrefix || ''}文章标题{settings.exportSuffix || ''}</span>
                 </div>
               )}
+            </div>
+          </section>
+
+          <section className="settings-group" aria-labelledby="settings-pro-auth">
+            <h3 id="settings-pro-auth">
+              图片代理 <span className="settings-pro-badge">Pro</span>
+            </h3>
+            <div className="settings-row settings-row--stack">
+              <span className="settings-row__copy">
+                <strong>X（推特）文章图片回源</strong>
+                <span>
+                  部分网络下 X 的图片 CDN 无法直连，文章能存下来但图片是空的。
+                  登录 Pro 账号后，抓图会经我们自己的回源节点下载；未登录时只走直连与公共兜底，
+                  失败的图片保留原始链接，不经过任何第三方。
+                </span>
+              </span>
+              <ProAccount status={auth.status} busy={auth.busy} onLogin={auth.login} onRefresh={auth.refresh} onUnbind={auth.unbind} />
+              {auth.error && <p className="settings-auth__error" role="alert">{auth.error}</p>}
             </div>
           </section>
 
@@ -344,4 +366,123 @@ export function SettingsDialog({ onClose, onOpenProviderSettings, onOpenWizard, 
       </section>
     </div>
   );
+}
+
+/** 登录态主体：未登录给登录入口，已登录列账号/设备/令牌并提供刷新与解绑。 */
+function ProAccount({
+  status,
+  busy,
+  onLogin,
+  onRefresh,
+  onUnbind,
+}: {
+  status: AuthStatus | null;
+  busy: AuthBusy;
+  onLogin: () => Promise<AuthStatus | null>;
+  onRefresh: () => Promise<AuthStatus | null>;
+  onUnbind: () => Promise<AuthStatus | null>;
+}) {
+  const [confirming, setConfirming] = React.useState(false);
+
+  if (!status) return <p className="settings-auth__note">正在读取登录状态…</p>;
+
+  if (!status.signed_in) {
+    const waiting = status.pending || busy === 'login';
+    return (
+      <div className="settings-auth" data-auth-state="signed-out">
+        <p className="settings-auth__note">未登录：抓图只走直连与公共兜底，失败的图片保留原始链接，不经过任何第三方。</p>
+        <div className="settings-auth__actions">
+          <button
+            type="button"
+            className="line-action"
+            disabled={busy !== null || waiting}
+            onClick={() => void onLogin()}
+          >
+            {waiting ? '等待浏览器登录…' : '登录 Pro 账号'}
+          </button>
+        </div>
+        <p className="settings-auth__hint">
+          登录在系统浏览器里完成，界面会等回跳后自动刷新。本机只生成一对 P-256 密钥，私钥进系统钥匙库（Android 进 Keystore）；短期令牌只在内存里，不写进设置，也不进 localStorage。
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="settings-auth" data-auth-state="signed-in">
+      <dl className="settings-auth__facts">
+        <dt>账号</dt>
+        <dd title={status.sub ?? undefined}>{status.sub ?? '—'}</dd>
+        <dt>设备</dt>
+        <dd>{status.device_name ?? '—'}</dd>
+        <dt>订阅</dt>
+        <dd>{status.pro ? 'Pro 有效' : '非 Pro：图片代理不可用'}</dd>
+        <dt>绑定时间</dt>
+        <dd>{formatWhen(status.bound_at)}</dd>
+        <dt>代理状态</dt>
+        <dd>
+          {status.proxy_enabled
+            ? `已启用 · 令牌剩余约 ${remainingHours(status.token_expires_at)}`
+            : '令牌已过期：抓图暂不发往代理，刷新后恢复'}
+        </dd>
+      </dl>
+      <div className="settings-auth__actions">
+        <button
+          type="button"
+          className="line-action"
+          disabled={busy !== null}
+          onClick={() => void onRefresh()}
+        >
+          {busy === 'refresh' ? '刷新中…' : '刷新令牌'}
+        </button>
+        {confirming ? (
+          <>
+            <button
+              type="button"
+              className="line-action settings-auth__danger"
+              disabled={busy !== null}
+              onClick={() => {
+                setConfirming(false);
+                void onUnbind();
+              }}
+            >
+              {busy === 'unbind' ? '解绑中…' : '确认解绑'}
+            </button>
+            <button type="button" className="text-action" disabled={busy !== null} onClick={() => setConfirming(false)}>
+              取消
+            </button>
+          </>
+        ) : (
+          <button
+            type="button"
+            className="line-action settings-auth__danger"
+            disabled={busy !== null}
+            onClick={() => setConfirming(true)}
+          >
+            解绑这台设备
+          </button>
+        )}
+      </div>
+      <p className="settings-auth__hint">
+        {confirming
+          ? '解绑后这台设备立即失效，换机后在新设备登录即可；同一账号 24 小时内只能解绑一次。'
+          : '换机时先在旧设备解绑，再到新设备登录；解绑有 24 小时冷却。'}
+      </p>
+    </div>
+  );
+}
+
+function formatWhen(seconds: number | null): string {
+  if (!seconds) return '—';
+  const date = new Date(seconds * 1000);
+  return Number.isNaN(date.getTime())
+    ? '—'
+    : date.toLocaleString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
+}
+
+function remainingHours(expiresAt: number | null): string {
+  if (!expiresAt) return '—';
+  const seconds = Math.max(0, expiresAt - Date.now() / 1000);
+  if (seconds < 60) return '不到 1 分钟';
+  return `${Math.max(1, Math.round(seconds / 3600))} 小时`;
 }

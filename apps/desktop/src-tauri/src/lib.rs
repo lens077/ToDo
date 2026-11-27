@@ -1,3 +1,4 @@
+pub mod auth;
 pub mod ops;
 pub mod reading;
 
@@ -5,8 +6,9 @@ use reading::ReadingState;
 mod preferences;
 pub mod sync;
 mod sync_watch;
+pub mod uri;
 mod watch;
-pub mod workspace;
+mod workspace;
 
 use serde::Serialize;
 use std::{
@@ -608,17 +610,34 @@ fn parse_web_url(url: &str) -> Result<tauri::Url, String> {
     Ok(parsed)
 }
 
-fn open_web_url(url: &str) -> Result<(), String> {
+/// Windows `start` 的命令行：整条原样交给 `cmd /C`，URL 加引号，`"` 转义
+/// 成 `%22`。单独抽出来是为了能在家/CI 上断言 `&` 没有被拆开。
+#[cfg(any(target_os = "windows", test))]
+fn windows_start_command_line(url: &str) -> String {
+    format!("/C start \"\" \"{}\"", url.replace('"', "%22"))
+}
+
+pub(crate) fn open_web_url(url: &str) -> Result<(), String> {
     parse_web_url(url)?;
-    let mut command = if cfg!(target_os = "macos") {
+    // Windows 上 `cmd /C start` 会重新解析命令行：URL 里的 `&` 被当成命令
+    // 分隔符，回跳只剩 `?client=loopback`（port/state 丢失），服务端于是报
+    // `bad_client: loopback 端口不合法`。这里用 raw_arg 原样送整条命令行，
+    // 并给 URL 加引号；`"` 先转义成 %22，避免破坏引号配对。
+    #[cfg(target_os = "windows")]
+    let mut command = {
+        use std::os::windows::process::CommandExt;
+        let mut command = std::process::Command::new("cmd");
+        command.raw_arg(windows_start_command_line(url));
+        command
+    };
+    #[cfg(target_os = "macos")]
+    let mut command = {
         let mut command = std::process::Command::new("open");
         command.arg(url);
         command
-    } else if cfg!(target_os = "windows") {
-        let mut command = std::process::Command::new("cmd");
-        command.args(["/C", "start", "", url]);
-        command
-    } else {
+    };
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    let mut command = {
         let mut command = std::process::Command::new("xdg-open");
         command.arg(url);
         command
@@ -786,6 +805,46 @@ pub(crate) fn mobile_data_dir() -> Option<PathBuf> {
     mobile_writable_dir()
 }
 
+/// 账号信息与设备密钥的落盘目录：与 `desktop.json` 同处 `~/.todo`，移动端
+/// 是应用私有目录。取不到时退到临时目录——登录仍可用，只是重启后要重新登录。
+fn auth_data_dir() -> PathBuf {
+    if let Some(path) = preferences::default_path() {
+        if let Some(parent) = path.parent() {
+            return parent.to_path_buf();
+        }
+    }
+    #[cfg(mobile)]
+    if let Some(dir) = mobile_data_dir() {
+        return dir.join(".todo");
+    }
+    std::env::temp_dir().join("virgo-auth")
+}
+
+/// Android 的 SAF 读取桥：`content://` 选中文档由 Kotlin 侧读成字节。
+#[cfg(target_os = "android")]
+fn uri_plugin() -> tauri::plugin::TauriPlugin<tauri::Wry> {
+    tauri::plugin::Builder::new("virgo-uri")
+        .setup(|_app, api| {
+            let handle = api.register_android_plugin("com.sumery.virgo", "UriPlugin")?;
+            crate::uri::install(handle);
+            Ok(())
+        })
+        .build()
+}
+
+/// Android 的 Keystore 桥：设备私钥由 Keystore 里的 AES 密钥加密后落盘。
+/// 桌面端不注册这个插件（私钥直接进系统钥匙串）。
+#[cfg(target_os = "android")]
+fn keystore_plugin() -> tauri::plugin::TauriPlugin<tauri::Wry> {
+    tauri::plugin::Builder::new("virgo-keystore")
+        .setup(|_app, api| {
+            let handle = api.register_android_plugin("com.sumery.virgo", "KeystorePlugin")?;
+            auth::install_keystore(handle);
+            Ok(())
+        })
+        .build()
+}
+
 /// The AI feed store: `TODO_AI_STORE` overrides the global path, the same
 /// convention the CLI uses so tests and the desktop can share a fixture.
 fn runtime_ai_store(lock_timeout: Duration) -> Option<AiStore> {
@@ -804,6 +863,15 @@ fn runtime_ai_store(lock_timeout: Duration) -> Option<AiStore> {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let started = Instant::now();
+    // Android 沙箱里没有 `dirs::home_dir()`，工作空间注册表会因此不可用
+    // （界面上表现为「工作空间注册表不可用：无法确定用户主目录」，项目选择
+    // 与导入入口一并失效）。启动前把注册表目录指到应用私有目录。
+    #[cfg(mobile)]
+    if std::env::var_os("TODO_WORKSPACE_STORE").is_none() {
+        if let Some(dir) = mobile_data_dir() {
+            std::env::set_var("TODO_WORKSPACE_STORE", dir.join(".todo").join("workspace"));
+        }
+    }
     let ai_store = runtime_ai_store(Duration::from_secs(2));
     let ai_store_path = ai_store.as_ref().map(|store| store.path().to_path_buf());
     let mut ops = ops::DesktopOps::new(DesktopBackend::default());
@@ -812,7 +880,12 @@ pub fn run() {
     }
     let builder = tauri::Builder::default()
         .plugin(tauri_plugin_clipboard_manager::init())
-        .plugin(tauri_plugin_dialog::init());
+        .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_deep_link::init())
+        .plugin(tauri_plugin_opener::init());
+    // Android 的 Keystore 桥只在移动端注册；桌面端私钥进系统钥匙串。
+    #[cfg(target_os = "android")]
+    let builder = builder.plugin(keystore_plugin()).plugin(uri_plugin());
     // The global-shortcut plugin is desktop-only; on mobile it compiles to an
     // empty stub with none of these types exported.
     #[cfg(desktop)]
@@ -843,6 +916,7 @@ pub fn run() {
             store: workspace::runtime_workspace_store(),
         })
         .manage(sync_watch::SyncWatchState::default())
+        .manage(auth::AuthState::new(&auth_data_dir()))
         .manage(AppState {
             ops,
             watcher: Mutex::new(None),
@@ -854,6 +928,10 @@ pub fn run() {
             preferences_path: preferences::default_path(),
         })
         .invoke_handler(tauri::generate_handler![
+            auth::auth_status,
+            auth::auth_start_login,
+            auth::auth_refresh,
+            auth::auth_unbind,
             open_project,
             create_todo_md,
             snapshot,
@@ -983,10 +1061,24 @@ pub fn run() {
                 }
             }
             let handle = app.handle().clone();
+            // Android：登录完成后浏览器回跳 `virgo://auth?ticket=`，这里接住
+            // 并激活设备。桌面端走 loopback 监听，不经过这条链路。
+            #[cfg(mobile)]
+            {
+                use tauri_plugin_deep_link::DeepLinkExt;
+                let deep_link_handle = handle.clone();
+                app.deep_link().on_open_url(move |event| {
+                    for url in event.urls() {
+                        auth::handle_deep_link(&deep_link_handle, url.as_str());
+                    }
+                });
+            }
             reopen_last_project(&handle, &app.state::<AppState>());
             if let Some(path) = &ai_store_path {
                 start_ai_watcher(&handle, &app.state::<AppState>(), path);
             }
+            // 重启后令牌不在内存里：由后台线程补签，设置页与抓图随即恢复。
+            auth::spawn_refresh_loop(handle.clone());
             let _ = app.emit("desktop://ready", startup_ms);
             Ok(())
         })
@@ -1030,6 +1122,21 @@ mod tests {
         let parsed = parse_web_url("http://127.0.0.1:3080/?session=s_8f2a").unwrap();
         assert_eq!(parsed.host_str(), Some("127.0.0.1"));
         assert_eq!(parsed.query(), Some("session=s_8f2a"));
+    }
+
+    #[test]
+    fn windows_start_command_line_keeps_query_ampersands() {
+        // cmd 会把未加引号的 `&` 当命令分隔符，导致回跳参数被截断。
+        let line = windows_start_command_line(
+            "https://virgo-auth.apikv.com/auth/login?client=loopback&port=50123&state=abc",
+        );
+        assert!(line.starts_with("/C start \"\" \""));
+        assert!(
+            line.contains("&port=50123&state=abc"),
+            "query must stay intact: {line}"
+        );
+        let escaped = windows_start_command_line("https://h/?x=\"y\"");
+        assert!(escaped.contains("%22"), "quotes must be escaped: {escaped}");
     }
 
     #[test]
