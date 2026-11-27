@@ -21,6 +21,7 @@ import { ImageLightbox } from './ImageLightbox';
 import { SubViewHeader } from './SubViewHeader';
 import { useAppSettings } from '../lib/appSettings';
 import { linkifyBareUrls } from '../lib/links';
+import { useLinkMenu } from '../lib/linkMenu';
 
 interface ReaderViewProps {
   detail: ReadingArticleDetail;
@@ -512,46 +513,7 @@ export function ReaderView({ detail, model }: ReaderViewProps) {
     }, 0);
   };
 
-  // 正文链接：点击不直接跳转，先弹菜单（在浏览器打开 / 复制链接）。移动端
-  // 和桌面端共用这套交互；裸链接也在渲染时被 linkifyBareUrls 包成 <a>。
-  const [linkMenu, setLinkMenu] = React.useState<{ href: string; x: number; y: number } | null>(null);
-  const [linkCopied, setLinkCopied] = React.useState(false);
-  const linkMenuRef = React.useRef<HTMLDivElement | null>(null);
-
-  React.useEffect(() => {
-    if (!linkMenu) return undefined;
-    const close = () => setLinkMenu(null);
-    const onPointerDown = (event: PointerEvent) => {
-      if (linkMenuRef.current?.contains(event.target as Node)) return;
-      close();
-    };
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') close();
-    };
-    document.addEventListener('pointerdown', onPointerDown, true);
-    document.addEventListener('keydown', onKeyDown);
-    return () => {
-      document.removeEventListener('pointerdown', onPointerDown, true);
-      document.removeEventListener('keydown', onKeyDown);
-    };
-  }, [linkMenu]);
-
-  const openMenuLink = () => {
-    if (!linkMenu) return;
-    void desktop.openExternal(linkMenu.href);
-    setLinkMenu(null);
-  };
-
-  const copyMenuLink = async () => {
-    if (!linkMenu) return;
-    try {
-      await navigator.clipboard.writeText(linkMenu.href);
-      setLinkCopied(true);
-      window.setTimeout(() => setLinkMenu(null), 700);
-    } catch {
-      setLinkCopied(false);
-    }
-  };
+  const articleLinks = useLinkMenu();
 
   const handleArticleLink = (event: React.MouseEvent<HTMLDivElement>) => {
     // 正文图片点击 → 全屏放大（A′ 验收：竖屏看正文截图太小）。图片在链接内时
@@ -571,14 +533,7 @@ export function ReaderView({ detail, model }: ReaderViewProps) {
     }
     // 统一走应用内菜单：WebView 里直接跳转会污染阅读页，也拿不到复制入口。
     event.preventDefault();
-    const rect = target.getBoundingClientRect();
-    const menuWidth = 196;
-    const menuHeight = 96;
-    const x = Math.min(Math.max(8, rect.left), window.innerWidth - menuWidth - 8);
-    const above = window.innerHeight - rect.bottom < menuHeight + 12;
-    const y = above ? Math.max(8, rect.top - menuHeight - 6) : rect.bottom + 6;
-    setLinkCopied(false);
-    setLinkMenu({ href, x, y });
+    articleLinks.openFromEvent(event);
   };
 
   const copyQuote = async (quote: string) => {
@@ -744,16 +699,7 @@ export function ReaderView({ detail, model }: ReaderViewProps) {
           <span className="reader-notes-toggle__count">{annotations.length}</span>
         </button>
       )}
-      {linkMenu && (
-        <div className="reader-link-menu" role="menu" aria-label="链接操作" ref={linkMenuRef} style={{ left: linkMenu.x, top: linkMenu.y }}>
-          <button type="button" role="menuitem" onClick={openMenuLink}>
-            <Icon name="external" /> 在浏览器打开
-          </button>
-          <button type="button" role="menuitem" onClick={() => void copyMenuLink()}>
-            <Icon name="link" /> {linkCopied ? '已复制' : '复制链接'}
-          </button>
-        </div>
-      )}
+      {articleLinks.node}
     </section>
   );
 }

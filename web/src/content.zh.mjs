@@ -8,9 +8,11 @@ const mailto = "mailto:support@looke.cloud?subject=" + encodeURIComponent("Sumer
 // 桶为冷备；发布与换版本流程见 docs/macos-release.md「未签名公开分发」。
 const CDN = "https://virgo-pages.apikv.com";
 const dl = {
-  app: `${CDN}/dl/releases/0.1.1/Sumery-Virgo-0.1.1-aarch64-apple-darwin.app.zip`,
-  cli: `${CDN}/dl/releases/0.1.1/todo-0.1.1-aarch64-apple-darwin.tar.gz`,
-  sums: `${CDN}/dl/releases/0.1.1/SHA256SUMS`,
+  app: `${CDN}/dl/releases/0.1.2/Sumery-Virgo-0.1.2-aarch64-apple-darwin.app.zip`,
+  cli: `${CDN}/dl/releases/0.1.2/todo-0.1.2-aarch64-apple-darwin.tar.gz`,
+  apk: `${CDN}/dl/releases/0.1.2/virgo-0.1.2-arm64-v8a.apk`,
+  win: `${CDN}/dl/releases/0.1.2/Sumery-Virgo-0.1.2-x64-setup.exe`,
+  sums: `${CDN}/dl/releases/0.1.2/SHA256SUMS`,
 };
 
 export default {
@@ -21,7 +23,7 @@ export default {
   meta: {
     title: "Sumery Virgo · 任务与代码现实对账 · 给 AI 协作开发者的本地任务对账器",
     description:
-      "Sumery Virgo 把项目里的 TODO.md 汇总成一个视图，用 Git 里的改动给每一项找物证，只报告差异，完成与否由你决定。本地运行，不需要登录。macOS 版（Apple Silicon）v0.1.1 可直接下载。",
+      "Sumery Virgo 把项目里的 TODO.md 汇总成一个视图，用 Git 里的改动给每一项找物证，只报告差异，完成与否由你决定。本地运行，不需要登录。macOS（Apple Silicon）、Android（arm64）、Windows（x64）v0.1.2 可直接下载。",
   },
   ui: {
     skip: "跳到正文",
@@ -33,7 +35,7 @@ export default {
   brand: { kicker: "SUMERY · VIRGO", name: "Virgo", sub: "本地 · Markdown 是唯一事实源" },
   status: {
     label: "当前状态",
-    text: "已发布 v0.1.1。macOS（Apple Silicon）可直接下载；安装包未做 Apple 签名与公证，首次打开需手动放行。",
+    text: "已发布 v0.1.2。macOS（Apple Silicon）、Android（arm64）、Windows（x64）可直接下载；macOS 包未做 Apple 签名与公证，首次打开需手动放行。",
     cta: { label: "写信给我们", href: mailto, event: { name: "feedback", data: { from: "status" } } },
   },
   nav: [
@@ -49,9 +51,10 @@ export default {
       "和 agent 一起推进一个仓库，任务清单很快就不是代码的样子了：做完的没勾，勾了的其实没做完，agent 读到过期的一行，把已经完成的工作再做一遍。Virgo 把项目里的 <code>TODO.md</code> 汇总成一个视图，用 Git 里的改动给每一项找物证，只报告差异——<strong>完成与否，还是你来定。</strong>",
     actions: [
       { kind: "primary", label: "下载 macOS 版", href: dl.app, event: { name: "download", data: { from: "hero" } } },
+      { kind: "ghost", label: "下载 Android 版", href: dl.apk, event: { name: "download", data: { from: "hero-android" } } },
       { kind: "ghost", label: "看它怎么对账", href: "#how" },
     ],
-    fine: "v0.1.1 · Apple Silicon · 未签名版本，首次打开需放行一次。",
+    fine: "v0.1.2 · macOS / Android / Windows · macOS 包未签名，首次打开需放行一次。",
   },
   how: {
     id: "how",
@@ -153,17 +156,19 @@ export default {
     title: "下载 Sumery Virgo。",
     sub: null,
     body: [
-      `v0.1.1，macOS（Apple Silicon），免费，不用注册。下载解压后，把 <code>Sumery Virgo.app</code> 拖进「应用程序」即可；文件校验和见 <a href="${dl.sums}" rel="noopener">SHA256SUMS</a>。`,
+      `v0.1.2，macOS（Apple Silicon）、Android（arm64-v8a）、Windows（x64），免费，不用注册。下载解压后，把 <code>Sumery Virgo.app</code> 拖进「应用程序」即可；文件校验和见 <a href="${dl.sums}" rel="noopener">SHA256SUMS</a>。`,
       `安装包还没做 Developer ID 签名与公证（Apple 开发者年费还没花），首次打开会被 Gatekeeper 拦一次，两种放行方式任选其一：系统设置 → 隐私与安全性 → 点「仍要打开」；或在终端执行 <code>xattr -cr "/Applications/Sumery Virgo.app"</code>。放行一次，之后正常打开。`,
-      `签名与公证版本会随后补上；在那之前，这个未签名版本就是正式发布版本。命令行用户也可以单独下载 <code>todo</code> CLI。其他平台等 macOS 之后再说，现在不承诺。遇到打不开或别的问题，<a href="${mailto}">写信告诉我们</a>。`,
+      `签名与公证版本会随后补上；在那之前，这个未签名版本就是正式发布版本。命令行用户也可以单独下载 <code>todo</code> CLI。Android 与 Windows 已有测试包，Linux 随后再说。遇到打不开或别的问题，<a href="${mailto}">写信告诉我们</a>。`,
     ],
-    cta: { label: "下载 Sumery Virgo v0.1.1", href: dl.app, event: { name: "download", data: { from: "get" } } },
+    cta: { label: "下载 Sumery Virgo v0.1.2", href: dl.app, event: { name: "download", data: { from: "get" } } },
     tableCaption: "各平台发布状态",
     columns: ["平台", "状态"],
     rows: [
-      ["macOS · Apple Silicon", `v0.1.1 · <a href="${dl.app}">下载 .app.zip</a>`],
+      ["macOS · Apple Silicon", `v0.1.2 · <a href="${dl.app}">下载 .app.zip</a>`],
       ["macOS CLI · Apple Silicon", `<a href="${dl.cli}">下载 todo .tar.gz</a>`],
-      ["其他平台", "未发布"],
+      ["Android · arm64-v8a", `v0.1.2 · <a href="${dl.apk}">下载 .apk</a>`],
+      ["Windows · x64", `v0.1.2 · <a href="${dl.win}">下载 .exe</a>`],
+      ["其他平台", "Linux 等后续再说"],
     ],
   },
   footer: {

@@ -35,6 +35,13 @@ test('card body renders Markdown and the popover writes the edited source back',
   await expect(rendered.locator('a')).toHaveAttribute('href', 'https://example.com');
   await expect(rendered.locator('del')).toHaveText('旧方案');
   await expect(rendered).not.toContainText('**');
+  // 正文外链点击：弹应用内菜单，而不是让 WebView 跳走。
+  await rendered.locator('a').click();
+  const menu = page.getByRole('menu', { name: '链接操作' });
+  await expect(menu).toBeVisible();
+  await expect(menu.getByRole('menuitem', { name: /在浏览器打开/ })).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(menu).toHaveCount(0);
 });
 
 test('Escape and 取消 discard edits; an untouched editor closes on outside click', async ({ page }) => {

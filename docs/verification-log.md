@@ -1440,3 +1440,14 @@ file=…/images/<id>/cover.jpg size=843848
    - `linkifyBareUrls` 用 TreeWalker 把正文文本节点里的裸 URL 包成 `<a rel="noopener noreferrer">`，跳过已有链接、代码块与文本域。
 2. `ReaderView`：正文 `innerHTML` 注入后先 `linkifyBareUrls(body)` 再建标注器；点击 `a[href]` 时对 http(s) 统一 `preventDefault` 并弹出菜单 `.reader-link-menu`（「在浏览器打开」调 `desktop.openExternal`，「复制链接」调 `navigator.clipboard`，复制后 700 ms 自动收起）；Esc、点击菜单外与滚动外均收起。微信内链不再弹 `window.confirm`，与普通外链同一套菜单。
 3. 验证：`node --test src/lib/links.test.ts` 7 项通过（裸链接三段切分、中英文句读剔除、括号配对、多链接、非 http 前缀不识别）；`tsc -b` 绿；`make check-quick` 绿（27s）。Playwright：mock 文章（`src/lib/reading.ts` 的 `MOCK_BODY`）尾部追加一条裸链接，新增用例断言裸链接被包成 `<a>`、点击弹出 `.reader-link-menu` 且含两项、Esc 关闭；`reading.spec.ts` 31 passed、`mobile.spec.ts` 14 passed（首次并行跑 mobile 有一条 flake，单跑与二次全量均通过）。
+## 2026-11-27 v0.1.2 官网发布（链接菜单三处接入 + Android/Windows 下载）
+
+1. 链接菜单抽成共享 hook `apps/desktop/src/lib/linkMenu.tsx`，阅读页、工作空间文档预览（`ProjectDetailPanel`，内容渲染后 `linkifyBareUrls` + `onClick` 弹菜单）、任务正文（`TaskCard`，命中外链时不再打开编辑器）三处复用；`task-body-markdown.spec.ts` 增加点击外链弹菜单断言。
+2. 版本 0.1.1 → 0.1.2（`apps/desktop/package.json`、`src-tauri/tauri.conf.json`、`src-tauri/Cargo.toml`，`Cargo.lock` 同步）。
+3. 产物（`web/public/dl/releases/0.1.2/`，SHA256SUMS 同目录）：
+   - `Sumery-Virgo-0.1.2-aarch64-apple-darwin.app.zip` 9,828,045 B
+   - `todo-0.1.2-aarch64-apple-darwin.tar.gz` 5,141,253 B
+   - `virgo-0.1.2-arm64-v8a.apk` 20,438,341 B（`versionName=0.1.2`，debug 签名）
+   - `Sumery-Virgo-0.1.2-x64-setup.exe` 7,163,086 B（cargo-xwin 交叉编译，未签名）
+4. 站点：`web/src/content.zh.mjs` / `content.en.mjs` 更新到 0.1.2，新增 `dl.apk` / `dl.win`、hero「下载 Android 版」按钮与下载表两行平台状态。Cloudflare Pages 与 EdgeOne Pages 已手动部署成功；k8s 镜像经 node4 构建推送，但 `helm upgrade` 与 ArgoCD 冲突（该 Deployment 由 ArgoCD 管理），改由推 GitHub main 触发 `.github/workflows/deploy.yml` 回写 values-prod 后由 ArgoCD 同步。
+5. 待办：真机烟收（下载 APK → 登录 → 打开文章点链接看菜单 → 在浏览器打开 / 复制链接）。

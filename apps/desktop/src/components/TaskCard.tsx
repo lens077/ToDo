@@ -5,6 +5,7 @@ import { formatDueDate, shortId } from '../lib/format';
 import { splitColumns } from '../lib/goal';
 import { plainInlineMarkdown, renderInlineMarkdown } from '../lib/inlineMarkdown';
 import { Icon } from './Icon';
+import { useLinkMenu } from '../lib/linkMenu';
 import { TaskBodyEditor } from './TaskBodyEditor';
 import { TaskContextMenu, type TaskMoveTargets } from './TaskContextMenu';
 
@@ -178,6 +179,7 @@ export function TaskCard({
   const [inline, setInline] = React.useState<InlineOutcome | null>(null);
   const [editingBody, setEditingBody] = React.useState(false);
   const bodyRef = React.useRef<HTMLParagraphElement>(null);
+  const bodyLinks = useLinkMenu();
   const [contextMenu, setContextMenu] = React.useState<{
     x: number;
     y: number;
@@ -348,8 +350,8 @@ export function TaskCard({
         className={`task-card__body${editingBody ? ' is-editing-body' : ''}`}
         title={bodyEditable ? '点击编辑正文（Enter / F2）' : '点击查看并选择文字'}
         onClick={(event) => {
-          // Links inside the rendered Markdown keep their own behaviour.
-          if ((event.target as HTMLElement).closest('a')) return;
+          // 正文里的外链统一弹菜单，其余点击维持「点开编辑」的行为。
+          if (bodyLinks.openFromEvent(event)) return;
           if (!task.id) return;
           if (editingBody) closeBodyEditor(false);
           else openBodyEditor();
@@ -357,6 +359,7 @@ export function TaskCard({
       >
         {renderInlineMarkdown(task.body)}
       </p>
+      {bodyLinks.node}
 
       {focus && task.progress !== null && !task.completed && (
         <div className="task-card__progress" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={task.progress} aria-label="完成比例">

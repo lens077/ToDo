@@ -10,9 +10,11 @@ const mailto = "mailto:support@looke.cloud?subject=" + encodeURIComponent("Sumer
 // the bucket is a cold spare. See docs/macos-release.md, "Unsigned distribution".
 const CDN = "https://virgo-pages.apikv.com";
 const dl = {
-  app: `${CDN}/dl/releases/0.1.1/Sumery-Virgo-0.1.1-aarch64-apple-darwin.app.zip`,
-  cli: `${CDN}/dl/releases/0.1.1/todo-0.1.1-aarch64-apple-darwin.tar.gz`,
-  sums: `${CDN}/dl/releases/0.1.1/SHA256SUMS`,
+  app: `${CDN}/dl/releases/0.1.2/Sumery-Virgo-0.1.2-aarch64-apple-darwin.app.zip`,
+  cli: `${CDN}/dl/releases/0.1.2/todo-0.1.2-aarch64-apple-darwin.tar.gz`,
+  apk: `${CDN}/dl/releases/0.1.2/virgo-0.1.2-arm64-v8a.apk`,
+  win: `${CDN}/dl/releases/0.1.2/Sumery-Virgo-0.1.2-x64-setup.exe`,
+  sums: `${CDN}/dl/releases/0.1.2/SHA256SUMS`,
 };
 
 export default {
@@ -23,7 +25,7 @@ export default {
   meta: {
     title: "Sumery Virgo · Reconcile your task list with your code · A local task reconciler for developers who work with AI agents",
     description:
-      "Sumery Virgo gathers the TODO.md files in a project into one view, finds evidence for each item in your Git history and reports only the differences — whether something is done stays your call. Runs locally, no account. The macOS build (Apple Silicon) is ready to download.",
+      "Sumery Virgo gathers the TODO.md files in a project into one view, finds evidence for each item in your Git history and reports only the differences — whether something is done stays your call. Runs locally, no account. The macOS (Apple Silicon), Android (arm64) and Windows (x64) builds are ready to download.",
   },
   ui: {
     skip: "Skip to content",
@@ -35,7 +37,7 @@ export default {
   brand: { kicker: "SUMERY · VIRGO", name: "Virgo", sub: "Local · Markdown is the single source of truth" },
   status: {
     label: "Status",
-    text: "Released: v0.1.1. The macOS (Apple Silicon) build is ready to download; the archive is not Apple-signed or notarized, so the first open needs a manual override.",
+    text: "Released: v0.1.2. macOS (Apple Silicon), Android (arm64) and Windows (x64) are ready to download; the macOS archive is not Apple-signed or notarized, so the first open needs a manual override.",
     cta: { label: "Write to us", href: mailto, event: { name: "feedback", data: { from: "status" } } },
   },
   nav: [
@@ -51,9 +53,10 @@ export default {
       "Push a repository forward with an agent and the task list soon stops looking like the code: finished work left unticked, ticked items that aren't really done, and an agent that reads a stale line and does completed work all over again. Virgo gathers the project's <code>TODO.md</code> files into one view, looks for evidence of each item in your Git history and reports only the differences — <strong>whether something is done is still your call.</strong>",
     actions: [
       { kind: "primary", label: "Download for macOS", href: dl.app, event: { name: "download", data: { from: "hero" } } },
+      { kind: "ghost", label: "Download for Android", href: dl.apk, event: { name: "download", data: { from: "hero-android" } } },
       { kind: "ghost", label: "See how it reconciles", href: "#how" },
     ],
-    fine: "v0.1.1 · Apple Silicon · unsigned build, one-time Gatekeeper override.",
+    fine: "v0.1.2 · macOS / Android / Windows · macOS build is unsigned; one-time Gatekeeper override.",
   },
   how: {
     id: "how",
@@ -155,17 +158,19 @@ export default {
     title: "Download Sumery Virgo.",
     sub: null,
     body: [
-      `v0.1.1, macOS (Apple Silicon), free, no sign-up. Unzip the download and drag <code>Sumery Virgo.app</code> into Applications; checksums are in <a href="${dl.sums}" rel="noopener">SHA256SUMS</a>.`,
+      `v0.1.2, macOS (Apple Silicon), Android (arm64-v8a) and Windows (x64), free, no sign-up. Unzip the download and drag <code>Sumery Virgo.app</code> into Applications; checksums are in <a href="${dl.sums}" rel="noopener">SHA256SUMS</a>.`,
       `The archive has no Developer ID signature or notarization yet (the Apple developer fee hasn't been paid), so Gatekeeper stops the first open. Pick either override: in System Settings → Privacy & Security, click “Open Anyway”; or run <code>xattr -cr "/Applications/Sumery Virgo.app"</code> in a terminal. One override, and it opens normally afterwards.`,
-      `A signed and notarized build will follow; until then this unsigned build is the official release. CLI users can also download the <code>todo</code> CLI on its own. Other platforms come after macOS; nothing is promised for them yet. If it won't open, or anything else breaks, <a href="${mailto}">write to us</a>.`,
+      `A signed and notarized build will follow; until then this unsigned build is the official release. CLI users can also download the <code>todo</code> CLI on its own. Android and Windows test builds are out; Linux will come later. If it won't open, or anything else breaks, <a href="${mailto}">write to us</a>.`,
     ],
-    cta: { label: "Download Sumery Virgo v0.1.1", href: dl.app, event: { name: "download", data: { from: "get" } } },
+    cta: { label: "Download Sumery Virgo v0.1.2", href: dl.app, event: { name: "download", data: { from: "get" } } },
     tableCaption: "Release status by platform",
     columns: ["Platform", "Status"],
     rows: [
-      ["macOS · Apple Silicon", `v0.1.1 · <a href="${dl.app}">Download .app.zip</a>`],
+      ["macOS · Apple Silicon", `v0.1.2 · <a href="${dl.app}">Download .app.zip</a>`],
       ["macOS CLI · Apple Silicon", `<a href="${dl.cli}">Download todo .tar.gz</a>`],
-      ["Other platforms", "Not released"],
+      ["Android · arm64-v8a", `v0.1.2 · <a href="${dl.apk}">Download .apk</a>`],
+      ["Windows · x64", `v0.1.2 · <a href="${dl.win}">Download .exe</a>`],
+      ["Other platforms", "Linux later"],
     ],
   },
   footer: {

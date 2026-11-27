@@ -5,6 +5,8 @@
  * "scan keeps declarations" against the same rule the Rust side enforces.
  */
 import * as React from 'react';
+import { linkifyBareUrls } from '../lib/links';
+import { useLinkMenu } from '../lib/linkMenu';
 import {
   knowledge,
   LOGICAL_TYPES,
@@ -41,6 +43,12 @@ export function ProjectDetailPanel({ projectId, projectName }: ProjectDetailPane
   const [declaredDraft, setDeclaredDraft] = React.useState('');
   const [documents, setDocuments] = React.useState<KnowledgeDocument[] | null>(null);
   const [openDocument, setOpenDocument] = React.useState<KnowledgeDocumentContent | null>(null);
+  const docLinks = useLinkMenu();
+  const docBodyRef = React.useRef<HTMLDivElement | null>(null);
+  React.useEffect(() => {
+    if (docBodyRef.current) linkifyBareUrls(docBodyRef.current);
+  }, [openDocument]);
+
   const [knowledgeQuery, setKnowledgeQuery] = React.useState('');
   const [knowledgeHits, setKnowledgeHits] = React.useState<KnowledgeSearchHit[] | null>(null);
   const [sessions, setSessions] = React.useState<SessionSummary[] | null>(null);
@@ -470,7 +478,13 @@ export function ProjectDetailPanel({ projectId, projectName }: ProjectDetailPane
             <p className="ws-project__meta">
               {openDocument.relative_path} · {LOGICAL_TYPE_LABELS[openDocument.logical_type]} · HTML 由 Markdown 重建，不落盘
             </p>
-            <div className="ws-reader__content" dangerouslySetInnerHTML={{ __html: openDocument.content_html }} />
+            <div
+              ref={docBodyRef}
+              className="ws-reader__content"
+              onClick={docLinks.openFromEvent}
+              dangerouslySetInnerHTML={{ __html: openDocument.content_html }}
+            />
+            {docLinks.node}
           </article>
         )}
       </div>
